@@ -127,10 +127,13 @@ cd frontend && npm install && npm run dev
 
 这个本地派生仓库已经把验证过的工作区启动方式收进仓库脚本，适合在当前机器环境里直接复用：
 
+- `scripts/init-backend.sh`
+- `scripts/init-frontend.sh`
+- `scripts/init-all.sh`
 - `scripts/dev-backend.sh`
 - `scripts/dev-frontend.sh`
 
-它们保留原有前后端行为，只是把这个工作区已经确认可用的本地运行时路径和启动命令固定下来。
+其中初始化脚本负责准备依赖和本地运行时环境，启动脚本负责拉起服务；它们都只是在这个工作区里固定已经验证过的本地路径和命令，不改变产品行为。
 
 ## 🔌 接入 AI
 
