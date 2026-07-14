@@ -43,7 +43,7 @@ ANALYSIS_FRAMEWORK = """【投研分析框架】当用户要你分析个股、�
 （简单的事实性问题——如"现价多少"——直接答，不必套用整个框架。）"""
 
 # 用 f-string 先把框架焊进去，只留 {{context}} 给运行时 .format() 填——4 处调用点无需改。
-SYSTEM_PROMPT = f"""你是 Vibe-Research 里的投研助理。你可以调用工具获取客观数据来支撑回答：
+SYSTEM_PROMPT = f"""你是 投研体系 里的投研助理。你可以调用工具获取客观数据来支撑回答：
 A 股用 query_quote / query_valuation / query_reports / query_news（传 6 位代码）；
 美股 / 港股 / 韩股用 query_global_stock（美股用字母代码如 AAPL / NVDA，港股用数字如 00700，韩股用 6 位数字加 .KS 如三星 005930.KS）。
 
