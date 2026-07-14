@@ -19,9 +19,15 @@
 - `pnpm approve-builds --all` was required once so `esbuild` could run its install script.
 - Running `pnpm run dev -- --host 127.0.0.1 --port 5899` passed arguments through as `vite -- --host ...`, causing Vite to listen on IPv6 `::1`; direct Vite invocation with `./node_modules/.bin/vite --host 127.0.0.1 --port 5899` validated IPv4 access.
 
+## Stage 2 Status
+
+- Runtime branding updated from upstream `Vibe-Research` to local product name `投研体系`.
+- Backend API metadata now reports `投研体系 API`.
+- `/api/health` now reports service `investment-research-api`.
+- Local data directories remain unchanged for compatibility.
+
 ## Stage 2 Priority
 
-- Rename product copy from `Vibe-Research` to `投研体系`.
 - Centralize AI provider and model settings.
 - Review local data storage paths.
 - Move high-frequency entry points closer to 自选 / 持仓 / 个股研究 / 复盘 / 研究沉淀.
