@@ -132,8 +132,12 @@ cd frontend && npm install && npm run dev
 - `scripts/init-all.sh`
 - `scripts/dev-backend.sh`
 - `scripts/dev-frontend.sh`
+- `scripts/stop-backend.sh`
+- `scripts/stop-frontend.sh`
+- `scripts/stop-all.sh`
+- `scripts/restart-all.sh`
 
-其中初始化脚本负责准备依赖和本地运行时环境，启动脚本负责拉起服务；它们都只是在这个工作区里固定已经验证过的本地路径和命令，不改变产品行为。
+其中初始化脚本负责准备依赖和本地运行时环境，启动脚本负责拉起服务，生命周期脚本负责停服和整套重启；它们都只是在这个工作区里固定已经验证过的本地路径和命令，不改变产品行为。
 
 ## 🔌 接入 AI
 
