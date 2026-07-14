@@ -19,6 +19,13 @@ const pctColor = (p: number) => (p > 0 ? "text-danger" : p < 0 ? "text-success" 
 const fmt = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 const yi = (v: number | null) => (v == null ? "—" : `${fmt(v / 1e8)} 亿`); // 元 → 亿
 
+const QUICK_LINKS = [
+  { to: "/watchlist", label: "自选股", hint: "盯关注名单" },
+  { to: "/portfolio", label: "我的持仓", hint: "回看持仓变化" },
+  { to: "/stock-data", label: "个股数据", hint: "查单票细节" },
+  { to: "/notes", label: "研究记录", hint: "沉淀复盘结论" },
+];
+
 export function DailyReview() {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
   const [idxErr, setIdxErr] = useState(false);
@@ -133,6 +140,29 @@ export function DailyReview() {
           />
         }
       />
+
+      <GlassCard className="mb-6 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">快捷入口</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              从复盘页直接跳到今天最常切换的几个研究动作，不用来回找菜单。
+            </p>
+          </div>
+          <div className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:min-w-[32rem]">
+            {QUICK_LINKS.map(({ to, label, hint }) => (
+              <Link
+                key={to}
+                to={to}
+                className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3 transition-colors hover:border-primary/40 hover:bg-primary/10"
+              >
+                <p className="text-sm font-medium text-foreground">{label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </GlassCard>
 
       {/* 1. 大盘指数（实时） */}
       <div className="mb-3 flex items-center justify-between">

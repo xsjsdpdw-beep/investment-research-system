@@ -15,13 +15,13 @@ const SITE_URL = APP_CONFIG.upstreamRepoUrl;
 
 const NAV = [
   { to: "/daily-review", icon: Activity, label: "每日复盘" },
-  { to: "/intel", icon: Radar, label: "资讯雷达" },
-  { to: "/sectors", icon: LayoutGrid, label: "板块中心" },
-  { to: "/stock-data", icon: Search, label: "个股数据" },
   { to: "/watchlist", icon: Star, label: "自选股" },
   { to: "/portfolio", icon: Wallet, label: "我的持仓" },
-  { to: "/my-reports", icon: FileText, label: "我的研报" },
+  { to: "/stock-data", icon: Search, label: "个股数据" },
   { to: "/notes", icon: NotebookPen, label: "研究记录" },
+  { to: "/intel", icon: Radar, label: "资讯雷达" },
+  { to: "/sectors", icon: LayoutGrid, label: "板块中心" },
+  { to: "/my-reports", icon: FileText, label: "我的研报" },
   { to: "/settings", icon: Settings, label: "接入 AI" },
 ];
 
