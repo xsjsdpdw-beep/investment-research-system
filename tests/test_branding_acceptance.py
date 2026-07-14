@@ -128,3 +128,26 @@ def test_daily_review_exposes_quick_links_to_core_workflows():
     assert "我的持仓" in daily_review
     assert "个股数据" in daily_review
     assert "研究记录" in daily_review
+
+
+def test_local_startup_helpers_exist_and_point_to_workspace_commands():
+    backend_helper = read("scripts/dev-backend.sh")
+    frontend_helper = read("scripts/dev-frontend.sh")
+
+    assert "#!/bin/sh" in backend_helper
+    assert "backend/.venv/bin/python" in backend_helper
+    assert "uvicorn app:app --host 127.0.0.1 --port 8900" in backend_helper
+
+    assert "#!/bin/sh" in frontend_helper
+    assert "codex-primary-runtime/dependencies/node/bin" in frontend_helper
+    assert "frontend/node_modules/.bin/vite" in frontend_helper
+    assert "--host 127.0.0.1 --port 5899" in frontend_helper
+
+
+def test_local_docs_point_to_startup_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/dev-backend.sh" in readme
+    assert "scripts/dev-frontend.sh" in readme
+    assert "Repository-local startup helpers" in local_notes
