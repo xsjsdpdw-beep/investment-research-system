@@ -95,3 +95,36 @@ def test_ai_settings_logic_is_centralized():
     assert "baseURL:" in llm
     assert "apiKey:" in llm
     assert "model:" in llm
+
+
+def test_sidebar_prioritizes_high_frequency_pages():
+    layout = read("frontend/src/components/layout/Layout.tsx")
+
+    daily = layout.index('label: "每日复盘"')
+    watchlist = layout.index('label: "自选股"')
+    portfolio = layout.index('label: "我的持仓"')
+    stock_data = layout.index('label: "个股数据"')
+    notes = layout.index('label: "研究记录"')
+    intel = layout.index('label: "资讯雷达"')
+    sectors = layout.index('label: "板块中心"')
+    reports = layout.index('label: "我的研报"')
+    settings = layout.index('label: "接入 AI"')
+
+    assert daily < watchlist < portfolio < stock_data < notes < intel < sectors < reports < settings
+
+
+def test_daily_review_exposes_quick_links_to_core_workflows():
+    daily_review = read("frontend/src/pages/DailyReview.tsx")
+    router = read("frontend/src/router.tsx")
+
+    assert 'path: "/", element: <Navigate to="/daily-review" replace />' in router
+    assert "const QUICK_LINKS = [" in daily_review
+    assert "快捷入口" in daily_review
+    assert 'to: "/watchlist"' in daily_review
+    assert 'to: "/portfolio"' in daily_review
+    assert 'to: "/stock-data"' in daily_review
+    assert 'to: "/notes"' in daily_review
+    assert "自选股" in daily_review
+    assert "我的持仓" in daily_review
+    assert "个股数据" in daily_review
+    assert "研究记录" in daily_review
