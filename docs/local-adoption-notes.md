@@ -25,6 +25,7 @@
 - Backend API metadata now reports `投研体系 API`.
 - `/api/health` now reports service `investment-research-api`.
 - Local data directories remain unchanged for compatibility.
+- Frontend app constants centralized in `frontend/src/lib/app-config.ts`; browser storage key values remain unchanged.
 
 ## Stage 2 Priority
 
