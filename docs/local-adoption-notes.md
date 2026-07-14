@@ -32,6 +32,7 @@
 - `每日复盘` now includes quick links to the core adjacent workflows.
 - Repository-local initialization helpers now exist at `scripts/init-backend.sh`, `scripts/init-frontend.sh`, and `scripts/init-all.sh`.
 - Repository-local startup helpers now exist at `scripts/dev-backend.sh` and `scripts/dev-frontend.sh`.
+- Repository-local service lifecycle helpers now exist for stopping or fully restarting the local backend/frontend stack.
 - Repository-local verification helpers now exist for acceptance, frontend build, backend offline tests, and full local verification.
 
 ## Stage 2 Priority
