@@ -26,6 +26,7 @@
 - `/api/health` now reports service `investment-research-api`.
 - Local data directories remain unchanged for compatibility.
 - Frontend app constants centralized in `frontend/src/lib/app-config.ts`; browser storage key values remain unchanged.
+- A data storage map is now documented in `docs/data-storage-map.md`.
 
 ## Stage 2 Priority
 
