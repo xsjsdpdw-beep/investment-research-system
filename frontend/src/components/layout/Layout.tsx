@@ -7,10 +7,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { APP_CONFIG, APP_STORAGE_KEYS } from "@/lib/app-config";
 
 const APP_VERSION = "v0.1.3";
-const REPO_URL = "https://github.com/simonlin1212/Vibe-Research";
-const SITE_URL = REPO_URL;
+const REPO_URL = APP_CONFIG.upstreamRepoUrl;
+const SITE_URL = APP_CONFIG.upstreamRepoUrl;
 
 const NAV = [
   { to: "/daily-review", icon: Activity, label: "每日复盘" },
@@ -37,10 +38,10 @@ const SECTOR_LINKS = [
 export function Layout() {
   const { pathname } = useLocation();
   const { dark, toggle } = useDarkMode();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("vr-sidebar") === "collapsed");
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(APP_STORAGE_KEYS.sidebar) === "collapsed");
 
   useEffect(() => {
-    localStorage.setItem("vr-sidebar", collapsed ? "collapsed" : "expanded");
+    localStorage.setItem(APP_STORAGE_KEYS.sidebar, collapsed ? "collapsed" : "expanded");
   }, [collapsed]);
 
   return (
@@ -60,7 +61,7 @@ export function Layout() {
               </span>
             )}
           </Link>
-          {!collapsed && <p className="mt-1 text-[11px] text-muted-foreground">个人 AI 投研系统 · A股/美股/港股</p>}
+          {!collapsed && <p className="mt-1 text-[11px] text-muted-foreground">{APP_CONFIG.productSubtitle}</p>}
         </div>
 
         {/* Nav */}
@@ -148,7 +149,7 @@ export function Layout() {
                 </div>
               </div>
               <a href={SITE_URL} target="_blank" rel="noreferrer" className="block text-[11px] text-primary/80 transition-colors hover:text-primary">
-                上游项目 · Vibe-Research
+                {APP_CONFIG.upstreamLabel}
               </a>
               <p className="text-[11px] leading-relaxed text-muted-foreground/60">
                 {APP_VERSION} · 不荐股 · 不预测 · 无倾向

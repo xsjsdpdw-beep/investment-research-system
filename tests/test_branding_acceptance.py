@@ -19,7 +19,7 @@ def test_frontend_runtime_branding_uses_local_product_name():
     assert "投研体系: Your Personal Trading Research Agent" in html
     assert "Vibe-<span" not in layout
     assert "投研体系" in layout
-    assert "上游项目 · Vibe-Research" in layout
+    assert "APP_CONFIG.upstreamLabel" in layout
     assert "投研体系 只客观呈现公开数据与榜单" in disclaimer
     assert "投研体系 是一个中立的信息整理与 AI 接入工具" in disclaimer
     assert "投研体系 后端会用它以你的订阅额度作答" in settings

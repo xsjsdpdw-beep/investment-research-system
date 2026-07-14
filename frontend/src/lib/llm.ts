@@ -1,6 +1,7 @@
 // 用户 LLM 配置（只存本地 localStorage，不上传、不进仓库）+ 系统 AI 对话调用。
 
 import { ApiError, authHeaders } from "./api";
+import { APP_CONFIG } from "./app-config";
 import { isCliProvider, type ProviderId } from "./ai-models";
 
 export interface LlmConfig {
@@ -70,7 +71,7 @@ export async function chatStream(messages: ChatMsg[], context: string, handlers:
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e; // 主动中止，原样抛给调用方
-    throw new ApiError("连接不到后端，请先启动 backend（uvicorn app:app --port 8900）", 0);
+    throw new ApiError(`连接不到后端，请先启动 backend（uvicorn app:app --port ${APP_CONFIG.backendPort}）`, 0);
   }
   // 配置错误（缺 key / 未装 CLI）在流开始前以 HTTP 400 返回
   if (!resp.ok) {

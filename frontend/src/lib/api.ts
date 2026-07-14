@@ -1,6 +1,8 @@
 // Vibe-Research 后端 API 客户端。/api → vite 代理到本地 FastAPI（默认 8900）。
 // 后端未启动或数据源异常时抛 ApiError，页面据此优雅降级。
 
+import { APP_CONFIG } from "./app-config";
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -63,7 +65,7 @@ async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET
   try {
     resp = await fetch(`/api${path}`, opts);
   } catch {
-    throw new ApiError("连接不到后端，请先启动 backend（uvicorn app:app --port 8900）", 0);
+    throw new ApiError(`连接不到后端，请先启动 backend（uvicorn app:app --port ${APP_CONFIG.backendPort}）`, 0);
   }
   let payload: any = null;
   try {
