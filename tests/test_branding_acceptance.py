@@ -185,3 +185,33 @@ def test_local_docs_point_to_verification_helpers():
     assert "scripts/check-backend.sh" in readme
     assert "scripts/check-all.sh" in readme
     assert "Repository-local verification helpers" in local_notes
+
+
+def test_local_initialization_helpers_exist_and_point_to_workspace_commands():
+    backend = read("scripts/init-backend.sh")
+    frontend = read("scripts/init-frontend.sh")
+    all_init = read("scripts/init-all.sh")
+
+    assert "#!/bin/sh" in backend
+    assert "codex-primary-runtime/dependencies/python/bin/python3" in backend
+    assert "requirements.txt" in backend
+    assert "requirements-dev.txt" in backend
+
+    assert "#!/bin/sh" in frontend
+    assert "codex-primary-runtime/dependencies/node/bin" in frontend
+    assert "install" in frontend
+    assert "approve-builds --all" in frontend
+
+    assert "#!/bin/sh" in all_init
+    assert "scripts/init-backend.sh" in all_init
+    assert "scripts/init-frontend.sh" in all_init
+
+
+def test_local_docs_point_to_initialization_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/init-backend.sh" in readme
+    assert "scripts/init-frontend.sh" in readme
+    assert "scripts/init-all.sh" in readme
+    assert "Repository-local initialization helpers" in local_notes
