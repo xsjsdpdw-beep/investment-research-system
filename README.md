@@ -163,6 +163,17 @@ cd backend && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -m live          # 联网核对数据源 shape（升级 / 发布前跑一遍）
 ```
 
+### 本地派生仓库校验入口
+
+这个本地派生仓库也把常用校验链收进了仓库脚本，便于在当前工作区直接复用：
+
+- `scripts/check-acceptance.sh`
+- `scripts/check-frontend-build.sh`
+- `scripts/check-backend.sh`
+- `scripts/check-all.sh`
+
+其中 `scripts/check-all.sh` 会顺序跑完接入验收、前端生产构建和后端离线回归。
+
 ## ⚖️ 合规
 
 - 只做客观数据整理与公开榜单呈现：**不荐股、不预测涨跌、不给买卖时机、不承诺收益、不做主观评分**；中立无倾向。
