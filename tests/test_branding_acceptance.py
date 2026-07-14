@@ -215,3 +215,40 @@ def test_local_docs_point_to_initialization_helpers():
     assert "scripts/init-frontend.sh" in readme
     assert "scripts/init-all.sh" in readme
     assert "Repository-local initialization helpers" in local_notes
+
+
+def test_local_service_lifecycle_helpers_exist_and_point_to_workspace_commands():
+    stop_backend = read("scripts/stop-backend.sh")
+    stop_frontend = read("scripts/stop-frontend.sh")
+    stop_all = read("scripts/stop-all.sh")
+    restart_all = read("scripts/restart-all.sh")
+
+    assert "#!/bin/sh" in stop_backend
+    assert "8900" in stop_backend
+    assert "lsof" in stop_backend
+
+    assert "#!/bin/sh" in stop_frontend
+    assert "5899" in stop_frontend
+    assert "lsof" in stop_frontend
+
+    assert "#!/bin/sh" in stop_all
+    assert "scripts/stop-backend.sh" in stop_all
+    assert "scripts/stop-frontend.sh" in stop_all
+
+    assert "#!/bin/sh" in restart_all
+    assert "scripts/stop-all.sh" in restart_all
+    assert "scripts/dev-backend.sh" in restart_all
+    assert "scripts/dev-frontend.sh" in restart_all
+    assert "api/health" in restart_all
+    assert "5899" in restart_all
+
+
+def test_local_docs_point_to_service_lifecycle_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/stop-backend.sh" in readme
+    assert "scripts/stop-frontend.sh" in readme
+    assert "scripts/stop-all.sh" in readme
+    assert "scripts/restart-all.sh" in readme
+    assert "Repository-local service lifecycle helpers" in local_notes
