@@ -27,6 +27,7 @@
 - Local data directories remain unchanged for compatibility.
 - Frontend app constants centralized in `frontend/src/lib/app-config.ts`; browser storage key values remain unchanged.
 - A data storage map is now documented in `docs/data-storage-map.md`.
+- AI provider/model initialization logic is centralized in `frontend/src/lib/ai-config.ts`; saved `vr-llm` shape remains unchanged.
 
 ## Stage 2 Priority
 
