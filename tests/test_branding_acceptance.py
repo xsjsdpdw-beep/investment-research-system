@@ -1,0 +1,35 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_frontend_runtime_branding_uses_local_product_name():
+    html = read("frontend/index.html")
+    layout = read("frontend/src/components/layout/Layout.tsx")
+    disclaimer = read("frontend/src/components/ui/Disclaimer.tsx")
+    settings = read("frontend/src/pages/Settings.tsx")
+    stock_data = read("frontend/src/pages/StockData.tsx")
+
+    assert "<title>投研体系 · 个人 AI 投研系统（A股/美股/港股）</title>" in html
+    assert "投研体系: Your Personal Trading Research Agent" in html
+    assert "Vibe-<span" not in layout
+    assert "投研体系" in layout
+    assert "上游项目 · Vibe-Research" in layout
+    assert "投研体系 只客观呈现公开数据与榜单" in disclaimer
+    assert "投研体系 是一个中立的信息整理与 AI 接入工具" in disclaimer
+    assert "投研体系 后端会用它以你的订阅额度作答" in settings
+    assert "投研体系 不预置任何标的、不做推荐" in stock_data
+
+
+def test_backend_runtime_identity_uses_local_product_name():
+    app_py = read("backend/app.py")
+    chat_py = read("backend/chat.py")
+
+    assert 'FastAPI(title="投研体系 API", version="0.1.3")' in app_py
+    assert '"service": "investment-research-api"' in app_py
+    assert "你是 投研体系 里的投研助理" in chat_py
