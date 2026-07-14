@@ -28,12 +28,12 @@
 - Frontend app constants centralized in `frontend/src/lib/app-config.ts`; browser storage key values remain unchanged.
 - A data storage map is now documented in `docs/data-storage-map.md`.
 - AI provider/model initialization logic is centralized in `frontend/src/lib/ai-config.ts`; saved `vr-llm` shape remains unchanged.
+- Sidebar navigation now prioritizes 每日复盘、自选股、我的持仓、个股数据、研究记录、资讯雷达.
+- `每日复盘` now includes quick links to the core adjacent workflows.
 
 ## Stage 2 Priority
 
-- Centralize AI provider and model settings.
-- Review local data storage paths.
-- Move high-frequency entry points closer to 自选 / 持仓 / 个股研究 / 复盘 / 研究沉淀.
+- Current Stage 2 priorities are complete. Keep subsequent local refinements incremental and compatibility-preserving.
 
 ## Keep Unchanged For Now
 
