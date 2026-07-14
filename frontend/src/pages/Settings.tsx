@@ -5,32 +5,29 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { toast } from "sonner";
 import { loadLlm, saveLlm, clearLlm } from "@/lib/llm";
 import { loadAccessKey, saveAccessKey } from "@/lib/api";
-import { subscriptionModels, apiModels, PROVIDER_BASE, isCliProvider, aiModels, type ProviderId } from "@/lib/ai-models";
+import { subscriptionModels, apiModels, isCliProvider } from "@/lib/ai-models";
+import { getDefaultBaseUrl, getInitialAiSettings, getProviderByModelId } from "@/lib/ai-config";
 
 export function Settings() {
   const existing = loadLlm();
   const existingIsCli = existing ? isCliProvider(existing.provider) : false;
+  const initial = getInitialAiSettings(existing, existingIsCli);
 
-  const [mode, setMode] = useState<"api" | "subscription">(existing && existingIsCli ? "subscription" : "api");
-  // 订阅：选中的 CLI model id
-  const [cliId, setCliId] = useState(existing && existingIsCli ? existing.model : "");
-  // API：选中的模型 id + 可编辑的 baseURL / model / key
-  const firstApi = apiModels[0];
-  const [apiId, setApiId] = useState(existing && !existingIsCli ? existing.model : firstApi.id);
-  const [baseURL, setBaseURL] = useState(existing && !existingIsCli ? existing.baseURL : (PROVIDER_BASE[firstApi.provider] || ""));
-  const [modelName, setModelName] = useState(existing && !existingIsCli ? existing.model : firstApi.id);
-  const [apiKey, setApiKey] = useState(existing && !existingIsCli ? existing.apiKey : "");
+  const [mode, setMode] = useState<"api" | "subscription">(initial.mode);
+  const [cliId, setCliId] = useState(initial.cliId);
+  const [apiId, setApiId] = useState(initial.apiId);
+  const [baseURL, setBaseURL] = useState(initial.baseURL);
+  const [modelName, setModelName] = useState(initial.modelName);
+  const [apiKey, setApiKey] = useState(initial.apiKey);
   // 后端访问密钥（对应部署时的 VR_API_KEY）；本机自用不设鉴权时留空
   const [accessKey, setAccessKey] = useState(loadAccessKey());
-
-  const providerOf = (id: string): ProviderId => aiModels.find((m) => m.id === id)?.provider ?? "openai-compatible";
 
   const pickApiModel = (id: string) => {
     const m = apiModels.find((x) => x.id === id);
     if (!m) return;
     setApiId(id);
     setModelName(id);
-    setBaseURL(PROVIDER_BASE[m.provider] || "");
+    setBaseURL(getDefaultBaseUrl(m.provider));
   };
 
   const saveApi = () => {
@@ -38,7 +35,7 @@ export function Settings() {
       toast.error("请填完 Base URL、API Key、Model");
       return;
     }
-    saveLlm({ provider: providerOf(apiId), baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: modelName.trim() });
+    saveLlm({ provider: getProviderByModelId(apiId), baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: modelName.trim() });
     toast.success("已保存到本地，全站「问 AI / 复盘」现在可用");
   };
 
