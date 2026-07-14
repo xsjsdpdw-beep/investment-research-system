@@ -56,3 +56,23 @@ def test_frontend_config_constants_are_centralized():
     assert "APP_STORAGE_KEYS.theme" in dark_mode
     assert "APP_CONFIG.backendPort" in api
     assert "APP_CONFIG.backendPort" in llm
+
+
+def test_data_storage_map_documents_current_storage_layout():
+    storage_map = read("docs/data-storage-map.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "# Data Storage Map" in storage_map
+    assert "~/.vibe-research/portfolio.json" in storage_map
+    assert "~/.vibe-research/myreports/" in storage_map
+    assert "VR_DATA_DIR" in storage_map
+    assert "VR_REPORTS_DIR" in storage_map
+    assert "vr-watchlist" in storage_map
+    assert "vr-notes" in storage_map
+    assert "vr-llm" in storage_map
+    assert "vr-access-key" in storage_map
+    assert "vr-theme" in storage_map
+    assert "vr-sidebar" in storage_map
+    assert "backend-managed files" in storage_map
+    assert "browser-managed local data" in storage_map
+    assert "A data storage map is now documented" in local_notes
