@@ -30,6 +30,7 @@
 - AI provider/model initialization logic is centralized in `frontend/src/lib/ai-config.ts`; saved `vr-llm` shape remains unchanged.
 - Sidebar navigation now prioritizes 每日复盘、自选股、我的持仓、个股数据、研究记录、资讯雷达.
 - `每日复盘` now includes quick links to the core adjacent workflows.
+- Repository-local initialization helpers now exist at `scripts/init-backend.sh`, `scripts/init-frontend.sh`, and `scripts/init-all.sh`.
 - Repository-local startup helpers now exist at `scripts/dev-backend.sh` and `scripts/dev-frontend.sh`.
 - Repository-local verification helpers now exist for acceptance, frontend build, backend offline tests, and full local verification.
 
