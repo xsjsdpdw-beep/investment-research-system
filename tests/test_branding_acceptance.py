@@ -151,3 +151,37 @@ def test_local_docs_point_to_startup_helpers():
     assert "scripts/dev-backend.sh" in readme
     assert "scripts/dev-frontend.sh" in readme
     assert "Repository-local startup helpers" in local_notes
+
+
+def test_local_verification_helpers_exist_and_point_to_workspace_commands():
+    acceptance = read("scripts/check-acceptance.sh")
+    frontend = read("scripts/check-frontend-build.sh")
+    backend = read("scripts/check-backend.sh")
+    all_checks = read("scripts/check-all.sh")
+
+    assert "#!/bin/sh" in acceptance
+    assert "pytest tests/test_branding_acceptance.py -q" in acceptance
+
+    assert "#!/bin/sh" in frontend
+    assert "codex-primary-runtime/dependencies/node/bin" in frontend
+    assert "run build" in frontend
+
+    assert "#!/bin/sh" in backend
+    assert '.venv/bin/pytest' in backend
+    assert '-m "not live"' in backend
+
+    assert "#!/bin/sh" in all_checks
+    assert "scripts/check-acceptance.sh" in all_checks
+    assert "scripts/check-frontend-build.sh" in all_checks
+    assert "scripts/check-backend.sh" in all_checks
+
+
+def test_local_docs_point_to_verification_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/check-acceptance.sh" in readme
+    assert "scripts/check-frontend-build.sh" in readme
+    assert "scripts/check-backend.sh" in readme
+    assert "scripts/check-all.sh" in readme
+    assert "Repository-local verification helpers" in local_notes
