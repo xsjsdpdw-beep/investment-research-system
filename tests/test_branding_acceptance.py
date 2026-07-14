@@ -76,3 +76,22 @@ def test_data_storage_map_documents_current_storage_layout():
     assert "backend-managed files" in storage_map
     assert "browser-managed local data" in storage_map
     assert "A data storage map is now documented" in local_notes
+
+
+def test_ai_settings_logic_is_centralized():
+    helper = read("frontend/src/lib/ai-config.ts")
+    settings = read("frontend/src/pages/Settings.tsx")
+    llm = read("frontend/src/lib/llm.ts")
+
+    assert "getDefaultApiModel" in helper
+    assert "getProviderByModelId" in helper
+    assert "getInitialAiSettings" in helper
+    assert "firstApi =" not in settings
+    assert "const providerOf" not in settings
+    assert "getInitialAiSettings" in settings
+    assert "getProviderByModelId" in settings
+    assert "LlmConfig" in llm
+    assert "provider:" in llm
+    assert "baseURL:" in llm
+    assert "apiKey:" in llm
+    assert "model:" in llm
