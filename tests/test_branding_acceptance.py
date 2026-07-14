@@ -33,3 +33,26 @@ def test_backend_runtime_identity_uses_local_product_name():
     assert 'FastAPI(title="投研体系 API", version="0.1.3")' in app_py
     assert '"service": "investment-research-api"' in app_py
     assert "你是 投研体系 里的投研助理" in chat_py
+
+
+def test_frontend_config_constants_are_centralized():
+    config = read("frontend/src/lib/app-config.ts")
+    layout = read("frontend/src/components/layout/Layout.tsx")
+    dark_mode = read("frontend/src/hooks/useDarkMode.ts")
+    api = read("frontend/src/lib/api.ts")
+    llm = read("frontend/src/lib/llm.ts")
+
+    assert 'productName: "投研体系"' in config
+    assert 'productTitle: "投研体系 · 个人 AI 投研系统（A股/美股/港股）"' in config
+    assert 'productSubtitle: "个人 AI 投研系统 · A股/美股/港股"' in config
+    assert 'upstreamRepoUrl: "https://github.com/simonlin1212/Vibe-Research"' in config
+    assert 'upstreamLabel: "上游项目 · Vibe-Research"' in config
+    assert "backendPort: 8900" in config
+    assert 'sidebar: "vr-sidebar"' in config
+    assert 'theme: "vr-theme"' in config
+
+    assert "APP_CONFIG" in layout
+    assert "APP_STORAGE_KEYS.sidebar" in layout
+    assert "APP_STORAGE_KEYS.theme" in dark_mode
+    assert "APP_CONFIG.backendPort" in api
+    assert "APP_CONFIG.backendPort" in llm
