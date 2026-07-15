@@ -344,3 +344,33 @@ def test_local_docs_point_to_doctor_helpers():
     assert "scripts/doctor-frontend.sh" in readme
     assert "scripts/doctor-all.sh" in readme
     assert "Repository-local doctor helpers" in local_notes
+
+
+def test_local_cleanup_helpers_exist_and_point_to_workspace_commands():
+    clean_backend = read("scripts/clean-backend.sh")
+    clean_frontend = read("scripts/clean-frontend.sh")
+    clean_all = read("scripts/clean-all.sh")
+
+    assert "#!/bin/sh" in clean_backend
+    assert "stop-backend.sh" in clean_backend
+    assert "/tmp/vibe-research-backend.log" in clean_backend
+    assert "rm -f" in clean_backend
+
+    assert "#!/bin/sh" in clean_frontend
+    assert "stop-frontend.sh" in clean_frontend
+    assert "/tmp/vibe-research-frontend.log" in clean_frontend
+    assert "rm -f" in clean_frontend
+
+    assert "#!/bin/sh" in clean_all
+    assert "scripts/clean-backend.sh" in clean_all
+    assert "scripts/clean-frontend.sh" in clean_all
+
+
+def test_local_docs_point_to_cleanup_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/clean-backend.sh" in readme
+    assert "scripts/clean-frontend.sh" in readme
+    assert "scripts/clean-all.sh" in readme
+    assert "Repository-local cleanup helpers" in local_notes
