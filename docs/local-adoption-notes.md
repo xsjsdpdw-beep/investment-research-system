@@ -36,6 +36,7 @@
 - Repository-local service status helpers now exist for checking backend/frontend runtime state.
 - Repository-local log helpers now exist for reading backend/frontend runtime logs.
 - Repository-local doctor helpers now exist for summarizing backend/frontend environment readiness.
+- TradingAgents local helpers now exist at `scripts/init-tradingagents.sh` and `scripts/doctor-tradingagents.sh`.
 - Repository-local cleanup helpers now exist for stopping services and clearing temporary runtime logs.
 - Repository-local verification helpers now exist for acceptance, frontend build, backend offline tests, and full local verification.
 

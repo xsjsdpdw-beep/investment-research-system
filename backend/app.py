@@ -20,11 +20,18 @@ from pydantic import BaseModel
 import astock
 import chat as chat_layer
 import cli_runtime
+import data_adapters
+import database_modules
 import gstock
+import knowledge
+import learning_factory
+import macro_registry
 import newsradar
 import portfolio as pf
 import market
 import myreports as mr
+import research_hub
+import tradingagents_runtime
 
 app = FastAPI(title="投研体系 API", version="0.1.3")
 
@@ -86,6 +93,375 @@ class ChatReq(BaseModel):
     llm: LLMConfig
 
 
+class TradingAgentsConfigIn(BaseModel):
+    provider: str
+    baseURL: str
+    apiKey: str
+    deepModel: str
+    quickModel: str
+
+
+class TradingAgentsRunReq(BaseModel):
+    code: str
+    name: str = ""
+    context: str = ""
+    config: TradingAgentsConfigIn
+
+
+class KnowledgeEntryIn(BaseModel):
+    title: str
+    type: str
+    content: str = ""
+    date: str = ""
+    tags: list[str] = []
+    related_sectors: list[str] = []
+    related_stocks: list[str] = []
+
+
+class KnowledgeEntryUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    date: str | None = None
+    tags: list[str] | None = None
+    related_sectors: list[str] | None = None
+    related_stocks: list[str] | None = None
+    summary_text: str | None = None
+
+
+class CalendarEventIn(BaseModel):
+    title: str
+    date: str
+    category: str = "manual"
+    importance: str = "medium"
+    source: str = "manual"
+    notes: str = ""
+
+
+class WatchlistIn(BaseModel):
+    stocks: list[dict] = []
+    indicators: list[dict] = []
+
+
+class MacroRegistryIn(BaseModel):
+    title: str = "中国宏观数据库指标注册表"
+    groups: list[dict] = []
+
+
+class MarketReportIngestIn(BaseModel):
+    tickers: list[str] | None = None
+    pages: int = 1
+    max_reports_per_stock: int = 5
+
+
+class PremiumNoteIn(BaseModel):
+    title: str
+    content: str
+    sector: str = ""
+    ticker: str = ""
+    source_name: str = "premium_notes_placeholder"
+    source_type: str = "expert_transcript"
+    note_kind: str = "research_note"
+    date: str = ""
+    tags: list[str] = []
+    summary_text: str = ""
+
+
+class LearningPackGenerateIn(BaseModel):
+    source_entry_id: str
+    title: str | None = None
+
+
+class DatabaseModuleIn(BaseModel):
+    key: str = ""
+    label: str
+    description: str = ""
+    filters: list[dict] = []
+    containers: list[dict] = []
+
+
+class SectorNodeIn(BaseModel):
+    id: str = ""
+    name: str
+    parent_id: str = ""
+    description: str = ""
+    sort_order: int = 0
+
+
+class SectorIndicatorIn(BaseModel):
+    id: str = ""
+    sector: str
+    name: str
+    freq: str = "月度"
+    chart_kind: str = "line"
+    viewpoint: str = ""
+    data_source: str = ""
+    sort_order: int = 0
+
+
+class SectorModuleIn(BaseModel):
+    id: str = ""
+    sector: str
+    title: str
+    category: str = "自定义"
+    content: str = ""
+    data_source: str = ""
+    sort_order: int = 0
+
+
+class StockModuleIn(BaseModel):
+    id: str = ""
+    ticker: str
+    title: str
+    category: str = "自定义"
+    content: str = ""
+    data_source: str = ""
+    sort_order: int = 0
+
+
+class IntelArtifactIn(BaseModel):
+    kind: str
+
+
+@app.get("/api/knowledge/entries")
+def knowledge_entries(kind: str | None = Query(None), sector: str | None = Query(None), stock: str | None = Query(None)):
+    return {"data": knowledge.list_entries(kind=kind, sector=sector, stock=stock)}
+
+
+@app.get("/api/knowledge/entries/{entry_id}")
+def knowledge_entry(entry_id: str):
+    hit = knowledge.get_entry(entry_id)
+    if not hit:
+        raise HTTPException(404, "条目不存在")
+    return {"data": hit}
+
+
+@app.post("/api/knowledge/entries")
+def knowledge_create(payload: KnowledgeEntryIn):
+    try:
+        return {"data": knowledge.create_entry(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/knowledge/entries/{entry_id}")
+def knowledge_update(entry_id: str, payload: KnowledgeEntryUpdate):
+    try:
+        return {"data": knowledge.update_entry(entry_id, payload.model_dump(exclude_none=True))}
+    except KeyError:
+        raise HTTPException(404, "条目不存在") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/knowledge/entries/{entry_id}")
+def knowledge_delete(entry_id: str):
+    return {"data": {"ok": knowledge.delete_entry(entry_id)}}
+
+
+@app.get("/api/knowledge/search")
+def knowledge_search(q: str = Query("")):
+    return {"data": knowledge.search_entries(q)}
+
+
+@app.post("/api/knowledge/entries/{entry_id}/summary")
+def knowledge_summary(entry_id: str):
+    try:
+        return {"data": knowledge.generate_entry_summary(entry_id)}
+    except KeyError:
+        raise HTTPException(404, "条目不存在") from None
+
+
+@app.post("/api/knowledge/entries/{entry_id}/image-artifact")
+def knowledge_image_artifact(entry_id: str):
+    try:
+        return {"data": knowledge.generate_entry_image_artifact(entry_id)}
+    except KeyError:
+        raise HTTPException(404, "条目不存在") from None
+
+
+@app.get("/api/calendar/events")
+def calendar_events(view: str = Query("upcoming"), importance: str | None = Query(None)):
+    return {"data": knowledge.list_calendar_events(view=view, importance=importance)}
+
+
+@app.post("/api/calendar/events")
+def calendar_upsert(payload: CalendarEventIn):
+    try:
+        return {"data": knowledge.upsert_calendar_event(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/watchlist")
+def watchlist_get():
+    return {"data": knowledge.load_watchlist()}
+
+
+@app.put("/api/watchlist")
+def watchlist_put(payload: WatchlistIn):
+    return {"data": knowledge.save_watchlist(payload.model_dump())}
+
+
+@app.get("/api/framework/sector-tree")
+def framework_sector_tree():
+    return {"data": knowledge.load_sector_tree()}
+
+
+@app.post("/api/framework/sector-tree/nodes")
+def framework_sector_tree_node_upsert(payload: SectorNodeIn):
+    try:
+        return {"data": knowledge.upsert_sector_node(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/framework/sector-indicators")
+def framework_sector_indicators(sector: str | None = Query(None)):
+    return {"data": knowledge.list_sector_indicators(sector=sector)}
+
+
+@app.post("/api/framework/sector-indicators")
+def framework_sector_indicator_upsert(payload: SectorIndicatorIn):
+    try:
+        return {"data": knowledge.upsert_sector_indicator(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/framework/sector-modules")
+def framework_sector_modules(sector: str | None = Query(None)):
+    return {"data": knowledge.list_sector_modules(sector=sector)}
+
+
+@app.post("/api/framework/sector-modules")
+def framework_sector_module_upsert(payload: SectorModuleIn):
+    try:
+        return {"data": knowledge.upsert_sector_module(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/framework/stock-modules")
+def framework_stock_modules(ticker: str | None = Query(None)):
+    return {"data": knowledge.list_stock_modules(ticker=ticker)}
+
+
+@app.post("/api/framework/stock-modules")
+def framework_stock_module_upsert(payload: StockModuleIn):
+    try:
+        return {"data": knowledge.upsert_stock_module(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/hub")
+def research_hub_data():
+    return {"data": research_hub.get_research_hub()}
+
+
+@app.get("/api/research/stock-center")
+def research_stock_center(ticker: str = Query(..., min_length=6, max_length=16)):
+    return {"data": research_hub.get_stock_center(ticker)}
+
+
+@app.post("/api/research/market-reports/ingest")
+def research_market_reports_ingest(payload: MarketReportIngestIn):
+    pages = min(max(payload.pages, 1), 5)
+    max_reports = min(max(payload.max_reports_per_stock, 1), 50)
+    return {"data": research_hub.ingest_market_reports(payload.tickers, pages=pages, max_reports_per_stock=max_reports)}
+
+
+@app.post("/api/research/premium-notes")
+def research_premium_notes_ingest(payload: PremiumNoteIn):
+    try:
+        return {"data": research_hub.ingest_premium_note(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/intel-digest")
+def research_intel_digest(payload: IntelArtifactIn):
+    try:
+        return {"data": research_hub.generate_intel_digest(payload.kind)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/intel-image-artifact")
+def research_intel_image_artifact(payload: IntelArtifactIn):
+    try:
+        return {"data": research_hub.generate_intel_image_artifact(payload.kind)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/learning/packs/generate")
+def learning_pack_generate(payload: LearningPackGenerateIn):
+    try:
+        return {"data": learning_factory.generate_learning_pack(payload.source_entry_id, payload.title)}
+    except KeyError:
+        raise HTTPException(404, "源资料不存在") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/learning/packs/{entry_id}/interactive-html")
+def learning_pack_interactive_html_generate(entry_id: str):
+    try:
+        return {"data": learning_factory.generate_interactive_html(entry_id)}
+    except KeyError:
+        raise HTTPException(404, "学习包不存在") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/learning/packs/{entry_id}/interactive-html")
+def learning_pack_interactive_html(entry_id: str):
+    try:
+        path = learning_factory.interactive_html_path(entry_id)
+        return FileResponse(path, media_type="text/html; charset=utf-8", filename=path.name)
+    except KeyError:
+        raise HTTPException(404, "学习包不存在") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/database/providers")
+def database_provider_status():
+    return {"data": data_adapters.provider_status()}
+
+
+@app.get("/api/database/modules")
+def database_modules_registry():
+    return {"data": database_modules.database_modules()}
+
+
+@app.post("/api/database/modules/custom")
+def database_custom_module_upsert(payload: DatabaseModuleIn):
+    try:
+        return {"data": database_modules.upsert_custom_module(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/database/china-macro-overview")
+def database_china_macro_overview():
+    return {"data": research_hub.get_china_macro_overview()}
+
+
+@app.get("/api/database/china-macro-registry")
+def database_china_macro_registry():
+    return {"data": macro_registry.china_macro_registry()}
+
+
+@app.put("/api/database/china-macro-registry")
+def database_china_macro_registry_save(payload: MacroRegistryIn):
+    try:
+        return {"data": macro_registry.save_china_macro_registry(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @app.post("/api/chat")
 def chat(req: ChatReq):
     """系统 AI 对话，**流式** NDJSON（每行一个事件 {type: tool|delta|done|error}）。
@@ -118,6 +494,40 @@ def chat(req: ChatReq):
             yield json.dumps({"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.post("/api/tradingagents/run")
+def tradingagents_run(req: TradingAgentsRunReq):
+    try:
+        task_id = tradingagents_runtime.start_task(
+            req.code,
+            req.name,
+            req.context,
+            req.config.model_dump(),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"taskId": task_id}
+
+
+@app.get("/api/tradingagents/stream/{task_id}")
+def tradingagents_stream(task_id: str):
+    def gen():
+        try:
+            for ev in tradingagents_runtime.stream_events(task_id):
+                yield json.dumps(ev, ensure_ascii=False) + "\n"
+        except KeyError:
+            yield json.dumps({"type": "error", "taskId": task_id, "message": "任务不存在"}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.post("/api/tradingagents/cancel/{task_id}")
+def tradingagents_cancel(task_id: str):
+    try:
+        return tradingagents_runtime.cancel_task(task_id)
+    except KeyError:
+        raise HTTPException(404, "任务不存在") from None
 
 
 class HoldingIn(BaseModel):

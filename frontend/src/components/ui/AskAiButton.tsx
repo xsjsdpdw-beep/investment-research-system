@@ -1,16 +1,26 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle } from "lucide-react";
+import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle, Bot, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { hasLlm, chatStream, type ChatMsg } from "@/lib/llm";
+import { chatStream, hasLlm, type ChatMsg } from "@/lib/llm";
 import { ApiError } from "@/lib/api";
+import {
+  cancelTradingAgentsRun,
+  hasTradingAgentsConfig,
+  startTradingAgentsRun,
+  streamTradingAgentsRun,
+  type TradingAgentsEvent,
+  type TradingAgentsResult,
+} from "@/lib/tradingagents";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 
 interface Props {
-  // 本分栏/本页要喂给用户 AI 的上下文，作为对话的系统上下文。
   context: string;
   suggestions?: string[];
   label?: string;
+  mode?: "chat" | "tradingagents";
+  stockCode?: string;
+  stockName?: string;
 }
 
 const TOOL_LABEL: Record<string, string> = {
@@ -20,44 +30,57 @@ const TOOL_LABEL: Record<string, string> = {
   query_news: "查新闻",
 };
 
-// 数据溯源：把工具调用的关键参数压成一小段（查了哪只/哪些代码）。
 const argStr = (a: Record<string, unknown>): string => {
   if (Array.isArray(a.codes)) return (a.codes as unknown[]).join(",");
   if (typeof a.code === "string") return a.code;
   return "";
 };
 
-interface ToolUse { name: string; arg: string }
+interface ToolUse {
+  name: string;
+  arg: string;
+}
 
-// 「问 AI」入口 —— 把当前分栏内容作为上下文，调用户自己配置的模型；
-// AI 可自行调 A股数据工具作答。结论由用户模型给出，本产品不校准、不负责。
-export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Props) {
+export function AskAiButton({
+  context,
+  suggestions = [],
+  label = "问 AI",
+  mode = "chat",
+  stockCode,
+  stockName,
+}: Props) {
+  const isTradingAgents = mode === "tradingagents";
   const [open, setOpen] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [msgs, setMsgs] = useState<(ChatMsg & { tools?: ToolUse[] })[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [taEvents, setTaEvents] = useState<TradingAgentsEvent[]>([]);
+  const [taResult, setTaResult] = useState<TradingAgentsResult | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 在跑的流式请求：关面板/换问题时中止，省用户的订阅/API 额度，也防迟到 chunk 写进新气泡
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (open) setConfigured(hasLlm());
-  }, [open]);
+    if (!open) return;
+    setConfigured(isTradingAgents ? hasTradingAgentsConfig() : hasLlm());
+  }, [isTradingAgents, open]);
 
-  useEffect(() => () => abortRef.current?.abort(), []); // 组件卸载兜底
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const close = () => {
     abortRef.current?.abort();
     abortRef.current = null;
+    if (isTradingAgents && taskId) void cancelTradingAgentsRun(taskId).catch(() => {});
+    setTaskId(null);
     setLoading(false);
     setOpen(false);
   };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [msgs, loading]);
+  }, [msgs, taEvents, taResult, loading]);
 
   const send = async (text: string) => {
     const q = text.trim();
@@ -65,16 +88,13 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
     setInput("");
     setErr(null);
     const history: ChatMsg[] = [...msgs.map(({ role, content }) => ({ role, content })), { role: "user", content: q }];
-    // 先放用户气泡 + 一个空的 assistant 气泡，流式往里填。
     setMsgs((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "", tools: [] }]);
     setLoading(true);
-    // 更新「最后一条 assistant 气泡」（不可变）。
     const patchLast = (fn: (msg: ChatMsg & { tools?: ToolUse[] }) => ChatMsg & { tools?: ToolUse[] }) =>
       setMsgs((m) => m.map((msg, i) => (i === m.length - 1 && msg.role === "assistant" ? fn(msg) : msg)));
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    // 只有仍是「当前这次请求」才允许写 UI——旧请求的迟到 chunk 直接丢弃
     const alive = () => abortRef.current === ac && !ac.signal.aborted;
     try {
       await chatStream(history, context, {
@@ -82,7 +102,6 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
         onDelta: (t) => { if (alive()) patchLast((msg) => ({ ...msg, content: msg.content + t })); },
       }, ac.signal);
     } catch (e) {
-      // 出错/中止：去掉尾部空 assistant 气泡；主动中止不算错误，不提示
       setMsgs((m) => m.filter((msg, i) => !(i === m.length - 1 && msg.role === "assistant" && !msg.content)));
       if (!ac.signal.aborted) setErr(e instanceof ApiError ? e.message : "对话失败");
     } finally {
@@ -91,6 +110,56 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
         setLoading(false);
       }
     }
+  };
+
+  const runTradingAgents = async () => {
+    if (!stockCode || loading) return;
+    setErr(null);
+    setTaEvents([]);
+    setTaResult(null);
+    setLoading(true);
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    try {
+      const started = await startTradingAgentsRun({
+        code: stockCode,
+        name: stockName || "",
+        context,
+      });
+      if (abortRef.current !== ac) return;
+      setTaskId(started.taskId);
+      await streamTradingAgentsRun(started.taskId, {
+        onEvent: (event) => {
+          if (abortRef.current !== ac || ac.signal.aborted) return;
+          setTaEvents((events) => [...events, event]);
+          if (event.type === "result" && event.result) setTaResult(event.result);
+          if (event.type === "error") setErr(event.message || "TradingAgents 运行失败");
+        },
+      }, ac.signal);
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        setErr(e instanceof ApiError ? e.message : "TradingAgents 运行失败");
+      }
+    } finally {
+      if (abortRef.current === ac) {
+        abortRef.current = null;
+        setLoading(false);
+      }
+    }
+  };
+
+  const stopTradingAgents = async () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (taskId) {
+      try {
+        await cancelTradingAgentsRun(taskId);
+      } catch {
+        /* ignore cancel UI failures */
+      }
+    }
+    setLoading(false);
   };
 
   return (
@@ -109,7 +178,8 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
           <aside className="glass relative m-3 flex w-full max-w-md flex-col rounded-2xl">
             <div className="flex items-center justify-between border-b border-border/60 p-4">
               <span className="flex items-center gap-2 font-semibold text-glow">
-                <Sparkles className="h-4 w-4 text-primary" /> 问 AI · 本页上下文
+                <Sparkles className="h-4 w-4 text-primary" />
+                {isTradingAgents ? "TradingAgents 深度分析" : "问 AI · 本页上下文"}
               </span>
               <button onClick={close} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -117,24 +187,141 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
             </div>
 
             {!configured ? (
-              // 未接入 AI：引导去设置
               <div className="flex-1 space-y-4 overflow-auto p-4 text-sm">
                 <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
-                  分析结论由你自己配置的 AI 给出，本产品只负责把本页数据打包成上下文、并让 AI 能调数据工具，
-                  <b className="text-foreground">不校准、不背书、不对结果负责</b>。
+                  {isTradingAgents ? (
+                    <>
+                      TradingAgents 会调用一条独立的多 Agent 深度分析链路，只支持 A 股 6 位代码，且必须使用
+                      <b className="text-foreground"> API 模式配置</b>。
+                    </>
+                  ) : (
+                    <>
+                      分析结论由你自己配置的 AI 给出，本产品只负责把本页数据打包成上下文、并让 AI 能调数据工具，
+                      <b className="text-foreground">不校准、不背书、不对结果负责</b>。
+                    </>
+                  )}
                 </div>
                 <div>
-                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">将随提问发给 AI 的本页上下文：</p>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    {isTradingAgents ? "将随深度分析带上的本页上下文：" : "将随提问发给 AI 的本页上下文："}
+                  </p>
                   <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
 {context}
                   </pre>
                 </div>
                 <Link to="/settings" className="flex items-center justify-center gap-2 rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25">
-                  <Settings className="h-4 w-4" /> 先接入你的 AI（订阅 / API）
+                  <Settings className="h-4 w-4" />
+                  {isTradingAgents ? "先配置 TradingAgents 深度分析" : "先接入你的 AI（订阅 / API）"}
                 </Link>
               </div>
+            ) : isTradingAgents ? (
+              <>
+                <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto p-4 text-sm">
+                  {taEvents.length === 0 && !taResult && (
+                    <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
+                      TradingAgents 会按多分析师拆解、辩论、汇总再输出结论。它比普通问 AI 更慢，也会消耗更多模型调用。
+                      <b className="text-foreground"> 结果仅供研究，不构成投资建议。</b>
+                    </div>
+                  )}
+
+                  {taEvents.map((event, idx) => (
+                    <div key={`${event.type}-${event.stage || "none"}-${idx}`} className="rounded-lg bg-muted/30 p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <Bot className="h-4 w-4 text-primary" />
+                        {event.stage || "TradingAgents"}
+                        <span className="text-xs text-muted-foreground">
+                          {event.type === "stage_started" ? "进行中" :
+                           event.type === "stage_completed" ? "已完成" :
+                           event.type === "cancelled" ? "已取消" :
+                           event.type === "error" ? "失败" :
+                           event.type === "result" ? "已产出结果" : "更新"}
+                        </span>
+                      </div>
+                      {event.message && <p className="mt-1.5 whitespace-pre-wrap text-xs text-muted-foreground">{event.message}</p>}
+                    </div>
+                  ))}
+
+                  {taResult && (
+                    <div className="space-y-3 rounded-xl bg-muted/40 p-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">结论摘要</p>
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">{taResult.summary || "无"}</p>
+                      </div>
+                      {taResult.analyst_sections.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">七个分析师要点</p>
+                          <div className="mt-2 space-y-2">
+                            {taResult.analyst_sections.map((section) => (
+                              <div key={section.title} className="rounded-lg bg-black/20 p-2.5">
+                                <p className="text-xs font-medium text-foreground">{section.title}</p>
+                                <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{section.content}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(taResult.debate_summary || taResult.risk_summary) && (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg bg-black/20 p-2.5">
+                            <p className="text-xs font-medium text-foreground">多空辩论结论</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{taResult.debate_summary || "无"}</p>
+                          </div>
+                          <div className="rounded-lg bg-black/20 p-2.5">
+                            <p className="text-xs font-medium text-foreground">交易与风险结论</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{taResult.risk_summary || "无"}</p>
+                          </div>
+                        </div>
+                      )}
+                      {taResult.full_report && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">完整原始报告</p>
+                          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
+{taResult.full_report}
+                          </pre>
+                        </div>
+                      )}
+                      <SaveNoteButton
+                        kind="问AI"
+                        title={`TradingAgents · ${stockName || stockCode || "深度分析"}`}
+                        content={taResult.full_report || taResult.summary || ""}
+                      />
+                    </div>
+                  )}
+
+                  {loading && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> TradingAgents 正在运行多 Agent 深度分析…
+                    </div>
+                  )}
+                  {err && (
+                    <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {err}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border/60 p-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => void runTradingAgents()}
+                      disabled={loading || !stockCode}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/25 disabled:opacity-40"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      {taResult ? "重新运行深度分析" : "开始深度分析"}
+                    </button>
+                    {loading && (
+                      <button
+                        onClick={() => void stopTradingAgents()}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+                      >
+                        <Square className="h-4 w-4" /> 停止
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
             ) : (
-              // 已接入：真对话
               <>
                 <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto p-4 text-sm">
                   {msgs.length === 0 && (
@@ -161,7 +348,9 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
                         )}
                         <p className="whitespace-pre-wrap">{m.content}</p>
                         {m.role === "assistant" && m.content && !(loading && i === msgs.length - 1) && (
-                          <div className="mt-1.5"><SaveNoteButton kind="问AI" title={`问 AI · ${msgs[i - 1]?.content?.slice(0, 24) || "对话"}`} content={m.content} /></div>
+                          <div className="mt-1.5">
+                            <SaveNoteButton kind="问AI" title={`问 AI · ${msgs[i - 1]?.content?.slice(0, 24) || "对话"}`} content={m.content} />
+                          </div>
                         )}
                       </div>
                     </div>
@@ -197,8 +386,11 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI" }: Pro
                       placeholder="就本页内容提问…"
                       className="flex-1 resize-none rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
                     />
-                    <button onClick={() => send(input)} disabled={loading || !input.trim()}
-                      className="rounded-lg bg-primary/15 p-2 text-primary hover:bg-primary/25 disabled:opacity-40">
+                    <button
+                      onClick={() => send(input)}
+                      disabled={loading || !input.trim()}
+                      className="rounded-lg bg-primary/15 p-2 text-primary hover:bg-primary/25 disabled:opacity-40"
+                    >
                       <Send className="h-4 w-4" />
                     </button>
                   </div>

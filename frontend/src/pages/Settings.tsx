@@ -7,6 +7,7 @@ import { loadLlm, saveLlm, clearLlm } from "@/lib/llm";
 import { loadAccessKey, saveAccessKey } from "@/lib/api";
 import { subscriptionModels, apiModels, isCliProvider } from "@/lib/ai-models";
 import { getDefaultBaseUrl, getInitialAiSettings, getProviderByModelId } from "@/lib/ai-config";
+import { clearTradingAgentsConfig, loadTradingAgentsConfig, saveTradingAgentsConfig } from "@/lib/tradingagents";
 
 export function Settings() {
   const existing = loadLlm();
@@ -19,6 +20,13 @@ export function Settings() {
   const [baseURL, setBaseURL] = useState(initial.baseURL);
   const [modelName, setModelName] = useState(initial.modelName);
   const [apiKey, setApiKey] = useState(initial.apiKey);
+  const existingTa = loadTradingAgentsConfig();
+  const [taEnabled, setTaEnabled] = useState(existingTa?.enabled ?? false);
+  const [taProvider, setTaProvider] = useState(existingTa?.provider ?? "openai-compatible");
+  const [taBaseURL, setTaBaseURL] = useState(existingTa?.baseURL ?? "");
+  const [taApiKey, setTaApiKey] = useState(existingTa?.apiKey ?? "");
+  const [taDeepModel, setTaDeepModel] = useState(existingTa?.deepModel ?? "");
+  const [taQuickModel, setTaQuickModel] = useState(existingTa?.quickModel ?? "");
   // 后端访问密钥（对应部署时的 VR_API_KEY）；本机自用不设鉴权时留空
   const [accessKey, setAccessKey] = useState(loadAccessKey());
 
@@ -61,6 +69,30 @@ export function Settings() {
     saveAccessKey(k);
     setAccessKey(k);
     toast.success(k ? "已保存后端访问密钥（存本地）" : "已清除后端访问密钥");
+  };
+
+  const saveTradingAgents = () => {
+    if (!taEnabled) {
+      clearTradingAgentsConfig();
+      setTaApiKey("");
+      setTaDeepModel("");
+      setTaQuickModel("");
+      toast.success("已关闭 TradingAgents 深度分析配置");
+      return;
+    }
+    if (!taProvider.trim() || !taBaseURL.trim() || !taApiKey.trim() || !taDeepModel.trim() || !taQuickModel.trim()) {
+      toast.error("请填完 TradingAgents 所需配置");
+      return;
+    }
+    saveTradingAgentsConfig({
+      enabled: true,
+      provider: taProvider.trim(),
+      baseURL: taBaseURL.trim(),
+      apiKey: taApiKey.trim(),
+      deepModel: taDeepModel.trim(),
+      quickModel: taQuickModel.trim(),
+    });
+    toast.success("已保存 TradingAgents 深度分析配置");
   };
 
   return (
@@ -181,6 +213,92 @@ export function Settings() {
       </GlassCard>
 
       {/* 后端访问密钥：仅当后端部署时设置了 VR_API_KEY（公网防蹭用）才需要填 */}
+      <GlassCard className="mt-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+          <Sparkles className="h-4 w-4 text-primary" /> TradingAgents 深度分析
+        </h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          个股页里可额外启用一条多 Agent 深度分析链路。它只支持 <b className="text-foreground">A 股 6 位代码</b>，且
+          <b className="text-foreground"> 只能走 API 模式</b>，不能复用本机订阅 CLI。一次分析会消耗多轮模型调用，适合做深度拆解，不适合高频问答。
+        </p>
+        <div className="space-y-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={taEnabled}
+              onChange={(e) => setTaEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-black/20"
+            />
+            <span>启用 TradingAgents 深度分析</span>
+          </label>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Provider</label>
+            <input
+              value={taProvider}
+              onChange={(e) => setTaProvider(e.target.value)}
+              placeholder="deepseek / minimax / openai / openrouter / anthropic / google ..."
+              className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              推荐直接填 TradingAgents 原生支持的 provider 名。常见可用值：`deepseek`、`minimax`、`openai`、`openrouter`、`anthropic`、`google`、`qwen`、`glm`、`xai`、`ollama`。
+              若你走任意 OpenAI 兼容网关，也可先填 `openai`。
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Base URL</label>
+            <input
+              value={taBaseURL}
+              onChange={(e) => setTaBaseURL(e.target.value)}
+              placeholder="https://api.deepseek.com"
+              className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Deep Model</label>
+              <input
+                value={taDeepModel}
+                onChange={(e) => setTaDeepModel(e.target.value)}
+                placeholder="deepseek-chat / gpt-4o / MiniMax-M2.7 ..."
+                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Quick Model</label>
+              <input
+                value={taQuickModel}
+                onChange={(e) => setTaQuickModel(e.target.value)}
+                placeholder="deepseek-chat / gpt-4o-mini / MiniMax-M2.7-highspeed ..."
+                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">API Key</label>
+            <input
+              type="password"
+              value={taApiKey}
+              onChange={(e) => setTaApiKey(e.target.value)}
+              placeholder="sk-…"
+              className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={saveTradingAgents}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25"
+            >
+              保存 TradingAgents 配置
+            </button>
+          </div>
+        </div>
+      </GlassCard>
+
       <GlassCard className="mt-4">
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
           <KeyRound className="h-4 w-4 text-primary" /> 后端访问密钥（可选）
