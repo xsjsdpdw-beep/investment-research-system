@@ -283,3 +283,31 @@ def test_local_docs_point_to_service_status_helpers():
     assert "scripts/status-frontend.sh" in readme
     assert "scripts/status-all.sh" in readme
     assert "Repository-local service status helpers" in local_notes
+
+
+def test_local_log_helpers_exist_and_point_to_workspace_commands():
+    log_backend = read("scripts/log-backend.sh")
+    log_frontend = read("scripts/log-frontend.sh")
+    log_all = read("scripts/log-all.sh")
+
+    assert "#!/bin/sh" in log_backend
+    assert "/tmp/vibe-research-backend.log" in log_backend
+    assert "tail" in log_backend
+
+    assert "#!/bin/sh" in log_frontend
+    assert "/tmp/vibe-research-frontend.log" in log_frontend
+    assert "tail" in log_frontend
+
+    assert "#!/bin/sh" in log_all
+    assert "scripts/log-backend.sh" in log_all
+    assert "scripts/log-frontend.sh" in log_all
+
+
+def test_local_docs_point_to_log_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/log-backend.sh" in readme
+    assert "scripts/log-frontend.sh" in readme
+    assert "scripts/log-all.sh" in readme
+    assert "Repository-local log helpers" in local_notes
