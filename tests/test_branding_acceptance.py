@@ -237,8 +237,10 @@ def test_local_service_lifecycle_helpers_exist_and_point_to_workspace_commands()
 
     assert "#!/bin/sh" in restart_all
     assert "scripts/stop-all.sh" in restart_all
-    assert "scripts/dev-backend.sh" in restart_all
-    assert "scripts/dev-frontend.sh" in restart_all
+    assert "dev-backend.sh" in restart_all
+    assert "dev-frontend.sh" in restart_all
+    assert "subprocess.Popen" in restart_all
+    assert "start_new_session=True" in restart_all
     assert "api/health" in restart_all
     assert "5899" in restart_all
 
@@ -252,3 +254,32 @@ def test_local_docs_point_to_service_lifecycle_helpers():
     assert "scripts/stop-all.sh" in readme
     assert "scripts/restart-all.sh" in readme
     assert "Repository-local service lifecycle helpers" in local_notes
+
+
+def test_local_service_status_helpers_exist_and_point_to_workspace_commands():
+    status_backend = read("scripts/status-backend.sh")
+    status_frontend = read("scripts/status-frontend.sh")
+    status_all = read("scripts/status-all.sh")
+
+    assert "#!/bin/sh" in status_backend
+    assert "8900" in status_backend
+    assert "api/health" in status_backend
+    assert "lsof" in status_backend
+
+    assert "#!/bin/sh" in status_frontend
+    assert "5899" in status_frontend
+    assert "lsof" in status_frontend
+
+    assert "#!/bin/sh" in status_all
+    assert "scripts/status-backend.sh" in status_all
+    assert "scripts/status-frontend.sh" in status_all
+
+
+def test_local_docs_point_to_service_status_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/status-backend.sh" in readme
+    assert "scripts/status-frontend.sh" in readme
+    assert "scripts/status-all.sh" in readme
+    assert "Repository-local service status helpers" in local_notes
