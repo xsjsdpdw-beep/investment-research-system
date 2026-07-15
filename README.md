@@ -142,8 +142,11 @@ cd frontend && npm install && npm run dev
 - `scripts/log-backend.sh`
 - `scripts/log-frontend.sh`
 - `scripts/log-all.sh`
+- `scripts/doctor-backend.sh`
+- `scripts/doctor-frontend.sh`
+- `scripts/doctor-all.sh`
 
-其中初始化脚本负责准备依赖和本地运行时环境，启动脚本负责拉起服务，生命周期脚本负责停服和整套重启，状态脚本负责快速查看当前服务状态，日志脚本负责读取当前运行日志；它们都只是在这个工作区里固定已经验证过的本地路径和命令，不改变产品行为。
+其中初始化脚本负责准备依赖和本地运行时环境，启动脚本负责拉起服务，生命周期脚本负责停服和整套重启，状态脚本负责快速查看当前服务状态，日志脚本负责读取当前运行日志，doctor 脚本负责汇总本地环境就绪情况；它们都只是在这个工作区里固定已经验证过的本地路径和命令，不改变产品行为。
 
 ## 🔌 接入 AI
 
