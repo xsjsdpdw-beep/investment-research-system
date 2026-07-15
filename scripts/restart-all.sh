@@ -5,13 +5,27 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 
 "$ROOT_DIR/scripts/stop-all.sh"
 
-nohup "$ROOT_DIR/scripts/dev-backend.sh" >/tmp/vibe-research-backend.log 2>&1 &
-nohup "$ROOT_DIR/scripts/dev-frontend.sh" >/tmp/vibe-research-frontend.log 2>&1 &
-
 python3 - <<'PY'
 from urllib.request import urlopen
+import subprocess
 import json
 import time
+from pathlib import Path
+
+
+root_dir = Path("/Users/leo/Documents/投研体系")
+
+
+def launch(script_name: str, log_name: str) -> None:
+    log_path = Path("/tmp") / log_name
+    with log_path.open("ab") as log_file:
+        subprocess.Popen(
+            [str(root_dir / "scripts" / script_name)],
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
 
 
 def wait_backend() -> None:
@@ -35,6 +49,9 @@ def wait_frontend() -> None:
             time.sleep(1)
     raise SystemExit("Frontend did not become reachable on 127.0.0.1:5899.")
 
+
+launch("dev-backend.sh", "vibe-research-backend.log")
+launch("dev-frontend.sh", "vibe-research-frontend.log")
 
 wait_backend()
 wait_frontend()
