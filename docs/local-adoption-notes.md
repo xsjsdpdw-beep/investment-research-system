@@ -34,6 +34,7 @@
 - Repository-local startup helpers now exist at `scripts/dev-backend.sh` and `scripts/dev-frontend.sh`.
 - Repository-local service lifecycle helpers now exist for stopping or fully restarting the local backend/frontend stack.
 - Repository-local service status helpers now exist for checking backend/frontend runtime state.
+- Repository-local log helpers now exist for reading backend/frontend runtime logs.
 - Repository-local verification helpers now exist for acceptance, frontend build, backend offline tests, and full local verification.
 
 ## Stage 2 Priority
