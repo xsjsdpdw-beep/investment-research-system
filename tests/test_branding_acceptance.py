@@ -311,3 +311,36 @@ def test_local_docs_point_to_log_helpers():
     assert "scripts/log-frontend.sh" in readme
     assert "scripts/log-all.sh" in readme
     assert "Repository-local log helpers" in local_notes
+
+
+def test_local_doctor_helpers_exist_and_point_to_workspace_commands():
+    doctor_backend = read("scripts/doctor-backend.sh")
+    doctor_frontend = read("scripts/doctor-frontend.sh")
+    doctor_all = read("scripts/doctor-all.sh")
+
+    assert "#!/bin/sh" in doctor_backend
+    assert "codex-primary-runtime/dependencies/python/bin/python3" in doctor_backend
+    assert "backend/.venv" in doctor_backend
+    assert "8900" in doctor_backend
+    assert "/tmp/vibe-research-backend.log" in doctor_backend
+
+    assert "#!/bin/sh" in doctor_frontend
+    assert "codex-primary-runtime/dependencies/node/bin" in doctor_frontend
+    assert "fallback/pnpm" in doctor_frontend
+    assert "frontend/node_modules" in doctor_frontend
+    assert "5899" in doctor_frontend
+    assert "/tmp/vibe-research-frontend.log" in doctor_frontend
+
+    assert "#!/bin/sh" in doctor_all
+    assert "scripts/doctor-backend.sh" in doctor_all
+    assert "scripts/doctor-frontend.sh" in doctor_all
+
+
+def test_local_docs_point_to_doctor_helpers():
+    readme = read("README.md")
+    local_notes = read("docs/local-adoption-notes.md")
+
+    assert "scripts/doctor-backend.sh" in readme
+    assert "scripts/doctor-frontend.sh" in readme
+    assert "scripts/doctor-all.sh" in readme
+    assert "Repository-local doctor helpers" in local_notes
