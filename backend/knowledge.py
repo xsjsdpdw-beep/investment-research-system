@@ -10,6 +10,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+import data_adapters
+
 BEIJING = timezone(timedelta(hours=8))
 DATA_ROOT = Path(os.environ.get("VR_DATA_DIR") or (Path.home() / ".vibe-research"))
 DIRS = {
@@ -623,6 +625,9 @@ def save_entry_order(kind: str, ids: list[str]) -> list[dict[str, Any]]:
 
 def list_calendar_events(view: str = "upcoming", importance: str | None = None) -> list[dict[str, Any]]:
     events = _load_calendar()
+    auto_events = data_adapters.auto_calendar_events(load_watchlist())
+    existing_ids = {item.get("id") for item in events}
+    events.extend(item for item in auto_events if item.get("id") not in existing_ids)
     if importance:
         events = [item for item in events if item.get("importance") == importance]
     events = sorted(events, key=lambda item: (item.get("date", ""), item.get("title", "")))

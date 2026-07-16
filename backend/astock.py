@@ -94,6 +94,71 @@ def tencent_quote(codes: list[str]) -> dict[str, dict]:
     return _parse_gtimg(_fetch_gtimg(prefixed))
 
 
+def stock_search(query: str, limit: int = 10) -> list[dict]:
+    """东财搜索建议：名称/代码 → A 股候选列表。仅返回沪深京 A 股，用于用户主动添加关注标的。"""
+    q = (query or "").strip()
+    if not q:
+        return []
+    url = "https://searchapi.eastmoney.com/api/suggest/get"
+    params = {
+        "input": q,
+        "type": 14,
+        "token": "D43BF722C8E33BDC906FB84D85E326E8",
+        "count": max(1, min(limit, 20)),
+    }
+    headers = {"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"}
+    try:
+        rows = (em_get(url, params=params, headers=headers, timeout=10).json().get("QuotationCodeTable") or {}).get("Data") or []
+    except Exception:
+        return []
+
+    market_map = {"0": "SZ", "1": "SH", "2": "BJ"}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        code = str(row.get("Code") or "").strip()
+        market = market_map.get(str(row.get("MktNum") or "").strip())
+        if not market or not code.isdigit() or len(code) != 6:
+            continue
+        if str(row.get("Classify") or "") != "AStock":
+            continue
+        key = f"{code}.{market}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "code": code,
+            "market": market,
+            "name": row.get("Name") or code,
+            "pinyin": row.get("PinYin") or "",
+            "security_type": row.get("SecurityTypeName") or "",
+            "display": f"{row.get('Name') or code} · {code}.{market}",
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def stock_industry(code: str) -> dict:
+    """用板块归属推断申万行业层级。东财返回顺序通常为三级、一级、二级。"""
+    blocks = concept_blocks(code).get("boards", [])
+    names = [str(item.get("name") or "").strip() for item in blocks if str(item.get("name") or "").strip()]
+    if not names:
+        return {"industry": "", "sw_l1": "", "sw_l2": "", "sw_l3": "", "source": "eastmoney_slist"}
+
+    sw_l3 = names[0] if len(names) >= 1 else ""
+    sw_l1 = names[1] if len(names) >= 2 else ""
+    sw_l2 = names[2] if len(names) >= 3 else ""
+    path = "--".join([item for item in [sw_l1, sw_l2, sw_l3] if item])
+    return {
+        "industry": path or sw_l3,
+        "sw_l1": sw_l1,
+        "sw_l2": sw_l2,
+        "sw_l3": sw_l3,
+        "source": "eastmoney_slist",
+    }
+
+
 # A股大盘指数（前缀规则与个股不同，固定带前缀代码）
 A_INDICES = ["sh000001", "sz399001", "sz399006", "sh000300"]
 

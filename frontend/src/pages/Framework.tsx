@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, BookOpenCheck, ChevronDown, ChevronUp, ExternalLink, FileImage, FileSearch, Flame, GripVertical, Image as ImageIcon, Minus, Newspaper, Presentation, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpenCheck, ChevronDown, ChevronUp, ExternalLink, FileImage, FileSearch, Flame, GripVertical, Image as ImageIcon, Minus, Newspaper, Plus, Presentation, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -9,6 +9,7 @@ import { SectionTabs } from "@/components/ui/SectionTabs";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { api, ApiError, type KnowledgeEntry, type SectorIndicator, type SectorModule, type SectorTreeNode, type StockCenterData, type StockModule, type WatchIndicator, type WatchStock } from "@/lib/api";
 import { FRAMEWORK_TABS } from "@/lib/workspace";
+import { cn } from "@/lib/utils";
 import sectorsData from "@/data/sectors.json";
 
 function tags(raw: string) {
@@ -139,9 +140,96 @@ function writeStoredIds(key: string, ids: string[]) {
   }
 }
 
+function readStoredJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* 隐私模式等场景 localStorage 不可用 */
+  }
+}
+
+function defaultStockFocusBucketDefs(): StockFocusBucketDef[] {
+  return [
+    { id: "focus", label: "重点", tone: STOCK_BUCKET_TONES[0] },
+    { id: "watch", label: "关注", tone: STOCK_BUCKET_TONES[1] },
+    { id: "track", label: "跟踪", tone: STOCK_BUCKET_TONES[2] },
+    { id: "other", label: "其他", tone: STOCK_BUCKET_TONES[3] },
+  ];
+}
+
+function loadStockFocusBucketDefs(): StockFocusBucketDef[] {
+  const saved = readStoredJson<StockFocusBucketDef[]>("framework-stock-focus-buckets", []);
+  if (!Array.isArray(saved) || saved.length === 0) return defaultStockFocusBucketDefs();
+  return saved.map((item, index) => ({
+    id: item.id || `bucket-${index + 1}`,
+    label: item.label || `分组${index + 1}`,
+    tone: item.tone || STOCK_BUCKET_TONES[index % STOCK_BUCKET_TONES.length],
+  }));
+}
+
+function loadStockFocusMap(bucketDefs: StockFocusBucketDef[]): Record<string, string> {
+  const saved = readStoredJson<Record<string, string>>("framework-stock-focus-map", {});
+  const labelToId = new Map(bucketDefs.map((item) => [item.label, item.id]));
+  const firstId = bucketDefs[0]?.id || "focus";
+  return Object.fromEntries(
+    Object.entries(saved).map(([ticker, bucket]) => [ticker, labelToId.get(bucket) || bucket || firstId]),
+  );
+}
+
+function loadStockFocusOrders(bucketDefs: StockFocusBucketDef[]): Record<string, string[]> {
+  const saved = readStoredJson<Record<string, string[]>>("framework-stock-focus-orders", {});
+  const labelToId = new Map(bucketDefs.map((item) => [item.label, item.id]));
+  const next: Record<string, string[]> = {};
+  for (const bucket of bucketDefs) {
+    next[bucket.id] = [];
+  }
+  for (const [key, ids] of Object.entries(saved)) {
+    const target = labelToId.get(key) || key;
+    if (!next[target]) next[target] = [];
+    next[target] = Array.isArray(ids) ? ids.filter((item): item is string => typeof item === "string") : [];
+  }
+  return next;
+}
+
+function loadStockFocusExpanded(bucketDefs: StockFocusBucketDef[]): Record<string, boolean> {
+  const saved = readStoredJson<Record<string, boolean>>("framework-stock-focus-expanded", {});
+  const labelToId = new Map(bucketDefs.map((item) => [item.label, item.id]));
+  const next: Record<string, boolean> = {};
+  for (const bucket of bucketDefs) next[bucket.id] = false;
+  for (const [key, value] of Object.entries(saved)) {
+    const target = labelToId.get(key) || key;
+    next[target] = Boolean(value);
+  }
+  return next;
+}
+
 interface InsightSource {
   label: string;
   text: string;
+}
+
+interface OverviewSourceInterface {
+  id: string;
+  label: string;
+  provider: string;
+  note: string;
+  enabled: boolean;
+  removable?: boolean;
+}
+
+interface OverviewSourceDraft {
+  label: string;
+  provider: string;
+  note: string;
 }
 
 interface OverviewBlock {
@@ -154,6 +242,21 @@ interface VisualPreviewConfig {
   subtitle?: string;
   chartKind?: string;
   image?: string | null;
+}
+
+const STOCK_BUCKET_TONES = [
+  "border-red-400/35 bg-red-500/10 text-red-200",
+  "border-primary/35 bg-primary/10 text-primary",
+  "border-sky-400/35 bg-sky-500/10 text-sky-200",
+  "border-border/35 bg-muted/15 text-muted-foreground",
+  "border-emerald-400/35 bg-emerald-500/10 text-emerald-200",
+  "border-amber-400/35 bg-amber-500/10 text-amber-200",
+] as const;
+
+interface StockFocusBucketDef {
+  id: string;
+  label: string;
+  tone: string;
 }
 
 function cleanSnippet(value: string, limit = 180) {
@@ -191,17 +294,50 @@ function extractFirstUrl(text: string) {
   return (text || "").match(/https?:\/\/[^\s]+/)?.[0] || "";
 }
 
-function isAutomaticSource(entry: KnowledgeEntry) {
-  const text = `${entry.title}\n${entry.content || ""}\n${entry.content_preview || ""}\n${entry.tags.join(" ")}`.toLowerCase();
-  return text.includes("eastmoney-report:")
-    || text.includes("eastmoney-industry-report:")
-    || text.includes("premium-note:alpha")
-    || text.includes("alphaengine")
-    || text.includes("alpha engine");
-}
-
 function numericDateValue(value: string) {
   return Number((value || "").split("-").join("")) || 0;
+}
+
+const DEFAULT_OVERVIEW_SOURCES: Record<"sector" | "stock", OverviewSourceInterface[]> = {
+  sector: [
+    {
+      id: "sector-eastmoney-reports",
+      label: "东财公开行业研报接口",
+      provider: "eastmoney_report",
+      note: "用于自动提取公开行业研报，生成行业概览框架；具体研报沉淀到附件链接。",
+      enabled: true,
+    },
+    {
+      id: "sector-alphaengine-placeholder",
+      label: "AlphaEngine 行业专家纪要接口",
+      provider: "alphaengine_placeholder",
+      note: "未来接入专家会、电话会、渠道纪要等高价值行业源。",
+      enabled: true,
+    },
+  ],
+  stock: [
+    {
+      id: "stock-eastmoney-reports",
+      label: "东财个股研报 / 公告新闻接口",
+      provider: "eastmoney_stock",
+      note: "用于自动提取个股研报、公告、新闻等公开源；具体资料沉淀到附件链接或个股时间线。",
+      enabled: true,
+    },
+    {
+      id: "stock-alphaengine-placeholder",
+      label: "AlphaEngine 个股专家纪要接口",
+      provider: "alphaengine_placeholder",
+      note: "未来接入公司电话会、专家访谈、渠道反馈等高价值个股源。",
+      enabled: true,
+    },
+  ],
+};
+
+function mergeOverviewSources(scope: "sector" | "stock", saved: OverviewSourceInterface[]) {
+  const byId = new Map<string, OverviewSourceInterface>();
+  for (const item of DEFAULT_OVERVIEW_SOURCES[scope]) byId.set(item.id, item);
+  for (const item of saved) byId.set(item.id, item);
+  return Array.from(byId.values());
 }
 
 function sortByStoredOrder<T>(items: T[], getId: (item: T) => string, storedOrder: string[], fallbackValue: (item: T, index: number) => number) {
@@ -313,10 +449,19 @@ export function Framework() {
   const [sectorView, setSectorView] = useState("overview");
   const [stockView, setStockView] = useState("overview");
   const [learningView, setLearningView] = useState("overview");
+  const [sectorCenterEditing, setSectorCenterEditing] = useState(false);
+  const [stockCenterEditing, setStockCenterEditing] = useState(false);
+  const [editingSectorNodeId, setEditingSectorNodeId] = useState("");
+  const [sectorNameDraft, setSectorNameDraft] = useState("");
+  const [editingStockTicker, setEditingStockTicker] = useState("");
+  const [stockNameDraft, setStockNameDraft] = useState("");
   const [sectorObjectPanelOpen, setSectorObjectPanelOpen] = useState(false);
   const [sectorObjectQuery, setSectorObjectQuery] = useState("");
-  const [sectorRenameForm, setSectorRenameForm] = useState({ name: "", description: "" });
-  const [stockObjectPanelOpen, setStockObjectPanelOpen] = useState(false);
+  const [sectorLibraryForm, setSectorLibraryForm] = useState({ name: "", kind: "primary" as "primary" | "secondary", parent_id: "" });
+  const [stockFocusBucketDefs, setStockFocusBucketDefs] = useState<StockFocusBucketDef[]>(() => loadStockFocusBucketDefs());
+  const [stockFocusMap, setStockFocusMap] = useState<Record<string, string>>(() => loadStockFocusMap(loadStockFocusBucketDefs()));
+  const [stockFocusOrders, setStockFocusOrders] = useState<Record<string, string[]>>(() => loadStockFocusOrders(loadStockFocusBucketDefs()));
+  const [stockFocusExpanded, setStockFocusExpanded] = useState<Record<string, boolean>>(() => loadStockFocusExpanded(loadStockFocusBucketDefs()));
   const [learningTargetSector, setLearningTargetSector] = useState("");
   const [learningTargetStock, setLearningTargetStock] = useState("");
   const [stockCenter, setStockCenter] = useState<StockCenterData | null>(null);
@@ -327,6 +472,18 @@ export function Framework() {
   const [sectorModuleForm, setSectorModuleForm] = useState({ title: "", category: "行业框架", content: "" });
   const [stockModuleForm, setStockModuleForm] = useState({ title: "", category: "公开信息", content: "" });
   const [premiumNoteForm, setPremiumNoteForm] = useState({ title: "", source_name: "premium_notes_placeholder", content: "" });
+  const [overviewSources, setOverviewSources] = useState<Record<"sector" | "stock", OverviewSourceInterface[]>>(() => ({
+    sector: mergeOverviewSources("sector", readStoredJson<OverviewSourceInterface[]>("framework-sector-overview-sources", [])),
+    stock: mergeOverviewSources("stock", readStoredJson<OverviewSourceInterface[]>("framework-stock-overview-sources", [])),
+  }));
+  const [overviewSourcePanels, setOverviewSourcePanels] = useState<Record<"sector" | "stock", boolean>>(() => readStoredJson("framework-overview-source-panels", {
+    sector: false,
+    stock: false,
+  }));
+  const [overviewSourceDrafts, setOverviewSourceDrafts] = useState<Record<"sector" | "stock", OverviewSourceDraft>>({
+    sector: { label: "", provider: "api", note: "" },
+    stock: { label: "", provider: "api", note: "" },
+  });
   const [weeklyForm, setWeeklyForm] = useState({ title: "", date: todayDate(), sectors: "", actionAdvice: "", sectorViews: "", keyEvents: "" });
   const [weeklyStocks, setWeeklyStocks] = useState<Record<string, { change: string; note: string }>>({});
   const [sectorKind, setSectorKind] = useState<"sector_profile" | "research_note" | "tracking_comment" | "attachment_link">("sector_profile");
@@ -345,6 +502,12 @@ export function Framework() {
   const [dragOverStockPublicKey, setDragOverStockPublicKey] = useState("");
   const [draggingFrameworkNavId, setDraggingFrameworkNavId] = useState("");
   const [dragOverFrameworkNavId, setDragOverFrameworkNavId] = useState("");
+  const [draggingStockBucketId, setDraggingStockBucketId] = useState("");
+  const [dragOverStockBucketId, setDragOverStockBucketId] = useState("");
+  const [draggingSectorGroupId, setDraggingSectorGroupId] = useState("");
+  const [dragOverSectorGroupId, setDragOverSectorGroupId] = useState("");
+  const [draggingSectorChildId, setDraggingSectorChildId] = useState("");
+  const [dragOverSectorChildId, setDragOverSectorChildId] = useState("");
   const [sectorNavOrder, setSectorNavOrder] = useState<string[]>(() => readStoredIds("framework-sector-nav-order"));
   const [stockNavOrder, setStockNavOrder] = useState<string[]>(() => readStoredIds("framework-stock-nav-order"));
   const [weeklyNavOrder, setWeeklyNavOrder] = useState<string[]>(() => readStoredIds("framework-weekly-nav-order"));
@@ -411,6 +574,31 @@ export function Framework() {
   }, []);
 
   useEffect(() => {
+    writeStoredJson("framework-sector-overview-sources", overviewSources.sector.filter((item) => !DEFAULT_OVERVIEW_SOURCES.sector.some((source) => source.id === item.id)));
+    writeStoredJson("framework-stock-overview-sources", overviewSources.stock.filter((item) => !DEFAULT_OVERVIEW_SOURCES.stock.some((source) => source.id === item.id)));
+  }, [overviewSources]);
+
+  useEffect(() => {
+    writeStoredJson("framework-overview-source-panels", overviewSourcePanels);
+  }, [overviewSourcePanels]);
+
+  useEffect(() => {
+    writeStoredJson("framework-stock-focus-buckets", stockFocusBucketDefs);
+  }, [stockFocusBucketDefs]);
+
+  useEffect(() => {
+    writeStoredJson("framework-stock-focus-map", stockFocusMap);
+  }, [stockFocusMap]);
+
+  useEffect(() => {
+    writeStoredJson("framework-stock-focus-orders", stockFocusOrders);
+  }, [stockFocusOrders]);
+
+  useEffect(() => {
+    writeStoredJson("framework-stock-focus-expanded", stockFocusExpanded);
+  }, [stockFocusExpanded]);
+
+  useEffect(() => {
     const sub = searchParams.get("sub");
     if (sub && FRAMEWORK_TABS.some((tab) => tab.key === sub) && sub !== active) {
       setActive(sub);
@@ -447,6 +635,47 @@ export function Framework() {
   const summaryTargets = useMemo(() => {
     return [...stockEntries, ...learningEntries].filter((item) => item.summary_status !== "ready");
   }, [stockEntries, learningEntries]);
+
+  const addOverviewSource = (scope: "sector" | "stock") => {
+    const draft = overviewSourceDrafts[scope];
+    if (!draft.label.trim()) {
+      toast.error("先填一个信息源名称");
+      return;
+    }
+    const source: OverviewSourceInterface = {
+      id: `${scope}-${Date.now()}`,
+      label: draft.label.trim(),
+      provider: draft.provider.trim() || "api",
+      note: draft.note.trim(),
+      enabled: true,
+      removable: true,
+    };
+    setOverviewSources((current) => ({
+      ...current,
+      [scope]: [...current[scope], source],
+    }));
+    setOverviewSourceDrafts((current) => ({
+      ...current,
+      [scope]: { label: "", provider: "api", note: "" },
+    }));
+    setOverviewSourcePanels((current) => ({ ...current, [scope]: true }));
+    toast.success("信息源接口已加入");
+  };
+
+  const removeOverviewSource = (scope: "sector" | "stock", id: string) => {
+    setOverviewSources((current) => ({
+      ...current,
+      [scope]: current[scope].filter((item) => item.id !== id),
+    }));
+    toast.success("信息源接口已删除");
+  };
+
+  const toggleOverviewSource = (scope: "sector" | "stock", id: string) => {
+    setOverviewSources((current) => ({
+      ...current,
+      [scope]: current[scope].map((item) => item.id === id ? { ...item, enabled: !item.enabled } : item),
+    }));
+  };
 
   const submit = async () => {
     const type = active === "sectors" ? sectorKind : active === "stocks" ? stockKind : "weekly_review";
@@ -487,6 +716,69 @@ export function Framework() {
       await load();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "行业节点保存失败");
+    }
+  };
+
+  const addSectorLibraryNode = async () => {
+    const name = sectorLibraryForm.name.trim();
+    if (!name) {
+      toast.error("行业名称要填");
+      return;
+    }
+    const parentId = sectorLibraryForm.kind === "secondary" ? sectorLibraryForm.parent_id.trim() : "";
+    if (sectorLibraryForm.kind === "secondary" && !parentId) {
+      toast.error("先选择要挂载的一级行业");
+      return;
+    }
+    try {
+      await api.upsertSectorNode({
+        name,
+        parent_id: parentId || undefined,
+      });
+      setSectorLibraryForm((current) => ({ ...current, name: "", parent_id: current.kind === "secondary" ? current.parent_id : "" }));
+      toast.success(sectorLibraryForm.kind === "primary" ? "一级行业已加入行业中心" : "二级行业已挂到所选一级行业");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "行业库更新失败");
+    }
+  };
+
+  const beginSectorInlineRename = (node: SectorTreeNode) => {
+    setEditingSectorNodeId(node.id);
+    setSectorNameDraft(node.name);
+  };
+
+  const commitSectorInlineRename = async (node: SectorTreeNode) => {
+    const trimmed = sectorNameDraft.trim();
+    if (!trimmed) {
+      toast.error("行业名称不能为空");
+      return;
+    }
+    if (trimmed === node.name) {
+      setEditingSectorNodeId("");
+      setSectorNameDraft("");
+      return;
+    }
+    try {
+      await api.upsertSectorNode({
+        id: node.id,
+        name: trimmed,
+        parent_id: node.parent_id || undefined,
+        description: node.description,
+        sort_order: node.sort_order,
+      });
+      if (selectedSector === node.name) {
+        setSelectedSector(trimmed);
+        setIndicatorForm((prev) => ({ ...prev, sector: trimmed }));
+        setForm((prev) => ({ ...prev, related: trimmed }));
+      }
+      toast.success("行业名称已更新");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "行业重命名失败");
+    } finally {
+      setEditingSectorNodeId("");
+      setSectorNameDraft("");
     }
   };
 
@@ -695,32 +987,6 @@ export function Framework() {
       await load();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "行业删除失败");
-    }
-  };
-
-  const renameSectorNode = async () => {
-    const selectedNode = orderedSectorTree.find((item) => item.name === selectedSector);
-    if (!selectedNode) {
-      toast.error("先选择一个行业对象");
-      return;
-    }
-    if (!sectorRenameForm.name.trim()) {
-      toast.error("行业名称不能为空");
-      return;
-    }
-    try {
-      await api.upsertSectorNode({
-        id: selectedNode.id,
-        name: sectorRenameForm.name.trim(),
-        parent_id: selectedNode.parent_id,
-        description: sectorRenameForm.description.trim(),
-        sort_order: selectedNode.sort_order,
-      });
-      setSelectedSector(sectorRenameForm.name.trim());
-      toast.success("行业名称已更新");
-      await load();
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "行业重命名失败");
     }
   };
 
@@ -1108,6 +1374,22 @@ export function Framework() {
     () => sortByStoredOrder(watchStocks, (item) => `${item.code}.${item.market}`, stockNavOrder, (item, index) => item.sort_order * 1000 + index),
     [stockNavOrder, watchStocks],
   );
+  const stockCenterObjects = useMemo(
+    () => orderedWatchStocks.filter((item) => ["SH", "SZ", "BJ", "HK", "US", "NASDAQ", "NYSE"].includes((item.market || "").toUpperCase())),
+    [orderedWatchStocks],
+  );
+  const stockFocusBuckets = useMemo(
+    () => stockFocusBucketDefs.map((bucket) => {
+      const items = sortByStoredOrder(
+        stockCenterObjects.filter((item) => (stockFocusMap[`${item.code}.${item.market}`] || stockFocusBucketDefs[0]?.id || "focus") === bucket.id),
+        (item) => `${item.code}.${item.market}`,
+        stockFocusOrders[bucket.id] || [],
+        (item, index) => item.sort_order * 1000 + index,
+      );
+      return { ...bucket, items };
+    }),
+    [stockCenterObjects, stockFocusBucketDefs, stockFocusMap, stockFocusOrders],
+  );
   const orderedLearningEntries = useMemo(
     () => sortByStoredOrder(learningEntries, (item) => item.id, learningNavOrder, (item, index) => -numericDateValue(item.date || "") * 1000 + index),
     [learningEntries, learningNavOrder],
@@ -1123,27 +1405,42 @@ export function Framework() {
     })),
     [orderedSectorTree],
   );
-  const filteredSectorObjectOptions = useMemo(() => {
+  const selectedSectorNode = useMemo(
+    () => orderedSectorTree.find((item) => item.name === selectedSector) || null,
+    [orderedSectorTree, selectedSector],
+  );
+  const primarySectorGroups = useMemo(
+    () => orderedSectorTree
+      .filter((item) => !item.parent_id || item.level === 0)
+      .map((item) => ({
+        ...item,
+        children: orderedSectorTree.filter((child) => child.parent_id === item.id),
+      })),
+    [orderedSectorTree],
+  );
+  const activePrimarySectorId = useMemo(() => {
+    if (selectedSectorNode) return selectedSectorNode.parent_id || selectedSectorNode.id;
+    return primarySectorGroups[0]?.id || "";
+  }, [primarySectorGroups, selectedSectorNode]);
+  const filteredPrimarySectorGroups = useMemo(() => {
     const keyword = sectorObjectQuery.trim().toLowerCase();
-    if (!keyword) return sectorObjectOptions;
-    return sectorObjectOptions.filter((item) => item.label.toLowerCase().includes(keyword) || item.key.toLowerCase().includes(keyword));
-  }, [sectorObjectOptions, sectorObjectQuery]);
-  useEffect(() => {
-    const selectedNode = orderedSectorTree.find((item) => item.name === selectedSector);
-    setSectorRenameForm({
-      name: selectedNode?.name || "",
-      description: selectedNode?.description || "",
-    });
-  }, [orderedSectorTree, selectedSector]);
+    if (!keyword) return primarySectorGroups;
+    return primarySectorGroups
+      .map((group) => {
+        const primaryMatched = group.name.toLowerCase().includes(keyword);
+        const children = primaryMatched
+          ? group.children
+          : group.children.filter((child) => child.name.toLowerCase().includes(keyword));
+        if (primaryMatched || children.length > 0) return { ...group, children };
+        return null;
+      })
+      .filter((item): item is (SectorTreeNode & { children: SectorTreeNode[] }) => Boolean(item));
+  }, [primarySectorGroups, sectorObjectQuery]);
   const sectorResearchNotes = selectedSector ? stockEntries.filter((entry) => entry.type === "research_note" && entry.related_sectors.includes(selectedSector)) : [];
   const sectorMemos = selectedSector ? memoEntries.filter((entry) => entry.related_sectors.includes(selectedSector)) : [];
   const sectorWeekly = selectedSector ? weeklyEntries.filter((entry) => entry.related_sectors.includes(selectedSector)) : [];
   const sectorAttachments = selectedSector ? attachmentEntries.filter((entry) => entry.related_sectors.includes(selectedSector)) : [];
   const sectorTrackingComments = selectedSector ? stockEntries.filter((entry) => entry.type === "tracking_comment" && entry.related_sectors.includes(selectedSector)) : [];
-  const sectorAutomaticSources = useMemo(
-    () => [...sectorAttachments, ...sectorResearchNotes, ...sectorTrackingComments].filter(isAutomaticSource),
-    [sectorAttachments, sectorResearchNotes, sectorTrackingComments],
-  );
   const builtInSector = useMemo(
     () => sectorsData.sectors.find((item) => item.label === selectedSector) || null,
     [selectedSector],
@@ -1185,14 +1482,6 @@ export function Framework() {
     ...stockMemos,
     ...stockWeekly,
   ]);
-  const stockAutomaticSources = useMemo(
-    () => [
-      ...(stockCenter?.attachments || []),
-      ...(stockCenter?.research_notes || []),
-      ...(stockCenter?.tracking_comments || []),
-    ].filter(isAutomaticSource),
-    [stockCenter],
-  );
   const orderedStockPublicInfo = useMemo(() => {
     if (!stockCenter) return [] as [string, string][];
     const entries = Object.entries(stockCenter.public_info);
@@ -1512,6 +1801,107 @@ export function Framework() {
     }
   }, [learningTargetStock, orderedWatchStocks]);
 
+  useEffect(() => {
+    if (sectorCenterEditing) return;
+    setEditingSectorNodeId("");
+    setSectorNameDraft("");
+  }, [sectorCenterEditing]);
+
+  useEffect(() => {
+    if (stockCenterEditing) return;
+    setEditingStockTicker("");
+    setStockNameDraft("");
+  }, [stockCenterEditing]);
+
+  const renderOverviewSourcePanel = (scope: "sector" | "stock") => {
+    const sources = overviewSources[scope];
+    const draft = overviewSourceDrafts[scope];
+    const scopeLabel = scope === "sector" ? "行业概览" : "个股概览";
+    return (
+      <div className="rounded-xl border border-border/40 bg-black/10">
+        <button
+          onClick={() => setOverviewSourcePanels((current) => ({ ...current, [scope]: !current[scope] }))}
+          className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left"
+        >
+          <div>
+            <p className="text-sm font-medium">信息源接口</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              与投研资讯保持一致：这里只管理自动提取接口，不展示你手动投喂的资料；手动资料放在“附件链接”。
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {sources.length} 个
+            {overviewSourcePanels[scope] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </button>
+        {overviewSourcePanels[scope] && (
+          <div className="space-y-3 border-t border-border/30 px-3 py-3">
+            <div className="space-y-2 rounded-lg border border-border/30 bg-muted/10 p-3">
+              <p className="text-xs text-muted-foreground">新增信息源</p>
+              <div className="grid gap-2 md:grid-cols-4">
+                <input
+                  value={draft.label}
+                  onChange={(event) => setOverviewSourceDrafts((current) => ({ ...current, [scope]: { ...current[scope], label: event.target.value } }))}
+                  placeholder="新增信息源名称"
+                  className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                />
+                <select
+                  value={draft.provider}
+                  onChange={(event) => setOverviewSourceDrafts((current) => ({ ...current, [scope]: { ...current[scope], provider: event.target.value } }))}
+                  className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                >
+                  <option value="api">API 接口占位</option>
+                  <option value="eastmoney_report">东财研报接口</option>
+                  <option value="alphaengine_placeholder">AlphaEngine 接口</option>
+                  <option value="ifind_placeholder">iFind 接口占位</option>
+                  <option value="rss">RSS 抓取源</option>
+                </select>
+                <input
+                  value={draft.note}
+                  onChange={(event) => setOverviewSourceDrafts((current) => ({ ...current, [scope]: { ...current[scope], note: event.target.value } }))}
+                  placeholder="接口地址、平台名称或接入备注"
+                  className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 md:col-span-1"
+                />
+                <button onClick={() => addOverviewSource(scope)} className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15">
+                  新增信息源接口
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">当前{scopeLabel}自动源</p>
+              {sources.map((item) => (
+                <div key={item.id} className="rounded-lg border border-border/30 bg-muted/20 px-3 py-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{item.label}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] ${item.enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                          {item.enabled ? "已启用" : "已停用"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.provider}</p>
+                      <p className="mt-2 break-all text-xs text-muted-foreground">{item.note || "待接入"}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button onClick={() => toggleOverviewSource(scope, item.id)} className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-primary">
+                        {item.enabled ? "停用" : "启用"}
+                      </button>
+                      {item.removable && (
+                        <button onClick={() => removeOverviewSource(scope, item.id)} className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-primary">
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const handleStockPublicDrop = (targetKey: string) => {
     if (!stockCenter || !draggingStockPublicKey || draggingStockPublicKey === targetKey) {
       setDraggingStockPublicKey("");
@@ -1538,6 +1928,233 @@ export function Framework() {
 
   const persistFrameworkNavOrder = (storageKey: string, ids: string[]) => {
     writeStoredIds(storageKey, ids);
+  };
+
+  const renameStockFocusBucket = (bucketId: string, label: string) => {
+    setStockFocusBucketDefs((current) => current.map((item) => item.id === bucketId ? { ...item, label: label || item.label } : item));
+  };
+
+  const addStockFocusBucket = () => {
+    setStockFocusBucketDefs((current) => [
+      ...current,
+      {
+        id: `bucket-${Date.now()}`,
+        label: `新列${current.length + 1}`,
+        tone: STOCK_BUCKET_TONES[current.length % STOCK_BUCKET_TONES.length],
+      },
+    ]);
+  };
+
+  const removeStockFocusBucket = (bucketId: string) => {
+    if (stockFocusBucketDefs.length <= 1) {
+      toast.error("至少保留一列");
+      return;
+    }
+    const fallbackId = stockFocusBucketDefs.find((item) => item.id !== bucketId)?.id;
+    if (!fallbackId) return;
+    setStockFocusMap((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([ticker, value]) => [ticker, value === bucketId ? fallbackId : value]),
+      ),
+    );
+    setStockFocusOrders((current) => {
+      const moved = current[bucketId] || [];
+      const next = { ...current };
+      delete next[bucketId];
+      next[fallbackId] = [...(next[fallbackId] || []), ...moved.filter((id) => !(next[fallbackId] || []).includes(id))];
+      return next;
+    });
+    setStockFocusExpanded((current) => {
+      const next = { ...current };
+      delete next[bucketId];
+      return next;
+    });
+    setStockFocusBucketDefs((current) => current.filter((item) => item.id !== bucketId));
+  };
+
+  const beginStockInlineRename = (ticker: string) => {
+    const target = watchStocks.find((item) => `${item.code}.${item.market}` === ticker);
+    if (!target) return;
+    setEditingStockTicker(ticker);
+    setStockNameDraft(target.name);
+  };
+
+  const commitStockInlineRename = async (ticker: string) => {
+    const target = watchStocks.find((item) => `${item.code}.${item.market}` === ticker);
+    if (!target) return;
+    const trimmed = stockNameDraft.trim();
+    if (!trimmed) {
+      toast.error("个股名称不能为空");
+      return;
+    }
+    if (trimmed === target.name) {
+      setEditingStockTicker("");
+      setStockNameDraft("");
+      return;
+    }
+    const nextStocks = watchStocks.map((item) => `${item.code}.${item.market}` === ticker ? { ...item, name: trimmed } : item);
+    setWatchStocks(nextStocks);
+    if (selectedTicker === ticker) {
+      setStockCenter((current) => current ? { ...current, company: { ...current.company, name: trimmed } } : current);
+    }
+    await api.saveWatchlist({ stocks: nextStocks, indicators: watchIndicators });
+    toast.success("个股名称已更新");
+    setEditingStockTicker("");
+    setStockNameDraft("");
+  };
+
+  const removeWatchStock = async (ticker: string) => {
+    const target = watchStocks.find((item) => `${item.code}.${item.market}` === ticker);
+    if (!target) return;
+    if (!window.confirm(`确认从个股中心移除“${target.name}”吗？`)) return;
+    const nextStocks = watchStocks.filter((item) => `${item.code}.${item.market}` !== ticker);
+    setWatchStocks(nextStocks);
+    setStockFocusMap((current) => {
+      const next = { ...current };
+      delete next[ticker];
+      return next;
+    });
+    setStockFocusOrders((current) =>
+      Object.fromEntries(Object.entries(current).map(([bucketId, ids]) => [bucketId, ids.filter((id) => id !== ticker)])),
+    );
+    if (selectedTicker === ticker) {
+      const fallback = nextStocks[0] ? `${nextStocks[0].code}.${nextStocks[0].market}` : "";
+      setSelectedTicker(fallback);
+      if (fallback) void loadStockCenter(fallback);
+      else setStockCenter(null);
+    }
+    await api.saveWatchlist({ stocks: nextStocks, indicators: watchIndicators });
+    toast.success("个股已移除");
+  };
+
+  const moveStockToBucket = (ticker: string, bucketId: string, targetTicker?: string) => {
+    const sourceBucket = stockFocusMap[ticker] || stockFocusBucketDefs[0]?.id || "focus";
+    const sourceIds = stockFocusBuckets.find((item) => item.id === sourceBucket)?.items.map((item) => `${item.code}.${item.market}`) || [];
+    const targetIds = stockFocusBuckets.find((item) => item.id === bucketId)?.items.map((item) => `${item.code}.${item.market}`) || [];
+    const nextSource = sourceIds.filter((id) => id !== ticker);
+    const baseTarget = sourceBucket === bucketId ? nextSource : targetIds.filter((id) => id !== ticker);
+    const insertIndex = targetTicker ? baseTarget.findIndex((id) => id === targetTicker) : -1;
+    const nextTarget = [...baseTarget];
+    if (insertIndex >= 0) nextTarget.splice(insertIndex, 0, ticker);
+    else nextTarget.push(ticker);
+
+    setStockFocusMap((current) => ({ ...current, [ticker]: bucketId }));
+    setStockFocusOrders((current) => ({
+      ...current,
+      [sourceBucket]: sourceBucket === bucketId ? nextTarget : nextSource,
+      [bucketId]: nextTarget,
+    }));
+  };
+
+  const handleStockBucketDrop = (bucketId: string, targetTicker?: string) => {
+    if (!draggingStockBucketId) {
+      setDraggingStockBucketId("");
+      setDragOverStockBucketId("");
+      return;
+    }
+    moveStockToBucket(draggingStockBucketId, bucketId, targetTicker);
+    setDraggingStockBucketId("");
+    setDragOverStockBucketId("");
+    const label = stockFocusBucketDefs.find((item) => item.id === bucketId)?.label || "该列";
+    toast.success(`已移动到${label}`);
+  };
+
+  const handleSectorGroupDrop = async (targetId: string) => {
+    if (!draggingSectorGroupId || draggingSectorGroupId === targetId) {
+      setDraggingSectorGroupId("");
+      setDragOverSectorGroupId("");
+      return;
+    }
+    const primaryIds = primarySectorGroups.map((item) => item.id);
+    const fromIndex = primaryIds.findIndex((id) => id === draggingSectorGroupId);
+    const toIndex = primaryIds.findIndex((id) => id === targetId);
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggingSectorGroupId("");
+      setDragOverSectorGroupId("");
+      return;
+    }
+    const nextPrimaryIds = [...primaryIds];
+    const [moved] = nextPrimaryIds.splice(fromIndex, 1);
+    nextPrimaryIds.splice(toIndex, 0, moved);
+    const childIds = orderedSectorTree.filter((item) => item.parent_id).map((item) => item.id);
+    const next = [...nextPrimaryIds, ...childIds];
+    try {
+      setSectorNavOrder(next);
+      persistFrameworkNavOrder("framework-sector-nav-order", next);
+      const result = await api.saveSectorTreeOrder(next);
+      setSectorTree(result.nodes);
+      toast.success("一级行业顺序已保存");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "行业顺序保存失败");
+    } finally {
+      setDraggingSectorGroupId("");
+      setDragOverSectorGroupId("");
+    }
+  };
+
+  const handleSectorChildDrop = async (parentId: string, targetId?: string) => {
+    if (!draggingSectorChildId || draggingSectorChildId === targetId) {
+      setDraggingSectorChildId("");
+      setDragOverSectorChildId("");
+      return;
+    }
+    const primaryIds = primarySectorGroups.map((item) => item.id);
+    const groupedChildren = new Map<string, string[]>();
+    primarySectorGroups.forEach((group) => {
+      groupedChildren.set(group.id, group.children.map((child) => child.id));
+    });
+    const sourceParentId = primarySectorGroups.find((group) => group.children.some((child) => child.id === draggingSectorChildId))?.id || "";
+    const sourceIds = groupedChildren.get(sourceParentId) || [];
+    const targetIds = groupedChildren.get(parentId) || [];
+    const fromIndex = sourceIds.findIndex((id) => id === draggingSectorChildId);
+    if (fromIndex < 0) {
+      setDraggingSectorChildId("");
+      setDragOverSectorChildId("");
+      return;
+    }
+    const draggingNode = primarySectorGroups.flatMap((group) => group.children).find((child) => child.id === draggingSectorChildId);
+    if (!draggingNode) {
+      setDraggingSectorChildId("");
+      setDragOverSectorChildId("");
+      return;
+    }
+    const nextSourceIds = sourceIds.filter((id) => id !== draggingSectorChildId);
+    const nextTargetIds = sourceParentId === parentId ? [...nextSourceIds] : targetIds.filter((id) => id !== draggingSectorChildId);
+    const toIndex = targetId ? nextTargetIds.findIndex((id) => id === targetId) : -1;
+    if (targetId && toIndex < 0) {
+      setDraggingSectorChildId("");
+      setDragOverSectorChildId("");
+      return;
+    }
+    if (toIndex >= 0) nextTargetIds.splice(toIndex, 0, draggingSectorChildId);
+    else nextTargetIds.push(draggingSectorChildId);
+    groupedChildren.set(sourceParentId, sourceParentId === parentId ? nextTargetIds : nextSourceIds);
+    groupedChildren.set(parentId, nextTargetIds);
+    const next = [
+      ...primaryIds,
+      ...primaryIds.flatMap((id) => groupedChildren.get(id) || []),
+    ];
+    try {
+      if (sourceParentId && sourceParentId !== parentId) {
+        await api.upsertSectorNode({
+          id: draggingNode.id,
+          name: draggingNode.name,
+          parent_id: parentId,
+          description: draggingNode.description,
+          sort_order: draggingNode.sort_order,
+        });
+      }
+      setSectorNavOrder(next);
+      persistFrameworkNavOrder("framework-sector-nav-order", next);
+      const result = await api.saveSectorTreeOrder(next);
+      setSectorTree(result.nodes);
+      toast.success(sourceParentId && sourceParentId !== parentId ? "二级行业已移动到新的一级行业" : "二级行业顺序已保存");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "二级行业调整失败");
+    } finally {
+      setDraggingSectorChildId("");
+      setDragOverSectorChildId("");
+    }
   };
 
   const handleFrameworkNavDrop = async (targetId: string) => {
@@ -1996,157 +2613,434 @@ export function Framework() {
           {active === "sectors" && sectorCenterTab === "center" && (
             <GlassCard className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium">行业中心对象</p>
-                <span className="text-xs text-muted-foreground">{orderedSectorTree.length} 个自定义行业</span>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-muted/20 px-3 py-3">
-                <div>
-                  <p className="text-sm font-medium">{selectedSector || "暂未选择行业"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">行业太多时默认折叠，需要时再展开切换。</p>
-                </div>
+                <button
+                  onClick={() => setSectorCenterEditing((prev) => !prev)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${sectorCenterEditing ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-primary"}`}
+                >
+                  {sectorCenterEditing ? "完成编辑" : "编辑"}
+                </button>
                 <button
                   onClick={() => setSectorObjectPanelOpen((prev) => !prev)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-primary"
                 >
-                  {sectorObjectPanelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  {sectorObjectPanelOpen ? "收起行业库" : "展开行业库"}
+                  <Plus className="h-3.5 w-3.5" /> 新增行业库
                 </button>
               </div>
-              {sectorObjectPanelOpen && (
-                <div className="space-y-3">
+              <div className="space-y-3">
+                {sectorObjectPanelOpen && (
+                  <>
                   <div className="space-y-2 rounded-xl border border-border/40 bg-black/10 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium">新增自定义行业</p>
-                      <span className="text-xs text-muted-foreground">这里新增后，会直接进入你的行业中心对象池</span>
+                      <p className="text-sm font-medium">行业库</p>
+                      <span className="text-xs text-muted-foreground">只保留两栏：行业名称 + 一级/二级挂载方式</span>
                     </div>
                     <input
-                      value={sectorForm.name}
-                      onChange={(event) => setSectorForm((prev) => ({ ...prev, name: event.target.value }))}
-                      placeholder="行业名称：工程机械 / IDC 温控 / 民爆"
+                      value={sectorLibraryForm.name}
+                      onChange={(event) => setSectorLibraryForm((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="行业名称：科技 / 机械 / HBM / 光互联"
                       className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
                     />
                     <select
-                      value={sectorForm.parent_id}
-                      onChange={(event) => setSectorForm((prev) => ({ ...prev, parent_id: event.target.value }))}
+                      value={sectorLibraryForm.kind}
+                      onChange={(event) => setSectorLibraryForm((prev) => ({
+                        ...prev,
+                        kind: event.target.value as "primary" | "secondary",
+                        parent_id: event.target.value === "secondary" ? (prev.parent_id || activePrimarySectorId) : "",
+                      }))}
                       className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
                     >
-                      <option value="">作为一级行业</option>
-                      {orderedSectorTree.map((node) => <option key={node.id} value={node.id}>{"　".repeat(node.level)}{node.name}</option>)}
+                      <option value="primary">作为一级行业</option>
+                      <option value="secondary">作为二级行业</option>
                     </select>
-                    <input
-                      value={sectorForm.description}
-                      onChange={(event) => setSectorForm((prev) => ({ ...prev, description: event.target.value }))}
-                      placeholder="说明：写一句你为什么要长期跟踪它"
-                      className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
-                    />
+                    {sectorLibraryForm.kind === "secondary" && (
+                      <select
+                        value={sectorLibraryForm.parent_id}
+                        onChange={(event) => setSectorLibraryForm((prev) => ({ ...prev, parent_id: event.target.value }))}
+                        className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                      >
+                        <option value="">选择挂载一级行业</option>
+                        {primarySectorGroups.map((group) => (
+                          <option key={group.id} value={group.id}>{group.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <button
-                      onClick={() => void addSectorNode()}
+                      onClick={() => void addSectorLibraryNode()}
                       className="w-full rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15"
                     >
-                      加入行业中心对象池
+                      加入行业库
                     </button>
                   </div>
-                  {selectedSector && (
-                    <div className="space-y-2 rounded-xl border border-border/40 bg-black/10 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium">重命名当前行业</p>
-                        <span className="text-xs text-muted-foreground">你导入的参考行业也可以改成你自己的命名方式</span>
-                      </div>
-                      <input
-                        value={sectorRenameForm.name}
-                        onChange={(event) => setSectorRenameForm((prev) => ({ ...prev, name: event.target.value }))}
-                        placeholder="新的行业名称"
-                        className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
-                      />
-                      <input
-                        value={sectorRenameForm.description}
-                        onChange={(event) => setSectorRenameForm((prev) => ({ ...prev, description: event.target.value }))}
-                        placeholder="行业说明"
-                        className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
-                      />
-                      <button
-                        onClick={() => void renameSectorNode()}
-                        className="w-full rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15"
-                      >
-                        保存行业名称
-                      </button>
-                    </div>
-                  )}
                   <input
                     value={sectorObjectQuery}
                     onChange={(event) => setSectorObjectQuery(event.target.value)}
-                    placeholder="搜索行业，如：工程机械 / 电网设备"
+                    placeholder="搜索一级/二级行业，如：机械 / 光互联"
                     className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
                   />
-                  {orderedSectorTree.length === 0 ? (
-                    <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">行业中心对象池现在完全按你自己维护。先去“新增条目”里新增行业或从原板块中心行业库按需导入。</div>
-                  ) : (
-                    <div className="space-y-2">
-                      <SectionTabs
-                        tabs={filteredSectorObjectOptions}
-                        active={selectedSector}
-                        onChange={(value) => {
-                          setSelectedSector(value);
-                          setSectorView("overview");
-                          setIndicatorForm((prev) => ({ ...prev, sector: value }));
-                          setForm((prev) => ({ ...prev, related: value }));
-                          setSectorObjectPanelOpen(false);
-                        }}
-                        draggableStorageKey="framework-sector-object-order"
-                      />
-                      {selectedSector && orderedSectorTree.find((item) => item.name === selectedSector) && (
-                        <button
-                          onClick={() => {
-                            const node = orderedSectorTree.find((item) => item.name === selectedSector);
-                            if (node) void deleteSectorNode(node.id, node.name);
+                  </>
+                )}
+                {orderedSectorTree.length === 0 ? (
+                  <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">行业中心对象池现在完全按你自己维护。先在行业库里补一个一级行业，再往下面挂二级行业。</div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredPrimarySectorGroups.map((group) => (
+                      <div key={group.id} className="rounded-xl border border-border/40 bg-black/10 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div
+                            draggable={sectorCenterEditing}
+                            onDragStart={() => {
+                              if (!sectorCenterEditing) return;
+                              setDraggingSectorGroupId(group.id);
+                              setDragOverSectorGroupId(group.id);
+                            }}
+                            onDragOver={(event) => {
+                              if (!sectorCenterEditing) return;
+                              event.preventDefault();
+                              if (dragOverSectorGroupId !== group.id) setDragOverSectorGroupId(group.id);
+                            }}
+                            onDragLeave={() => {
+                              if (!sectorCenterEditing) return;
+                              if (dragOverSectorGroupId === group.id) setDragOverSectorGroupId("");
+                            }}
+                            onDrop={(event) => {
+                              if (!sectorCenterEditing) return;
+                              event.preventDefault();
+                              void handleSectorGroupDrop(group.id);
+                            }}
+                            onDragEnd={() => {
+                              if (!sectorCenterEditing) return;
+                              setDraggingSectorGroupId("");
+                              setDragOverSectorGroupId("");
+                            }}
+                            className={cn(
+                              "inline-flex items-center gap-2 rounded-lg border px-3 py-2",
+                              dragOverSectorGroupId === group.id && draggingSectorGroupId !== group.id ? "border-primary/70 ring-1 ring-primary/40" : "border-border/40",
+                              draggingSectorGroupId === group.id ? "opacity-60" : "",
+                            )}
+                          >
+                            {sectorCenterEditing && <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />}
+                            {editingSectorNodeId === group.id ? (
+                              <input
+                                autoFocus
+                                value={sectorNameDraft}
+                                onChange={(event) => setSectorNameDraft(event.target.value)}
+                                onBlur={() => void commitSectorInlineRename(group)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") void commitSectorInlineRename(group);
+                                  if (event.key === "Escape") {
+                                    setEditingSectorNodeId("");
+                                    setSectorNameDraft("");
+                                  }
+                                }}
+                                className="min-w-[120px] rounded-md border border-primary/40 bg-black/20 px-2 py-1 text-sm font-semibold text-primary outline-none"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setSelectedSector(group.name);
+                                  setSectorView("overview");
+                                  setIndicatorForm((prev) => ({ ...prev, sector: group.name }));
+                                  setForm((prev) => ({ ...prev, related: group.name }));
+                                }}
+                                onDoubleClick={() => {
+                                  if (sectorCenterEditing) beginSectorInlineRename(group);
+                                }}
+                                className={`text-sm font-semibold ${selectedSector === group.name ? "text-primary" : "text-foreground"}`}
+                              >
+                                {group.name}
+                              </button>
+                            )}
+                          </div>
+                          {sectorCenterEditing && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => void deleteSectorNode(group.id, group.name)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:text-primary"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> 删除
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div
+                          onDragOver={(event) => {
+                            if (!sectorCenterEditing) return;
+                            event.preventDefault();
+                            if (dragOverSectorChildId !== `group:${group.id}`) setDragOverSectorChildId(`group:${group.id}`);
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:text-primary"
+                          onDragLeave={() => {
+                            if (!sectorCenterEditing) return;
+                            if (dragOverSectorChildId === `group:${group.id}`) setDragOverSectorChildId("");
+                          }}
+                          onDrop={(event) => {
+                            if (!sectorCenterEditing) return;
+                            event.preventDefault();
+                            void handleSectorChildDrop(group.id);
+                          }}
+                          className={cn(
+                            "mt-3 flex flex-wrap gap-2 rounded-lg transition",
+                            dragOverSectorChildId === `group:${group.id}` && draggingSectorChildId ? "ring-1 ring-primary/40" : "",
+                          )}
                         >
-                          <Trash2 className="h-3.5 w-3.5" /> 删除当前行业对象
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                          {group.children.length === 0 ? (
+                            <span className="text-xs text-muted-foreground">这个一级行业下还没有二级行业。</span>
+                          ) : (
+                            group.children.map((child) => (
+                              <div
+                                key={child.id}
+                                draggable={sectorCenterEditing}
+                                onDragStart={() => {
+                                  if (!sectorCenterEditing) return;
+                                  setDraggingSectorChildId(child.id);
+                                  setDragOverSectorChildId(child.id);
+                                }}
+                                onDragOver={(event) => {
+                                  if (!sectorCenterEditing) return;
+                                  event.preventDefault();
+                                  if (dragOverSectorChildId !== child.id) setDragOverSectorChildId(child.id);
+                                }}
+                                onDragLeave={() => {
+                                  if (!sectorCenterEditing) return;
+                                  if (dragOverSectorChildId === child.id) setDragOverSectorChildId("");
+                                }}
+                                onDrop={(event) => {
+                                  if (!sectorCenterEditing) return;
+                                  event.preventDefault();
+                                  void handleSectorChildDrop(group.id, child.id);
+                                }}
+                                onDragEnd={() => {
+                                  if (!sectorCenterEditing) return;
+                                  setDraggingSectorChildId("");
+                                  setDragOverSectorChildId("");
+                                }}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-black/20 px-2 py-1",
+                                  dragOverSectorChildId === child.id && draggingSectorChildId !== child.id ? "ring-1 ring-primary/40" : "",
+                                  draggingSectorChildId === child.id ? "opacity-60" : "",
+                                )}
+                              >
+                                {sectorCenterEditing && <GripVertical className="h-3 w-3 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />}
+                                {editingSectorNodeId === child.id ? (
+                                  <input
+                                    autoFocus
+                                    value={sectorNameDraft}
+                                    onChange={(event) => setSectorNameDraft(event.target.value)}
+                                    onBlur={() => void commitSectorInlineRename(child)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") void commitSectorInlineRename(child);
+                                      if (event.key === "Escape") {
+                                        setEditingSectorNodeId("");
+                                        setSectorNameDraft("");
+                                      }
+                                    }}
+                                    className="min-w-[88px] rounded-md border border-primary/40 bg-black/20 px-2 py-0.5 text-xs font-medium text-primary outline-none"
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSector(child.name);
+                                      setSectorView("overview");
+                                      setIndicatorForm((prev) => ({ ...prev, sector: child.name }));
+                                      setForm((prev) => ({ ...prev, related: child.name }));
+                                      setSectorObjectPanelOpen(false);
+                                    }}
+                                    onDoubleClick={() => {
+                                      if (sectorCenterEditing) beginSectorInlineRename(child);
+                                    }}
+                                    className={`text-xs font-medium ${selectedSector === child.name ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                                  >
+                                    {child.name}
+                                  </button>
+                                )}
+                                {sectorCenterEditing && (
+                                  <>
+                                    <button
+                                      onClick={() => void deleteSectorNode(child.id, child.name)}
+                                      className="text-[11px] text-muted-foreground hover:text-primary"
+                                    >
+                                      删除
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </GlassCard>
           )}
           {active === "stocks" && stockCenterTab === "center" && (
             <GlassCard className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium">个股中心对象</p>
-                <span className="text-xs text-muted-foreground">{orderedWatchStocks.length} 只个股</span>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-muted/20 px-3 py-3">
-                <div>
-                  <p className="text-sm font-medium">{selectedTicker ? orderedWatchStocks.find((item) => `${item.code}.${item.market}` === selectedTicker)?.name || selectedTicker : "暂未选择个股"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">默认折叠个股池，需要时再展开切换。</p>
-                </div>
-                <button
-                  onClick={() => setStockObjectPanelOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-primary"
-                >
-                  {stockObjectPanelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  {stockObjectPanelOpen ? "收起个股池" : "展开个股池"}
-                </button>
-              </div>
-              {stockObjectPanelOpen && (orderedWatchStocks.length === 0 ? (
-                <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">先去关注列表补充核心个股，这里会形成右侧个股切换页。</div>
+              {stockCenterObjects.length === 0 ? (
+                <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">先去关注列表补充核心个股，这里只会接入个股，不会显示大宗、利率等其他对象。</div>
               ) : (
-                <SectionTabs
-                  tabs={orderedWatchStocks.map((item) => ({
-                    key: `${item.code}.${item.market}`,
-                    label: `${item.name} · ${item.group}`,
-                  }))}
-                  active={selectedTicker}
-                  onChange={(value) => {
-                    setStockView("overview");
-                    setStockObjectPanelOpen(false);
-                    void loadStockCenter(value);
-                  }}
-                  draggableStorageKey="framework-stock-object-order"
-                />
-              ))}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      onClick={() => setStockCenterEditing((prev) => !prev)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${stockCenterEditing ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-primary"}`}
+                    >
+                      {stockCenterEditing ? "完成编辑" : "编辑"}
+                    </button>
+                    <button
+                      onClick={addStockFocusBucket}
+                      disabled={!stockCenterEditing}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-primary"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> 新增分组列
+                    </button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {stockFocusBuckets.map((bucket) => {
+                    const expanded = stockFocusExpanded[bucket.id];
+                    const visibleItems = expanded ? bucket.items : bucket.items.slice(0, 6);
+                    return (
+                      <div
+                        key={bucket.id}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          if (dragOverStockBucketId !== bucket.id) setDragOverStockBucketId(bucket.id);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverStockBucketId === bucket.id) setDragOverStockBucketId("");
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          handleStockBucketDrop(bucket.id);
+                        }}
+                        className={cn(
+                          "h-full rounded-xl border border-border/40 bg-black/10 p-3 transition",
+                          dragOverStockBucketId === bucket.id && draggingStockBucketId ? "ring-1 ring-primary/40" : "",
+                        )}
+                      >
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          {stockCenterEditing ? (
+                            <input
+                              value={bucket.label}
+                              onChange={(event) => renameStockFocusBucket(bucket.id, event.target.value)}
+                              className={`min-w-0 flex-1 rounded-full border px-2.5 py-1 text-xs font-medium outline-none ${bucket.tone}`}
+                            />
+                          ) : (
+                            <div className={`min-w-0 flex-1 rounded-full border px-2.5 py-1 text-xs font-medium ${bucket.tone}`}>{bucket.label}</div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{bucket.items.length} 只</span>
+                            {stockCenterEditing && stockFocusBucketDefs.length > 1 && (
+                              <button
+                                onClick={() => removeStockFocusBucket(bucket.id)}
+                                className="rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:text-primary"
+                              >
+                                删除
+                              </button>
+                            )}
+                          </div>
+                          {bucket.items.length > 6 && (
+                            <button
+                              onClick={() => setStockFocusExpanded((current) => ({ ...current, [bucket.id]: !current[bucket.id] }))}
+                              className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-primary"
+                            >
+                              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              {expanded ? "收起" : `展开剩余 ${bucket.items.length - 6} 只`}
+                            </button>
+                          )}
+                        </div>
+                        {bucket.items.length === 0 ? (
+                          <div className="rounded-lg bg-muted/20 px-3 py-2 text-xs text-muted-foreground">当前分组还没有个股。</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {visibleItems.map((item) => {
+                              const ticker = `${item.code}.${item.market}`;
+                              const selected = ticker === selectedTicker;
+                              return (
+                                <div
+                                  key={ticker}
+                                  draggable={stockCenterEditing}
+                                  onDragStart={() => {
+                                    if (!stockCenterEditing) return;
+                                    setDraggingStockBucketId(ticker);
+                                    setDragOverStockBucketId(ticker);
+                                  }}
+                                  onDragOver={(event) => {
+                                    if (!stockCenterEditing) return;
+                                    event.preventDefault();
+                                    if (dragOverStockBucketId !== ticker) setDragOverStockBucketId(ticker);
+                                  }}
+                                  onDragLeave={() => {
+                                    if (!stockCenterEditing) return;
+                                    if (dragOverStockBucketId === ticker) setDragOverStockBucketId("");
+                                  }}
+                                  onDrop={(event) => {
+                                    if (!stockCenterEditing) return;
+                                    event.preventDefault();
+                                    handleStockBucketDrop(bucket.id, ticker);
+                                  }}
+                                  onDragEnd={() => {
+                                    if (!stockCenterEditing) return;
+                                    setDraggingStockBucketId("");
+                                    setDragOverStockBucketId("");
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-1.5 rounded-xl border px-2 py-2 transition",
+                                    selected ? "border-primary/60 bg-primary/10 shadow-glow" : "border-border/40 bg-background/60",
+                                    dragOverStockBucketId === ticker && draggingStockBucketId !== ticker ? "ring-1 ring-primary/40" : "",
+                                    draggingStockBucketId === ticker ? "opacity-60" : "",
+                                  )}
+                                >
+                                  {editingStockTicker === ticker ? (
+                                    <input
+                                      autoFocus
+                                      value={stockNameDraft}
+                                      onChange={(event) => setStockNameDraft(event.target.value)}
+                                      onBlur={() => void commitStockInlineRename(ticker)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") void commitStockInlineRename(ticker);
+                                        if (event.key === "Escape") {
+                                          setEditingStockTicker("");
+                                          setStockNameDraft("");
+                                        }
+                                      }}
+                                      className="min-w-[88px] rounded-md border border-primary/40 bg-black/20 px-2 py-0.5 text-sm font-medium text-primary outline-none"
+                                    />
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setStockView("overview");
+                                        void loadStockCenter(ticker);
+                                      }}
+                                      onDoubleClick={() => {
+                                        if (stockCenterEditing) beginStockInlineRename(ticker);
+                                      }}
+                                      className="text-sm font-medium text-foreground"
+                                    >
+                                      {item.name}
+                                    </button>
+                                  )}
+                                  {stockCenterEditing && (
+                                    <>
+                                      <button
+                                        onClick={() => void removeWatchStock(ticker)}
+                                        className="text-[11px] text-muted-foreground hover:text-primary"
+                                      >
+                                        删除
+                                      </button>
+                                      <GripVertical className="h-3.5 w-3.5 cursor-grab text-muted-foreground active:cursor-grabbing" />
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  </div>
+                </div>
+              )}
             </GlassCard>
           )}
           {active === "weekly" && (
@@ -2412,30 +3306,7 @@ export function Framework() {
                   </div>
                 ))}
               </div>
-              <div className="rounded-xl border border-border/50 bg-black/10 p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">自动信息源</p>
-                    <p className="mt-1 text-xs text-muted-foreground">这里只展示系统自动接入的来源，例如东财公开研报、未来 alphaengine 专家纪要接口。你手动投喂的资料仍放在“附件链接”。</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{sectorAutomaticSources.length} 个自动源</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {sectorAutomaticSources.length === 0 ? (
-                    <div className="rounded-lg bg-muted/25 px-3 py-3 text-sm text-muted-foreground">还没有自动信息源。可以点击“提取行业研报”；手动资料请到“附件链接”页新增。</div>
-                  ) : (
-                    sectorAutomaticSources.slice(0, 8).map((item) => (
-                      <div key={item.id} className="rounded-lg bg-muted/25 px-3 py-2 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-medium">{item.title}</p>
-                          <span className="text-xs text-muted-foreground">{item.date}</span>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.content_preview || item.content || "已沉淀，等待补充说明。"}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              {renderOverviewSourcePanel("sector")}
               <div>
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium">最近更新</p>
@@ -2729,30 +3600,7 @@ export function Framework() {
                   </div>
                 ))}
               </div>
-              <div className="rounded-xl border border-border/50 bg-black/10 p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">自动信息源</p>
-                    <p className="mt-1 text-xs text-muted-foreground">这里只展示系统自动接入的来源，例如东财个股研报、公告新闻、未来 alphaengine 专家纪要接口。你手动投喂的资料仍放在“附件链接”。</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{stockAutomaticSources.length} 个自动源</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {stockAutomaticSources.length === 0 ? (
-                    <div className="rounded-lg bg-muted/25 px-3 py-3 text-sm text-muted-foreground">还没有自动信息源。个股研报提取和未来 alphaengine 接口会显示在这里；手动资料请到“附件链接”页新增。</div>
-                  ) : (
-                    stockAutomaticSources.slice(0, 8).map((item) => (
-                      <div key={item.id} className="rounded-lg bg-muted/25 px-3 py-2 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-medium">{item.title}</p>
-                          <span className="text-xs text-muted-foreground">{item.date}</span>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.content_preview || item.content || "已沉淀，等待补充说明。"}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              {renderOverviewSourcePanel("stock")}
               <div className="grid gap-4 xl:grid-cols-2">
                 <div>
                   <p className="mb-2 flex items-center gap-2 text-sm font-medium"><Newspaper className="h-4 w-4 text-primary" /> 最新公告</p>

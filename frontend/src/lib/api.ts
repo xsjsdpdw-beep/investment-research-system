@@ -293,6 +293,7 @@ export interface WatchStock {
   name: string;
   group: string;
   sort_order: number;
+  asset_type?: string;
 }
 
 export interface WatchIndicator {
@@ -301,6 +302,25 @@ export interface WatchIndicator {
   category: string;
   value: string;
   note?: string;
+  sort_order?: number;
+  asset_type?: string;
+}
+
+export interface StockSearchResult {
+  code: string;
+  market: string;
+  name: string;
+  pinyin: string;
+  security_type: string;
+  display: string;
+}
+
+export interface StockIndustryResult {
+  industry: string;
+  sw_l1: string;
+  sw_l2: string;
+  sw_l3: string;
+  source: string;
 }
 
 export interface WatchlistData {
@@ -383,12 +403,35 @@ export interface MacroOverviewData {
 }
 
 export interface ProviderStatusData {
-  providers: Record<string, { enabled: boolean; ready: boolean; label: string; notes: string }>;
-  china_macro_overview: {
+  providers: Record<string, {
+    enabled: boolean;
+    ready: boolean;
+    label: string;
+    notes: string;
+    mode?: string;
+    sdk_module?: string;
+    has_token?: boolean;
+    has_dsn?: boolean;
+  }>;
+  china_macro_overview: ProviderDatasetStatus;
+  stock_data?: ProviderDatasetStatus;
+  [dataset: string]: unknown;
+}
+
+export interface ProviderDatasetStatus {
     active_provider: string;
     fallback_provider: string;
     dataset_key: string;
-  };
+}
+
+export interface IfindStatus {
+  enabled: boolean;
+  ready: boolean;
+  mode: string;
+  sdk_module: string;
+  has_token: boolean;
+  has_dsn: boolean;
+  reason: string;
 }
 
 export interface StockCenterData {
@@ -589,6 +632,8 @@ export const api = {
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),
   announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
+  stockSearch: (q: string, limit = 10) => get<StockSearchResult[]>(`/stock/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  stockIndustry: (code: string) => get<StockIndustryResult>(`/stock/industry?code=${encodeURIComponent(code)}`),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),
@@ -738,6 +783,7 @@ export const api = {
     request<DatabaseModuleRegistry["modules"][number]>("/database/modules/custom", "POST", payload),
   saveDatabaseModuleOrder: (keys: string[]) =>
     request<DatabaseModuleRegistry>("/database/modules/order", "PUT", { keys }),
+  ifindStatus: () => get<IfindStatus>("/ifind/status"),
   chinaMacroRegistry: () => get<MacroRegistryData>("/database/china-macro-registry"),
   saveChinaMacroRegistry: (payload: MacroRegistryData) => request<MacroRegistryData>("/database/china-macro-registry", "PUT", payload),
   chinaMacroOverview: () => get<MacroOverviewData>("/database/china-macro-overview"),

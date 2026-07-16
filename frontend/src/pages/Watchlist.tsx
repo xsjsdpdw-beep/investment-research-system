@@ -1,46 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { GripVertical, Plus, RefreshCw, Star, Trash2 } from "lucide-react";
+import { GripVertical, Plus, RefreshCw, Search, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { SectionTabs } from "@/components/ui/SectionTabs";
-import { api, ApiError, type Quote, type WatchIndicator, type WatchStock } from "@/lib/api";
+import { api, ApiError, type GlobalStock, type Quote, type StockSearchResult, type WatchIndicator, type WatchStock } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const color = (value: number | undefined) =>
-  value == null ? "text-muted-foreground" : value > 0 ? "text-danger" : value < 0 ? "text-success" : "text-muted-foreground";
+type AssetRow =
+  | { id: string; kind: "stock"; code: string; market: string; name: string; group: string; sort_order: number; source: WatchStock }
+  | { id: string; kind: "indicator"; key: string; name: string; group: string; value: string; note: string; sort_order: number; source: WatchIndicator };
 
-const WATCHLIST_TABS = [
-  { key: "stocks", label: "重点个股", description: "行情、分组、核心跟踪池" },
-  { key: "indicators", label: "重点指标", description: "宏观、流动性和自定义指标" },
+const ASSET_TYPES = [
+  { key: "stock", label: "个股" },
+  { key: "commodity", label: "大宗商品" },
+  { key: "rate", label: "利率/债券" },
+  { key: "macro", label: "宏观指标" },
+  { key: "fx", label: "汇率" },
+  { key: "custom", label: "自定义" },
 ];
 
+const EQUITY_MARKETS = ["SZ", "SH", "BJ", "HK", "US"];
+
+const color = (value: number | undefined | null) =>
+  value == null ? "text-muted-foreground" : value > 0 ? "text-danger" : value < 0 ? "text-success" : "text-muted-foreground";
+
+const marketLabel = (market: string) => {
+  if (market === "HK") return "港股";
+  if (market === "US" || market === "NASDAQ" || market === "NYSE") return "美股";
+  if (market === "SH" || market === "SZ" || market === "BJ") return "A股";
+  return market || "指标";
+};
+
 export function Watchlist() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [active, setActive] = useState("stocks");
   const [stocks, setStocks] = useState<WatchStock[]>([]);
   const [indicators, setIndicators] = useState<WatchIndicator[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [stockInput, setStockInput] = useState({ code: "", market: "SZ", name: "", group: "" });
-  const [indicatorInput, setIndicatorInput] = useState({ key: "", label: "", category: "", value: "", note: "" });
+  const [globalQuotes, setGlobalQuotes] = useState<Record<string, GlobalStock>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState("");
-  const [selectedIndicatorCategory, setSelectedIndicatorCategory] = useState("");
-  const [draggingStockKey, setDraggingStockKey] = useState("");
-  const [dragOverStockKey, setDragOverStockKey] = useState("");
-  const [draggingIndicatorKey, setDraggingIndicatorKey] = useState("");
-  const [dragOverIndicatorKey, setDragOverIndicatorKey] = useState("");
+  const [draggingKey, setDraggingKey] = useState("");
+  const [dragOverKey, setDragOverKey] = useState("");
+  const [assetType, setAssetType] = useState("stock");
+  const [stockInput, setStockInput] = useState({ code: "", market: "SZ", name: "", group: "" });
+  const [assetInput, setAssetInput] = useState({ key: "", label: "", category: "大宗商品", value: "待更新", note: "" });
+  const [stockSearchText, setStockSearchText] = useState("");
+  const [stockSearchResults, setStockSearchResults] = useState<StockSearchResult[]>([]);
+  const [stockSearching, setStockSearching] = useState(false);
+  const [stockSearchOpen, setStockSearchOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
       const data = await api.watchlist();
-      setStocks(data.stocks);
-      setIndicators(data.indicators);
+      setStocks(data.stocks || []);
+      setIndicators(data.indicators || []);
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "加载关注列表失败");
     } finally {
@@ -48,17 +65,30 @@ export function Watchlist() {
     }
   };
 
+  const persist = async (nextStocks: WatchStock[], nextIndicators: WatchIndicator[]) => {
+    const saved = await api.saveWatchlist({ stocks: nextStocks, indicators: nextIndicators });
+    setStocks(saved.stocks || []);
+    setIndicators(saved.indicators || []);
+  };
+
   const refreshQuotes = async (items: WatchStock[]) => {
-    const codes = items.filter((item) => item.market === "SZ" || item.market === "SH").map((item) => item.code);
-    if (!codes.length) {
-      setQuotes({});
-      return;
-    }
     setRefreshing(true);
     try {
-      setQuotes(await api.quote(codes.join(",")));
+      const aStocks = items.filter((item) => ["SZ", "SH", "BJ"].includes(item.market)).map((item) => item.code);
+      const globalStocks = items.filter((item) => !["SZ", "SH", "BJ"].includes(item.market));
+      const [aQuoteMap, globalItems] = await Promise.all([
+        aStocks.length ? api.quote(aStocks.join(",")) : Promise.resolve({} as Record<string, Quote>),
+        Promise.all(globalStocks.map((item) => api.globalStock(item.code).catch(() => null))),
+      ]);
+      setQuotes(aQuoteMap);
+      setGlobalQuotes(
+        globalItems.reduce<Record<string, GlobalStock>>((acc, item) => {
+          if (item?.code) acc[item.code] = item;
+          return acc;
+        }, {}),
+      );
     } catch {
-      toast.error("行情刷新失败");
+      toast.error("行情刷新失败，已保留列表本身");
     } finally {
       setRefreshing(false);
     }
@@ -70,345 +100,362 @@ export function Watchlist() {
 
   useEffect(() => {
     if (stocks.length) void refreshQuotes(stocks);
+    else {
+      setQuotes({});
+      setGlobalQuotes({});
+    }
   }, [stocks]);
 
   useEffect(() => {
-    const sub = searchParams.get("sub");
-    if (sub && WATCHLIST_TABS.some((tab) => tab.key === sub) && sub !== active) {
-      setActive(sub);
+    const keyword = stockSearchText.trim();
+    if (keyword.length < 2 || !["SZ", "SH", "BJ"].includes(stockInput.market)) {
+      setStockSearchResults([]);
+      setStockSearching(false);
       return;
     }
-    if (!sub) {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("sub", active);
-        return next;
-      }, { replace: true });
-    }
-  }, [active, searchParams, setSearchParams]);
+    let cancelled = false;
+    setStockSearching(true);
+    const timer = window.setTimeout(() => {
+      api.stockSearch(keyword, 8)
+        .then((items) => {
+          if (cancelled) return;
+          setStockSearchResults(items);
+          setStockSearchOpen(true);
+        })
+        .catch(() => {
+          if (!cancelled) setStockSearchResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setStockSearching(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [stockInput.market, stockSearchText]);
 
-  const persist = async (nextStocks: WatchStock[], nextIndicators: WatchIndicator[]) => {
-    const saved = await api.saveWatchlist({ stocks: nextStocks, indicators: nextIndicators });
-    setStocks(saved.stocks);
-    setIndicators(saved.indicators);
+  const rows = useMemo<AssetRow[]>(() => {
+    const stockRows: AssetRow[] = stocks.map((item, index) => ({
+      id: `${item.code}.${item.market}`,
+      kind: "stock",
+      code: item.code,
+      market: item.market,
+      name: item.name,
+      group: item.group || marketLabel(item.market),
+      sort_order: item.sort_order ?? index,
+      source: item,
+    }));
+    const indicatorRows: AssetRow[] = indicators.map((item, index) => ({
+      id: item.key,
+      kind: "indicator",
+      key: item.key,
+      name: item.label,
+      group: item.category || "自定义",
+      value: item.value || "待更新",
+      note: item.note || "",
+      sort_order: item.sort_order ?? stocks.length + index,
+      source: item,
+    }));
+    return [...stockRows, ...indicatorRows].sort((a, b) => a.sort_order - b.sort_order);
+  }, [indicators, stocks]);
+
+  const groups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of rows) counts.set(item.group, (counts.get(item.group) || 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+
+  const visibleRows = useMemo(
+    () => (selectedGroup ? rows.filter((item) => item.group === selectedGroup) : rows),
+    [rows, selectedGroup],
+  );
+
+  const aiContext = rows.length
+    ? rows.map((item) => {
+        if (item.kind === "stock") {
+          const aQuote = quotes[item.code];
+          const gQuote = globalQuotes[item.code]?.quote;
+          return `${item.name}(${item.code}.${item.market}) ${item.group} 现价${aQuote?.price ?? gQuote?.price ?? "—"} 涨跌${aQuote?.change_pct ?? gQuote?.change_pct ?? "—"}%`;
+        }
+        return `${item.name}(${item.key}) ${item.group} 当前值${item.value} ${item.note}`;
+      }).join("\n")
+    : "还没有关注对象。";
+
+  const selectStockSuggestion = async (item: StockSearchResult) => {
+    setStockInput((prev) => ({ ...prev, code: item.code, market: item.market, name: item.name }));
+    setStockSearchText(item.display);
+    setStockSearchOpen(false);
+    try {
+      const industry = await api.stockIndustry(item.code);
+      setStockInput((prev) => ({ ...prev, group: industry.sw_l3 || industry.industry || prev.group }));
+    } catch {
+      toast.error("行业自动识别失败，可以先手动填写分组");
+    }
   };
 
   const addStock = async () => {
-    if (!stockInput.code.trim()) return;
+    const code = stockInput.code.trim().toUpperCase();
+    const market = stockInput.market.trim().toUpperCase();
+    if (!code) return;
+    if (stocks.some((item) => item.code === code && item.market === market)) {
+      toast.error("这个标的已经在关注列表里");
+      return;
+    }
+    let name = stockInput.name.trim() || code;
+    if (!["SZ", "SH", "BJ"].includes(market)) {
+      const hit = await api.globalStock(code).catch(() => null);
+      if (hit?.name) name = hit.name;
+    }
     const next = [...stocks, {
-      code: stockInput.code.trim(),
-      market: stockInput.market.trim().toUpperCase(),
-      name: stockInput.name.trim() || stockInput.code.trim(),
-      group: stockInput.group.trim() || "未分组",
-      sort_order: stocks.length,
+      code,
+      market,
+      name,
+      group: stockInput.group.trim() || marketLabel(market),
+      sort_order: rows.length,
+      asset_type: "stock",
     }];
     await persist(next, indicators);
     setStockInput({ code: "", market: "SZ", name: "", group: "" });
+    setStockSearchText("");
+    setStockSearchResults([]);
     toast.success("已加入关注列表");
   };
 
   const addIndicator = async () => {
-    if (!indicatorInput.key.trim() || !indicatorInput.label.trim()) return;
+    const key = assetInput.key.trim();
+    const label = assetInput.label.trim();
+    if (!key || !label) return;
+    if (indicators.some((item) => item.key === key)) {
+      toast.error("这个关注对象已经存在");
+      return;
+    }
     const next = [...indicators, {
-      key: indicatorInput.key.trim(),
-      label: indicatorInput.label.trim(),
-      category: indicatorInput.category.trim() || "自定义",
-      value: indicatorInput.value.trim() || "待更新",
-      note: indicatorInput.note.trim() || "",
+      key,
+      label,
+      category: assetInput.category.trim() || ASSET_TYPES.find((item) => item.key === assetType)?.label || "自定义",
+      value: assetInput.value.trim() || "待更新",
+      note: assetInput.note.trim(),
+      sort_order: rows.length,
+      asset_type: assetType,
     }];
     await persist(stocks, next);
-    setIndicatorInput({ key: "", label: "", category: "", value: "", note: "" });
-    toast.success("指标已加入关注列表");
+    setAssetInput({ key: "", label: "", category: assetInput.category, value: "待更新", note: "" });
+    toast.success("已加入关注列表");
   };
 
-  const groupedStocks = useMemo(() => {
-    return stocks.reduce<Record<string, WatchStock[]>>((acc, item) => {
-      const group = item.group || "未分组";
-      acc[group] = acc[group] || [];
-      acc[group].push(item);
-      return acc;
-    }, {});
-  }, [stocks]);
-
-  const stockGroups = useMemo(
-    () => Object.entries(groupedStocks).sort((a, b) => b[1].length - a[1].length),
-    [groupedStocks],
-  );
-
-  const indicatorCategories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of indicators) counts.set(item.category || "未分类", (counts.get(item.category || "未分类") || 0) + 1);
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [indicators]);
-
-  const orderedStocks = useMemo(
-    () => [...stocks].sort((a, b) => a.sort_order - b.sort_order),
-    [stocks],
-  );
-
-  const visibleStocks = useMemo(
-    () => (selectedGroup ? orderedStocks.filter((item) => item.group === selectedGroup) : orderedStocks),
-    [orderedStocks, selectedGroup],
-  );
-
-  const visibleIndicators = useMemo(
-    () => (selectedIndicatorCategory ? indicators.filter((item) => item.category === selectedIndicatorCategory) : indicators),
-    [indicators, selectedIndicatorCategory],
-  );
-
-  const aiContext = stocks.length
-    ? stocks.map((item) => {
-        const quote = quotes[item.code];
-        return `${item.name}(${item.code}.${item.market}) ${item.group} 现价${quote?.price ?? "—"} 涨跌${quote?.change_pct ?? "—"}%`;
-      }).join("\n")
-    : "还没有关注对象。";
-
-  const reorderStocks = async (targetKey: string) => {
-    if (!draggingStockKey || draggingStockKey === targetKey) {
-      setDraggingStockKey("");
-      setDragOverStockKey("");
-      return;
+  const deleteRow = async (row: AssetRow) => {
+    if (row.kind === "stock") {
+      await persist(stocks.filter((item) => !(item.code === row.code && item.market === row.market)), indicators);
+    } else {
+      await persist(stocks, indicators.filter((item) => item.key !== row.key));
     }
-    const keys = orderedStocks.map((item) => `${item.code}.${item.market}`);
-    const fromIndex = keys.findIndex((key) => key === draggingStockKey);
-    const toIndex = keys.findIndex((key) => key === targetKey);
-    if (fromIndex < 0 || toIndex < 0) return;
-    const next = [...orderedStocks];
-    const [moved] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, moved);
-    await persist(next.map((item, index) => ({ ...item, sort_order: index })), indicators);
-    setDraggingStockKey("");
-    setDragOverStockKey("");
-    toast.success("个股顺序已保存");
   };
 
-  const reorderIndicators = async (targetKey: string) => {
-    if (!draggingIndicatorKey || draggingIndicatorKey === targetKey) {
-      setDraggingIndicatorKey("");
-      setDragOverIndicatorKey("");
+  const reorderRows = async (targetKey: string) => {
+    if (!draggingKey || draggingKey === targetKey) {
+      setDraggingKey("");
+      setDragOverKey("");
       return;
     }
-    const keys = indicators.map((item) => item.key);
-    const fromIndex = keys.findIndex((key) => key === draggingIndicatorKey);
-    const toIndex = keys.findIndex((key) => key === targetKey);
+    const fromIndex = rows.findIndex((item) => item.id === draggingKey);
+    const toIndex = rows.findIndex((item) => item.id === targetKey);
     if (fromIndex < 0 || toIndex < 0) return;
-    const next = [...indicators];
+    const next = [...rows];
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
-    await persist(stocks, next);
-    setDraggingIndicatorKey("");
-    setDragOverIndicatorKey("");
-    toast.success("指标顺序已保存");
+    const rank = new Map(next.map((item, index) => [item.id, index]));
+    await persist(
+      stocks.map((item) => ({ ...item, sort_order: rank.get(`${item.code}.${item.market}`) ?? item.sort_order ?? 0 })),
+      indicators.map((item) => ({ ...item, sort_order: rank.get(item.key) ?? item.sort_order ?? 0 })),
+    );
+    setDraggingKey("");
+    setDragOverKey("");
+    toast.success("关注列表顺序已保存");
   };
 
   return (
     <div>
       <PageHeader
         title="关注列表"
-        subtitle="把重点个股和关键指标集中维护，后续个股动态、周复盘和个股中心都直接引用这里。"
-        actions={stocks.length > 0 ? <AskAiButton context={aiContext} label="让 AI 看关注列表" suggestions={["帮我按行业分组", "哪些标的需要重点跟踪", "这份列表还缺什么"]} /> : undefined}
+        subtitle="只维护一份重点关注池：A股、港股、美股、大宗商品、利率和宏观指标都在这里统一增减。"
+        actions={rows.length > 0 ? <AskAiButton context={aiContext} label="让 AI 看关注列表" suggestions={["帮我按资产类别复盘", "哪些对象需要放入投资日历", "这份关注池还缺什么"]} /> : undefined}
       />
 
       <div className="space-y-4">
-        <div className="space-y-4">
-          {active === "stocks" ? (
-            <>
-              <GlassCard className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 font-semibold"><Star className="h-4 w-4 text-primary" /> 重点个股</h3>
-                  <button onClick={() => void refreshQuotes(stocks)} className="text-muted-foreground hover:text-primary" title="刷新行情">
-                    <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-                  </button>
-                </div>
-                <div className="grid gap-2 md:grid-cols-4">
-                  <input value={stockInput.code} onChange={(event) => setStockInput((prev) => ({ ...prev, code: event.target.value }))} placeholder="代码" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <input value={stockInput.market} onChange={(event) => setStockInput((prev) => ({ ...prev, market: event.target.value }))} placeholder="市场 SH/SZ/HK/US" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <input value={stockInput.name} onChange={(event) => setStockInput((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <div className="flex gap-2">
-                    <input value={stockInput.group} onChange={(event) => setStockInput((prev) => ({ ...prev, group: event.target.value }))} placeholder="分组/行业" className="min-w-0 flex-1 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                    <button onClick={() => void addStock()} className="rounded-lg bg-primary/15 px-3 py-2 text-primary hover:bg-primary/25"><Plus className="h-4 w-4" /></button>
-                  </div>
-                </div>
-              </GlassCard>
+        <GlassCard className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Star className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium">{selectedGroup ? `${selectedGroup} · 关注对象` : "全部重点关注对象"}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{visibleRows.length} 项</span>
+              <button onClick={() => void refreshQuotes(stocks)} className="text-muted-foreground hover:text-primary" title="刷新行情">
+                <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+              </button>
+            </div>
+          </div>
 
-              <GlassCard className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{selectedGroup ? `${selectedGroup} · 个股列表` : "全部重点个股"}</p>
-                  <span className="text-xs text-muted-foreground">{visibleStocks.length} 只</span>
-                </div>
-                {stockGroups.length === 0 ? (
-                  <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">还没有个股分组。新增股票后，这里会自动按你的行业/分组形成右侧切换页。</div>
-                ) : (
-                  <SectionTabs
-                    tabs={[
-                      { key: "", label: "全部个股" },
-                      ...stockGroups.map(([group, items]) => ({ key: group, label: `${group} · ${items.length}` })),
-                    ]}
-                    active={selectedGroup}
-                    onChange={setSelectedGroup}
-                    draggableStorageKey="watchlist-stock-group-order"
-                  />
-                )}
-                {loading ? (
-                  <p className="text-sm text-muted-foreground">正在读取关注列表…</p>
-                ) : visibleStocks.length === 0 ? (
-                  <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">当前筛选下还没有个股。可以切换左侧分组，或先新增一只重点跟踪标的。</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-muted-foreground">
-                          {["", "名称", "代码", "分组", "现价", "涨跌%", "PE", "PB", ""].map((header) => (
-                            <th key={header} className="px-3 py-2 font-medium">{header}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleStocks.map((item) => {
-                          const key = `${item.code}.${item.market}`;
-                          const quote = quotes[item.code];
-                          return (
-                            <tr
-                              key={key}
-                              draggable
-                              onDragStart={() => {
-                                setDraggingStockKey(key);
-                                setDragOverStockKey(key);
-                              }}
-                              onDragOver={(event) => {
-                                event.preventDefault();
-                                if (dragOverStockKey !== key) setDragOverStockKey(key);
-                              }}
-                              onDragLeave={() => {
-                                if (dragOverStockKey === key) setDragOverStockKey("");
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                void reorderStocks(key);
-                              }}
-                              onDragEnd={() => {
-                                setDraggingStockKey("");
-                                setDragOverStockKey("");
-                              }}
-                              className={cn(
-                                "border-t border-border/20",
-                                dragOverStockKey === key && draggingStockKey !== key && "bg-primary/5",
-                                draggingStockKey === key && "opacity-60",
-                              )}
-                            >
-                              <td className="px-3 py-2 text-muted-foreground"><GripVertical className="h-4 w-4 cursor-grab active:cursor-grabbing" /></td>
-                              <td className="px-3 py-2">{item.name}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{key}</td>
-                              <td className="px-3 py-2 text-muted-foreground">{item.group}</td>
-                              <td className={cn("px-3 py-2 font-mono", color(quote?.change_pct))}>{quote?.price ?? "—"}</td>
-                              <td className={cn("px-3 py-2 font-mono", color(quote?.change_pct))}>{quote?.change_pct == null ? "—" : `${quote.change_pct > 0 ? "+" : ""}${quote.change_pct}%`}</td>
-                              <td className="px-3 py-2 font-mono text-muted-foreground">{quote?.pe_ttm ?? "—"}</td>
-                              <td className="px-3 py-2 font-mono text-muted-foreground">{quote?.pb ?? "—"}</td>
-                              <td className="px-3 py-2">
-                                <button
-                                  onClick={() => void persist(stocks.filter((stock) => !(stock.code === item.code && stock.market === item.market)), indicators)}
-                                  className="text-muted-foreground hover:text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </GlassCard>
-            </>
+          {groups.length > 0 && (
+            <SectionTabs
+              tabs={[{ key: "", label: "全部" }, ...groups.map(([group, count]) => ({ key: group, label: `${group} · ${count}` }))]}
+              active={selectedGroup}
+              onChange={setSelectedGroup}
+              draggableStorageKey="watchlist-unified-group-order"
+            />
+          )}
+
+          {loading ? (
+            <p className="text-sm text-muted-foreground">正在读取关注列表…</p>
+          ) : visibleRows.length === 0 ? (
+            <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">还没有关注对象。可以在下方新增 A股、港股、美股、商品或利率指标。</div>
           ) : (
-            <>
-              <GlassCard className="space-y-3">
-                <h3 className="font-semibold">重点指标</h3>
-                <div className="space-y-2">
-                  <input value={indicatorInput.key} onChange={(event) => setIndicatorInput((prev) => ({ ...prev, key: event.target.value }))} placeholder="key，如 cn_cpi" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <input value={indicatorInput.label} onChange={(event) => setIndicatorInput((prev) => ({ ...prev, label: event.target.value }))} placeholder="展示名称" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <input value={indicatorInput.category} onChange={(event) => setIndicatorInput((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <input value={indicatorInput.value} onChange={(event) => setIndicatorInput((prev) => ({ ...prev, value: event.target.value }))} placeholder="最新值" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <textarea value={indicatorInput.note} onChange={(event) => setIndicatorInput((prev) => ({ ...prev, note: event.target.value }))} rows={3} placeholder="备注 / 跟踪要点" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                  <button onClick={() => void addIndicator()} className="w-full rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25">新增指标</button>
-                </div>
-              </GlassCard>
-
-              <GlassCard className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{selectedIndicatorCategory ? `${selectedIndicatorCategory} · 指标列表` : "全部重点指标"}</p>
-                  <span className="text-xs text-muted-foreground">{visibleIndicators.length} 项</span>
-                </div>
-                {indicatorCategories.length === 0 ? (
-                  <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">还没有指标分类。新增指标后，这里会自动形成右侧切换页。</div>
-                ) : (
-                  <SectionTabs
-                    tabs={[
-                      { key: "", label: "全部指标" },
-                      ...indicatorCategories.map(([category, count]) => ({ key: category, label: `${category} · ${count}` })),
-                    ]}
-                    active={selectedIndicatorCategory}
-                    onChange={setSelectedIndicatorCategory}
-                    draggableStorageKey="watchlist-indicator-category-order"
-                  />
-                )}
-              </GlassCard>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {visibleIndicators.length === 0 ? (
-                  <GlassCard className="md:col-span-2 xl:col-span-3">当前筛选下还没有指标。可以切换左侧分类，或先新增一个重点跟踪指标。</GlassCard>
-                ) : (
-                  visibleIndicators.map((item) => (
-                    <GlassCard
-                      key={item.key}
-                      className={cn(
-                        "space-y-1",
-                        dragOverIndicatorKey === item.key && draggingIndicatorKey !== item.key && "ring-1 ring-primary/40",
-                        draggingIndicatorKey === item.key && "opacity-60",
-                      )}
-                    >
-                      <div
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground">
+                    {["", "名称", "代码/Key", "类型/市场", "分组", "现价/值", "涨跌%", "备注", ""].map((header) => (
+                      <th key={header} className="px-3 py-2 font-medium">{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((item) => {
+                    const aQuote = item.kind === "stock" ? quotes[item.code] : undefined;
+                    const gQuote = item.kind === "stock" ? globalQuotes[item.code]?.quote : undefined;
+                    const pct = aQuote?.change_pct ?? gQuote?.change_pct;
+                    return (
+                      <tr
+                        key={item.id}
                         draggable
                         onDragStart={() => {
-                          setDraggingIndicatorKey(item.key);
-                          setDragOverIndicatorKey(item.key);
+                          setDraggingKey(item.id);
+                          setDragOverKey(item.id);
                         }}
                         onDragOver={(event) => {
                           event.preventDefault();
-                          if (dragOverIndicatorKey !== item.key) setDragOverIndicatorKey(item.key);
+                          if (dragOverKey !== item.id) setDragOverKey(item.id);
                         }}
                         onDragLeave={() => {
-                          if (dragOverIndicatorKey === item.key) setDragOverIndicatorKey("");
+                          if (dragOverKey === item.id) setDragOverKey("");
                         }}
                         onDrop={(event) => {
                           event.preventDefault();
-                          void reorderIndicators(item.key);
+                          void reorderRows(item.id);
                         }}
                         onDragEnd={() => {
-                          setDraggingIndicatorKey("");
-                          setDragOverIndicatorKey("");
+                          setDraggingKey("");
+                          setDragOverKey("");
                         }}
-                        className="cursor-default"
+                        className={cn(
+                          "border-t border-border/20",
+                          dragOverKey === item.id && draggingKey !== item.id && "bg-primary/5",
+                          draggingKey === item.id && "opacity-60",
+                        )}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground active:cursor-grabbing" />
-                            <span className="font-medium">{item.label}</span>
-                          </div>
-                          <button onClick={() => void persist(stocks, indicators.filter((indicator) => indicator.key !== item.key))} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
-                        </div>
-                        <p className="text-lg font-bold text-primary">{item.value}</p>
-                        <p className="text-xs text-muted-foreground">{item.category}</p>
-                        {item.note && <p className="text-sm text-muted-foreground">{item.note}</p>}
-                      </div>
-                    </GlassCard>
-                  ))
-                )}
-              </div>
-            </>
+                        <td className="px-3 py-2 text-muted-foreground"><GripVertical className="h-4 w-4 cursor-grab active:cursor-grabbing" /></td>
+                        <td className="px-3 py-2 font-medium">{item.name}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{item.kind === "stock" ? `${item.code}.${item.market}` : item.key}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{item.kind === "stock" ? marketLabel(item.market) : item.group}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{item.group}</td>
+                        <td className={cn("px-3 py-2 font-mono", item.kind === "stock" ? color(pct) : "text-primary")}>{item.kind === "stock" ? aQuote?.price ?? gQuote?.price ?? "—" : item.value}</td>
+                        <td className={cn("px-3 py-2 font-mono", color(pct))}>{item.kind === "stock" ? pct == null ? "—" : `${pct > 0 ? "+" : ""}${pct}%` : "—"}</td>
+                        <td className="max-w-[260px] truncate px-3 py-2 text-muted-foreground">{item.kind === "indicator" ? item.note : ""}</td>
+                        <td className="px-3 py-2">
+                          <button onClick={() => void deleteRow(item)} className="text-muted-foreground hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
+        </GlassCard>
+
+        <GlassCard className="space-y-3">
+          <h3 className="flex items-center gap-2 font-semibold"><Plus className="h-4 w-4 text-primary" />新增关注对象</h3>
+          <SectionTabs
+            tabs={ASSET_TYPES}
+            active={assetType}
+            onChange={(next) => {
+              setAssetType(next);
+              const label = ASSET_TYPES.find((item) => item.key === next)?.label || "自定义";
+              setAssetInput((prev) => ({ ...prev, category: label }));
+            }}
+            draggableStorageKey="watchlist-asset-type-order"
+          />
+
+          {assetType === "stock" ? (
+            <div className="space-y-3">
+              <div className="grid gap-2 md:grid-cols-[160px_minmax(0,1fr)]">
+                <select
+                  value={stockInput.market}
+                  onChange={(event) => setStockInput((prev) => ({ ...prev, market: event.target.value }))}
+                  className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                >
+                  {EQUITY_MARKETS.map((market) => <option key={market} value={market}>{marketLabel(market)} · {market}</option>)}
+                </select>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    value={stockSearchText}
+                    onChange={(event) => {
+                      setStockSearchText(event.target.value);
+                      setStockInput((prev) => ({ ...prev, code: event.target.value }));
+                      setStockSearchOpen(true);
+                    }}
+                    onFocus={() => setStockSearchOpen(stockSearchResults.length > 0)}
+                    placeholder={["SZ", "SH", "BJ"].includes(stockInput.market) ? "输入名称/拼音/代码搜索，例如：三一重工" : "输入港股/美股代码，例如：00700 / AAPL / NVDA"}
+                    className="w-full rounded-lg border border-border bg-black/20 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+                  />
+                  {stockSearchOpen && ["SZ", "SH", "BJ"].includes(stockInput.market) && (stockSearchResults.length > 0 || stockSearching) && (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-xl border border-border bg-background/95 shadow-xl backdrop-blur">
+                      {stockSearching && stockSearchResults.length === 0 ? (
+                        <div className="px-3 py-3 text-sm text-muted-foreground">正在搜索...</div>
+                      ) : (
+                        stockSearchResults.map((item) => (
+                          <button
+                            key={`${item.code}.${item.market}`}
+                            type="button"
+                            onClick={() => void selectStockSuggestion(item)}
+                            className="flex w-full items-center justify-between gap-3 border-b border-border/20 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-primary/10"
+                          >
+                            <span>
+                              <span className="font-medium">{item.name}</span>
+                              <span className="ml-2 font-mono text-xs text-muted-foreground">{item.code}.{item.market}</span>
+                            </span>
+                            <span className="text-xs text-muted-foreground">{item.security_type || item.pinyin}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-4">
+                <input value={stockInput.code} onChange={(event) => setStockInput((prev) => ({ ...prev, code: event.target.value }))} placeholder="代码" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <input value={stockInput.name} onChange={(event) => setStockInput((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称，港美股可留空自动解析" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <input value={stockInput.group} onChange={(event) => setStockInput((prev) => ({ ...prev, group: event.target.value }))} placeholder="分组/行业，A股可自动补申万三级" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <button onClick={() => void addStock()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25">
+                  <Plus className="h-4 w-4" /> 加入关注
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2">
+              <input value={assetInput.key} onChange={(event) => setAssetInput((prev) => ({ ...prev, key: event.target.value }))} placeholder="代码/Key，如 COMEX_GOLD、US10Y" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <input value={assetInput.label} onChange={(event) => setAssetInput((prev) => ({ ...prev, label: event.target.value }))} placeholder="名称，如 黄金、美国十年期国债收益率" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <input value={assetInput.category} onChange={(event) => setAssetInput((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <input value={assetInput.value} onChange={(event) => setAssetInput((prev) => ({ ...prev, value: event.target.value }))} placeholder="当前值，iFind 接通后自动更新" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              <textarea value={assetInput.note} onChange={(event) => setAssetInput((prev) => ({ ...prev, note: event.target.value }))} rows={3} placeholder="备注 / 跟踪要点" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 md:col-span-2" />
+              <button onClick={() => void addIndicator()} className="rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25 md:col-span-2">加入关注</button>
+            </div>
+          )}
+        </GlassCard>
       </div>
 
       <Disclaimer />

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,26 @@ app = FastAPI(title="投研体系 API", version="0.1.3")
 
 # 每半小时后台刷新持仓数据
 pf.start_scheduler(1800)
+
+
+def _load_local_env() -> None:
+    """加载 backend/.env，避免把个人 token 写进代码或提交历史。"""
+
+    env_path = Path(__file__).with_name(".env")
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_local_env()
 
 # CORS：默认放开（本地自托管友好）；公网部署时用 VR_ALLOW_ORIGINS 收紧成白名单。
 #   例：VR_ALLOW_ORIGINS="https://myhost"  （逗号分隔多个）
@@ -570,6 +591,11 @@ def database_provider_status():
     return {"data": data_adapters.provider_status()}
 
 
+@app.get("/api/ifind/status")
+def ifind_provider_status():
+    return {"data": data_adapters.ifind_status()}
+
+
 @app.get("/api/database/modules")
 def database_modules_registry():
     return {"data": database_modules.database_modules()}
@@ -875,6 +901,25 @@ def quote(codes: str = Query(..., description="逗号分隔的 6 位代码")):
         return {"data": astock.tencent_quote(lst)}
     except Exception as e:  # noqa: BLE001 — 边界统一兜底
         raise HTTPException(502, f"行情源异常：{e}") from e
+
+
+@app.get("/api/stock/search")
+def stock_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=20)):
+    """A 股搜索建议：输入名称/拼音/代码，返回可加入关注列表的候选。"""
+    try:
+        return {"data": data_adapters.stock_search(q, limit=limit)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"股票搜索异常：{e}") from e
+
+
+@app.get("/api/stock/industry")
+def stock_industry(code: str = Query(...)):
+    """股票行业归属：优先返回可用于关注列表分组的申万三级口径。"""
+    code = _validate(code)
+    try:
+        return {"data": data_adapters.stock_industry(code)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"股票行业解析异常：{e}") from e
 
 
 import time as _time
