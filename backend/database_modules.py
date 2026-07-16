@@ -11,6 +11,7 @@ from pathlib import Path
 
 DATA_ROOT = Path(os.environ.get("VR_DATA_DIR") or (Path.home() / ".vibe-research"))
 CUSTOM_MODULES_FILE = DATA_ROOT / "database" / "custom_modules.json"
+MODULE_ORDER_FILE = DATA_ROOT / "database" / "module_order.json"
 
 
 def _filters(*items: tuple[str, str, list[str]]) -> list[dict]:
@@ -216,9 +217,28 @@ def upsert_custom_module(payload: dict) -> dict:
     return module
 
 
+def _ordered_modules(modules: list[dict]) -> list[dict]:
+    order = _read_json(MODULE_ORDER_FILE, [])
+    if not isinstance(order, list):
+        order = []
+    rank = {str(key): idx for idx, key in enumerate(order)}
+    fallback_rank = {item["key"]: idx for idx, item in enumerate(modules)}
+    return sorted(modules, key=lambda item: (rank.get(item["key"], len(rank) + fallback_rank[item["key"]]), fallback_rank[item["key"]]))
+
+
+def save_module_order(keys: list[str]) -> dict:
+    modules = [*default_modules(), *custom_modules()]
+    known = {item["key"] for item in modules}
+    clean = [key for key in keys if key in known]
+    clean.extend(item["key"] for item in modules if item["key"] not in clean)
+    _atomic_json(MODULE_ORDER_FILE, clean)
+    return database_modules()
+
+
 def database_modules() -> dict:
+    modules = [*default_modules(), *custom_modules()]
     return {
-        "modules": [*default_modules(), *custom_modules()],
+        "modules": _ordered_modules(modules),
         "container_contract": {
             "filter_bar": {"empty_state": "筛选项未接入真实数据时展示占位选项，不阻塞页面。"},
             "chart": {"empty_state": "暂无数据时展示解释性空态，后续接入 data_adapters 查询结果。"},

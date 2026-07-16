@@ -176,6 +176,10 @@ cd frontend && npm install && npm run dev
 
 把后端挂成 MCP server，agent 用自己的订阅额度调 Vibe-Research 的数据工具、多步分析。命令见 [`backend/README.md`](backend/README.md)。要更全量的 A 股数据端点，用根目录 [`a-stock-data/`](a-stock-data/SKILL.md) 工具箱。
 
+### 本地派生仓库增量接入
+
+当前这个本地派生仓库还额外接入了一条 `TradingAgents 深度分析` 链路：在个股页查询到 A 股 6 位代码后，会在原有 `让 AI 读这些数据` 旁边出现独立入口；它复用右侧 AI 面板，但走单独的 TradingAgents 配置、后端任务运行与进度流，不影响原有轻量问 AI 路径。
+
 ## 🧪 测试
 
 ```bash

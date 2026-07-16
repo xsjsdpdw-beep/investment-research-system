@@ -141,3 +141,45 @@ def test_responses_wraps_tool_calls(monkeypatch):
     assert output[0]["call_id"] == "call_123"
     assert output[0]["name"] == "run_shell"
     assert output[0]["arguments"] == "{\"cmd\":\"pwd\"}"
+
+
+def test_responses_maps_codex_internal_roles_to_supported_chat_roles(monkeypatch):
+    monkeypatch.setattr(proxy, "_deepseek_api_key", lambda: "sekret")
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "id": "chatcmpl-3",
+                "model": "deepseek-v4-pro",
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 1, "total_tokens": 5},
+            }
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setattr(proxy.requests, "post", fake_post)
+
+    resp = client.post(
+        "/v1/responses",
+        json={
+            "model": "deepseek-v4-pro",
+            "input": [
+                {"type": "message", "role": "developer", "content": "follow repo rules"},
+                {"type": "message", "role": "latest_reminder", "content": "stay concise"},
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["json"]["messages"] == [
+        {"role": "system", "content": "follow repo rules"},
+        {"role": "system", "content": "stay concise"},
+        {"role": "user", "content": "hi"},
+    ]

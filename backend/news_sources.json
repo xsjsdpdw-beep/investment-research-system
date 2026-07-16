@@ -1,70 +1,110 @@
 {
- "_comment": "tier-1 策展源(每行业公认大媒体,高信号,纯RSS)。",
+ "_comment": "investment-news sources config",
  "fetch": {
   "per_source": 6,
   "timeout": 15,
   "recent_days": 7
  },
+ "redline_keywords": [
+  "赌博",
+  "博彩",
+  "赌场",
+  "彩票",
+  "下注",
+  "押注",
+  "预测市场",
+  "polymarket",
+  "kalshi",
+  "prediction market",
+  "加密货币",
+  "虚拟货币",
+  "比特币",
+  "以太坊",
+  "稳定币",
+  "crypto",
+  "bitcoin",
+  "ethereum",
+  "stablecoin",
+  "gambling",
+  "betting",
+  "casino",
+  "lottery",
+  "sportsbook",
+  "色情",
+  "porn"
+ ],
  "industries": [
   {
    "key": "ai",
    "name": "AI / 大模型",
-   "accent": "#ff5a1f"
+   "accent": "#ff5a1f",
+   "module": "tech"
   },
   {
    "key": "semi",
    "name": "半导体 / 芯片",
-   "accent": "#22d3ee"
+   "accent": "#22d3ee",
+   "module": "tech"
   },
   {
    "key": "robot",
    "name": "机器人 / 自动化",
-   "accent": "#14b8a6"
+   "accent": "#14b8a6",
+   "module": "tech"
   },
   {
    "key": "auto",
    "name": "汽车 / 新能源车",
-   "accent": "#fb7185"
+   "accent": "#fb7185",
+   "module": "industry"
   },
   {
    "key": "energy",
    "name": "能源 / 新能源",
-   "accent": "#84cc16"
+   "accent": "#84cc16",
+   "module": "industry"
   },
   {
    "key": "bio",
    "name": "生物医药 / 健康",
-   "accent": "#ec4899"
+   "accent": "#ec4899",
+   "module": "industry"
   },
   {
    "key": "space",
    "name": "航天 / 太空",
-   "accent": "#8b5cf6"
+   "accent": "#8b5cf6",
+   "module": "geopolitics"
   },
   {
    "key": "security",
    "name": "网络安全",
-   "accent": "#ef4444"
+   "accent": "#ef4444",
+   "module": "geopolitics"
   },
   {
    "key": "tech",
    "name": "科技 / 互联网",
-   "accent": "#3b82f6"
+   "accent": "#3b82f6",
+   "module": "tech"
   },
   {
    "key": "consumer",
    "name": "消费电子 / 数码",
-   "accent": "#a855f7"
+   "accent": "#a855f7",
+   "module": "tech"
   },
   {
    "key": "macro",
    "name": "财经 / 宏观",
-   "accent": "#eab308"
+   "accent": "#eab308",
+   "module": "macro"
   },
   {
    "key": "science",
    "name": "科学 / 前沿",
-   "accent": "#38bdf8"
+   "accent": "#38bdf8",
+   "module": "tech"
   }
  ],
  "sources": [
@@ -716,33 +756,5 @@
    "type": "rss",
    "url": "https://feeds.arstechnica.com/arstechnica/science"
   }
- ],
- "redline_keywords": [
-  "赌博",
-  "博彩",
-  "赌场",
-  "彩票",
-  "下注",
-  "押注",
-  "预测市场",
-  "polymarket",
-  "kalshi",
-  "prediction market",
-  "加密货币",
-  "虚拟货币",
-  "比特币",
-  "以太坊",
-  "稳定币",
-  "crypto",
-  "bitcoin",
-  "ethereum",
-  "stablecoin",
-  "gambling",
-  "betting",
-  "casino",
-  "lottery",
-  "sportsbook",
-  "色情",
-  "porn"
  ]
 }

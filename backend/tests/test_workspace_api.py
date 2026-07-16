@@ -461,6 +461,86 @@ def test_sector_tree_can_add_nested_industry_nodes(workspace_client: TestClient)
     assert nodes[1]["description"] == "月度销量、出口、开工小时数。"
 
 
+def test_sector_tree_left_nav_order_can_be_saved(workspace_client: TestClient):
+    workspace_client.post("/api/framework/sector-tree/nodes", json={
+        "name": "工程机械",
+        "description": "跟踪挖机、装载机、开工小时数等指标。",
+    })
+    workspace_client.post("/api/framework/sector-tree/nodes", json={
+        "name": "电网设备",
+        "description": "跟踪电网投资、变压器、出海节奏。",
+    })
+
+    saved = workspace_client.put("/api/framework/sector-tree/order", json={
+        "ids": ["电网设备", "工程机械"],
+    })
+    assert saved.status_code == 200
+    assert [item["name"] for item in saved.json()["data"]["nodes"]] == ["电网设备", "工程机械"]
+
+    listing = workspace_client.get("/api/framework/sector-tree")
+    assert listing.status_code == 200
+    assert [item["name"] for item in listing.json()["data"]["nodes"]] == ["电网设备", "工程机械"]
+
+
+def test_weekly_review_order_can_be_saved(workspace_client: TestClient):
+    first = workspace_client.post("/api/knowledge/entries", json={
+        "title": "2026W29 周度复盘",
+        "type": "weekly_review",
+        "content": "第一篇周复盘。",
+        "date": "2026-07-15",
+    }).json()["data"]
+    second = workspace_client.post("/api/knowledge/entries", json={
+        "title": "2026W30 周度复盘",
+        "type": "weekly_review",
+        "content": "第二篇周复盘。",
+        "date": "2026-07-16",
+    }).json()["data"]
+
+    saved = workspace_client.put("/api/knowledge/entries/order", json={
+        "kind": "weekly_review",
+        "ids": [first["id"], second["id"]],
+    })
+    assert saved.status_code == 200
+    assert [item["id"] for item in saved.json()["data"]] == [first["id"], second["id"]]
+
+    listing = workspace_client.get("/api/knowledge/entries?kind=weekly_review")
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["data"]] == [first["id"], second["id"]]
+
+
+def test_learning_pack_order_can_be_saved(workspace_client: TestClient):
+    first_source = workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械学习资料 A",
+        "type": "memo",
+        "content": "第一份学习资料。",
+    }).json()["data"]
+    second_source = workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械学习资料 B",
+        "type": "memo",
+        "content": "第二份学习资料。",
+    }).json()["data"]
+
+    first = workspace_client.post("/api/learning/packs/generate", json={
+        "source_entry_id": first_source["id"],
+        "title": "学习包 A",
+    }).json()["data"]
+    second = workspace_client.post("/api/learning/packs/generate", json={
+        "source_entry_id": second_source["id"],
+        "title": "学习包 B",
+    }).json()["data"]
+
+    saved = workspace_client.put("/api/knowledge/entries/order", json={
+        "kind": "learning_pack",
+        "ids": [first["id"], second["id"]],
+    })
+    assert saved.status_code == 200
+    assert [item["id"] for item in saved.json()["data"]] == [first["id"], second["id"]]
+
+    listing = workspace_client.get("/api/knowledge/entries?kind=learning_pack")
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["data"]] == [first["id"], second["id"]]
+
+
 def test_intel_dynamics_digest_and_image_artifact_can_be_prepared(workspace_client: TestClient):
     workspace_client.put("/api/watchlist", json={
         "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
@@ -511,6 +591,36 @@ def test_sector_tracking_indicator_can_be_added_and_listed(workspace_client: Tes
     assert rows[0]["freq"] == "月度"
 
 
+def test_sector_tracking_indicators_can_be_reordered(workspace_client: TestClient):
+    workspace_client.post("/api/framework/sector-indicators", json={
+        "sector": "工程机械",
+        "name": "挖掘机月度销量",
+        "freq": "月度",
+        "chart_kind": "bar",
+        "viewpoint": "跟踪销量同比。",
+    })
+    workspace_client.post("/api/framework/sector-indicators", json={
+        "sector": "工程机械",
+        "name": "开工小时数",
+        "freq": "月度",
+        "chart_kind": "line",
+        "viewpoint": "跟踪开工景气。",
+    })
+
+    reordered = workspace_client.put("/api/framework/sector-indicators/order", json={
+        "sector": "工程机械",
+        "ids": ["工程机械-开工小时数", "工程机械-挖掘机月度销量"],
+    })
+    assert reordered.status_code == 200
+    rows = reordered.json()["data"]["items"]
+    assert [item["name"] for item in rows] == ["开工小时数", "挖掘机月度销量"]
+    assert [item["sort_order"] for item in rows] == [0, 1]
+
+    listing = workspace_client.get("/api/framework/sector-indicators?sector=工程机械")
+    assert listing.status_code == 200
+    assert [item["name"] for item in listing.json()["data"]["items"]] == ["开工小时数", "挖掘机月度销量"]
+
+
 def test_sector_center_custom_module_can_be_added_and_listed(workspace_client: TestClient):
     created = workspace_client.post("/api/framework/sector-modules", json={
         "sector": "工程机械",
@@ -551,3 +661,59 @@ def test_stock_center_custom_module_can_be_added_and_listed(workspace_client: Te
     rows = listing.json()["data"]["items"]
     assert len(rows) == 1
     assert rows[0]["content"].startswith("控股股东")
+
+
+def test_sector_modules_can_be_reordered(workspace_client: TestClient):
+    workspace_client.post("/api/framework/sector-modules", json={
+        "sector": "工程机械",
+        "title": "竞争格局",
+        "category": "行业框架",
+        "content": "先记录竞争格局。",
+    })
+    workspace_client.post("/api/framework/sector-modules", json={
+        "sector": "工程机械",
+        "title": "政策框架",
+        "category": "政策",
+        "content": "再记录政策框架。",
+    })
+
+    reordered = workspace_client.put("/api/framework/sector-modules/order", json={
+        "sector": "工程机械",
+        "ids": ["工程机械-政策框架", "工程机械-竞争格局"],
+    })
+    assert reordered.status_code == 200
+    rows = reordered.json()["data"]["items"]
+    assert [item["title"] for item in rows] == ["政策框架", "竞争格局"]
+    assert [item["sort_order"] for item in rows] == [0, 1]
+
+    listing = workspace_client.get("/api/framework/sector-modules?sector=工程机械")
+    assert listing.status_code == 200
+    assert [item["title"] for item in listing.json()["data"]["items"]] == ["政策框架", "竞争格局"]
+
+
+def test_stock_modules_can_be_reordered(workspace_client: TestClient):
+    workspace_client.post("/api/framework/stock-modules", json={
+        "ticker": "000425.SZ",
+        "title": "股权结构",
+        "category": "公开信息",
+        "content": "先记录股权结构。",
+    })
+    workspace_client.post("/api/framework/stock-modules", json={
+        "ticker": "000425.SZ",
+        "title": "管理层",
+        "category": "公开信息",
+        "content": "再记录管理层。",
+    })
+
+    reordered = workspace_client.put("/api/framework/stock-modules/order", json={
+        "ticker": "000425.SZ",
+        "ids": ["000425.SZ-管理层", "000425.SZ-股权结构"],
+    })
+    assert reordered.status_code == 200
+    rows = reordered.json()["data"]["items"]
+    assert [item["title"] for item in rows] == ["管理层", "股权结构"]
+    assert [item["sort_order"] for item in rows] == [0, 1]
+
+    listing = workspace_client.get("/api/framework/stock-modules?ticker=000425.SZ")
+    assert listing.status_code == 200
+    assert [item["title"] for item in listing.json()["data"]["items"]] == ["管理层", "股权结构"]

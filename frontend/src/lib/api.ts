@@ -172,6 +172,27 @@ export interface RadarItem {
 export interface Industry {
   key: string; name: string; accent: string; total: number; items: RadarItem[];
 }
+
+export interface NewsRadarIndustryConfig {
+  key: string;
+  name: string;
+  accent: string;
+  module: "tech" | "macro" | "industry" | "stock" | "geopolitics";
+}
+
+export interface NewsRadarSourceConfig {
+  name: string;
+  hint: string;
+  type: string;
+  url: string;
+}
+
+export interface NewsRadarConfig {
+  fetch: { per_source: number; timeout: number; recent_days: number };
+  redline_keywords: string[];
+  industries: NewsRadarIndustryConfig[];
+  sources: NewsRadarSourceConfig[];
+}
 export interface RadarData {
   generated_at: string | null; recent_days: number; industries: Industry[];
   stats: { industries: number; total_sources: number; failed_sources?: number };
@@ -246,6 +267,7 @@ export interface KnowledgeEntry {
   summary_status: string;
   image_artifact_status: string;
   summary_text?: string;
+  investment_view?: "bullish" | "neutral" | "bearish" | "";
   artifact_request?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -296,12 +318,13 @@ export interface ResearchHubData {
         fallback_provider: string;
         dataset_key: string;
       };
-      stock_expert_notes: {
+    stock_expert_notes: {
         active_provider: string;
         fallback_provider: string;
         dataset_key: string;
       };
     };
+    news_source_config: NewsRadarConfig;
     global_tech_headlines: {
       industry_key: string;
       industry_name: string;
@@ -314,8 +337,21 @@ export interface ResearchHubData {
     }[];
     macro_events: Industry[];
     industry_dynamics: Industry[];
+    stock_topics: Industry[];
     stock_dynamics: { ticker: string; name: string; highlights: string[] }[];
-    geopolitics: { title: string; items: { title: string; summary: string }[] };
+    geopolitics: {
+      title: string;
+      groups: Industry[];
+      items: {
+        industry_key?: string;
+        industry_name?: string;
+        title: string;
+        summary: string;
+        source?: string;
+        time?: string;
+        url?: string;
+      }[];
+    };
   };
   liquidity: {
     daily_review: { summary: string; etf_placeholder: string };
@@ -384,11 +420,37 @@ export interface MarketReportIngestResult {
   errors: { ticker: string; message: string }[];
 }
 
+export interface SectorReportIngestResult {
+  sector: string;
+  keywords: string[];
+  created: number;
+  skipped: number;
+  items: {
+    sector: string;
+    title: string;
+    org: string;
+    date: string;
+    rating: string;
+    industry: string;
+    pdfUrl: string;
+    entry_id: string;
+    status: "created" | "skipped";
+  }[];
+  errors: { sector: string; message: string }[];
+}
+
 export interface PremiumNoteIngestResult {
   entry: KnowledgeEntry;
   scope: "industry" | "stock";
   source_name: string;
   source_type: string;
+}
+
+export interface OverviewBuildResult {
+  scope: "sector" | "stock";
+  target: string;
+  sources_count: number;
+  modules: SectorModule[] | StockModule[];
 }
 
 export interface MacroRegistryData {
@@ -487,14 +549,14 @@ export interface StockModuleData {
 }
 
 export interface IntelDigestResult {
-  kind: "industry" | "stock";
+  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics";
   title: string;
   summary_text: string;
   generated_at: string;
 }
 
 export interface IntelImageArtifact {
-  kind: "industry" | "stock";
+  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics";
   title: string;
   summary_text: string;
   artifact_type: string;
@@ -561,6 +623,7 @@ export const api = {
     tags?: string[];
     related_sectors?: string[];
     related_stocks?: string[];
+    investment_view?: "bullish" | "neutral" | "bearish" | "";
   }) => request<KnowledgeEntry>("/knowledge/entries", "POST", payload),
   updateKnowledgeEntry: (id: string, payload: {
     title?: string;
@@ -569,7 +632,10 @@ export const api = {
     tags?: string[];
     related_sectors?: string[];
     related_stocks?: string[];
+    investment_view?: "bullish" | "neutral" | "bearish" | "";
   }) => request<KnowledgeEntry>(`/knowledge/entries/${id}`, "PUT", payload),
+  saveKnowledgeEntryOrder: (payload: { kind: string; ids: string[] }) =>
+    request<KnowledgeEntry[]>("/knowledge/entries/order", "PUT", payload),
   deleteKnowledgeEntry: (id: string) => request<{ ok: boolean }>(`/knowledge/entries/${id}`, "DELETE"),
   searchKnowledgeEntries: (q: string) => get<KnowledgeEntry[]>(`/knowledge/search?q=${encodeURIComponent(q)}`),
   generateEntrySummary: (id: string) => request<KnowledgeEntry>(`/knowledge/entries/${id}/summary`, "POST"),
@@ -593,8 +659,10 @@ export const api = {
   saveWatchlist: (payload: { stocks: WatchStock[]; indicators: WatchIndicator[] }) =>
     request<WatchlistData>("/watchlist", "PUT", payload),
   sectorTree: () => get<SectorTreeData>("/framework/sector-tree"),
+  saveSectorTreeOrder: (ids: string[]) => request<SectorTreeData>("/framework/sector-tree/order", "PUT", { ids }),
   upsertSectorNode: (payload: { id?: string; name: string; parent_id?: string; description?: string; sort_order?: number }) =>
     request<SectorTreeNode>("/framework/sector-tree/nodes", "POST", payload),
+  deleteSectorNode: (id: string) => request<SectorTreeData>(`/framework/sector-tree/nodes/${encodeURIComponent(id)}`, "DELETE"),
   sectorIndicators: (sector?: string) => get<SectorIndicatorData>(`/framework/sector-indicators${sector ? `?sector=${encodeURIComponent(sector)}` : ""}`),
   upsertSectorIndicator: (payload: {
     id?: string;
@@ -606,6 +674,8 @@ export const api = {
     data_source?: string;
     sort_order?: number;
   }) => request<SectorIndicator>("/framework/sector-indicators", "POST", payload),
+  saveSectorIndicatorOrder: (payload: { sector: string; ids: string[] }) =>
+    request<SectorIndicatorData>("/framework/sector-indicators/order", "PUT", payload),
   sectorModules: (sector?: string) => get<SectorModuleData>(`/framework/sector-modules${sector ? `?sector=${encodeURIComponent(sector)}` : ""}`),
   upsertSectorModule: (payload: {
     id?: string;
@@ -616,6 +686,8 @@ export const api = {
     data_source?: string;
     sort_order?: number;
   }) => request<SectorModule>("/framework/sector-modules", "POST", payload),
+  saveSectorModuleOrder: (payload: { sector: string; ids: string[] }) =>
+    request<SectorModuleData>("/framework/sector-modules/order", "PUT", payload),
   stockModules: (ticker?: string) => get<StockModuleData>(`/framework/stock-modules${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ""}`),
   upsertStockModule: (payload: {
     id?: string;
@@ -626,10 +698,16 @@ export const api = {
     data_source?: string;
     sort_order?: number;
   }) => request<StockModule>("/framework/stock-modules", "POST", payload),
+  saveStockModuleOrder: (payload: { ticker: string; ids: string[] }) =>
+    request<StockModuleData>("/framework/stock-modules/order", "PUT", payload),
   researchHub: () => get<ResearchHubData>("/research/hub"),
+  newsSourcesConfig: () => get<NewsRadarConfig>("/research/news-sources-config"),
+  saveNewsSourcesConfig: (payload: NewsRadarConfig) => request<NewsRadarConfig>("/research/news-sources-config", "PUT", payload),
   stockCenter: (ticker: string) => get<StockCenterData>(`/research/stock-center?ticker=${encodeURIComponent(ticker)}`),
   ingestMarketReports: (payload: { tickers?: string[]; pages?: number; max_reports_per_stock?: number }) =>
     request<MarketReportIngestResult>("/research/market-reports/ingest", "POST", payload),
+  ingestSectorReports: (payload: { sector: string; days?: number; max_pages?: number; max_reports?: number }) =>
+    request<SectorReportIngestResult>("/research/sector-reports/ingest", "POST", payload),
   ingestPremiumNote: (payload: {
     title: string;
     content: string;
@@ -642,9 +720,13 @@ export const api = {
     tags?: string[];
     summary_text?: string;
   }) => request<PremiumNoteIngestResult>("/research/premium-notes", "POST", payload),
-  generateIntelDigest: (kind: "industry" | "stock") =>
+  buildSectorOverview: (sector: string) =>
+    request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
+  buildStockOverview: (ticker: string) =>
+    request<OverviewBuildResult>("/research/stock-overview/build", "POST", { ticker }),
+  generateIntelDigest: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics") =>
     request<IntelDigestResult>("/research/intel-digest", "POST", { kind }),
-  generateIntelImageArtifact: (kind: "industry" | "stock") =>
+  generateIntelImageArtifact: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics") =>
     request<IntelImageArtifact>("/research/intel-image-artifact", "POST", { kind }),
   generateLearningPack: (payload: { source_entry_id: string; title?: string }) =>
     request<KnowledgeEntry>("/learning/packs/generate", "POST", payload),
@@ -654,6 +736,8 @@ export const api = {
   databaseModules: () => get<DatabaseModuleRegistry>("/database/modules"),
   upsertDatabaseModule: (payload: { key?: string; label: string; description?: string }) =>
     request<DatabaseModuleRegistry["modules"][number]>("/database/modules/custom", "POST", payload),
+  saveDatabaseModuleOrder: (keys: string[]) =>
+    request<DatabaseModuleRegistry>("/database/modules/order", "PUT", { keys }),
   chinaMacroRegistry: () => get<MacroRegistryData>("/database/china-macro-registry"),
   saveChinaMacroRegistry: (payload: MacroRegistryData) => request<MacroRegistryData>("/database/china-macro-registry", "PUT", payload),
   chinaMacroOverview: () => get<MacroOverviewData>("/database/china-macro-overview"),

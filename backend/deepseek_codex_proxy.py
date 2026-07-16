@@ -48,6 +48,15 @@ def _content_to_text(content: Any) -> str:
     raise HTTPException(400, "Unsupported content shape in Responses input")
 
 
+def _normalize_chat_role(role: str) -> str:
+    role = (role or "user").strip()
+    if role in {"developer", "latest_reminder"}:
+        return "system"
+    if role in {"system", "user", "assistant", "tool"}:
+        return role
+    return "user"
+
+
 def _responses_input_to_messages(instructions: str, input_value: Any) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     if instructions:
@@ -66,7 +75,7 @@ def _responses_input_to_messages(instructions: str, input_value: Any) -> list[di
 
         item_type = item.get("type")
         if item_type in (None, "message"):
-            role = item.get("role", "user")
+            role = _normalize_chat_role(item.get("role", "user"))
             messages.append({"role": role, "content": _content_to_text(item.get("content", ""))})
             continue
 

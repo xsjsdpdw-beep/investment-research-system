@@ -22,10 +22,88 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCES_FILE = os.path.join(HERE, "news_sources.json")
 CACHE_DIR = os.path.join(HERE, ".cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "radar.json")
+MODULES = {"tech", "macro", "industry", "stock", "geopolitics"}
+DEFAULT_MODULE_BY_KEY = {
+    "ai": "tech",
+    "semi": "tech",
+    "robot": "tech",
+    "tech": "tech",
+    "consumer": "tech",
+    "science": "tech",
+    "macro": "macro",
+    "security": "geopolitics",
+    "space": "geopolitics",
+    "auto": "industry",
+    "energy": "industry",
+    "bio": "industry",
+}
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 BEIJING = timezone(timedelta(hours=8))
+
+
+def _normalize_config(raw: dict) -> dict:
+    cfg = dict(raw or {})
+    fetch = cfg.get("fetch") or {}
+    industries = []
+    for item in cfg.get("industries") or []:
+        key = str(item.get("key") or "").strip()
+        if not key:
+            continue
+        module = str(item.get("module") or DEFAULT_MODULE_BY_KEY.get(key, "industry")).strip()
+        if module not in MODULES:
+            module = "industry"
+        industries.append({
+            "key": key,
+            "name": str(item.get("name") or key).strip(),
+            "accent": str(item.get("accent") or "#ff5a1f").strip(),
+            "module": module,
+        })
+    sources = []
+    for item in cfg.get("sources") or []:
+        name = str(item.get("name") or "").strip()
+        hint = str(item.get("hint") or "").strip()
+        source_type = str(item.get("type") or "rss").strip() or "rss"
+        url = str(item.get("url") or "").strip()
+        if not name or not hint:
+            continue
+        if source_type == "rss" and not url:
+            continue
+        sources.append({
+            "name": name,
+            "hint": hint,
+            "type": source_type,
+            "url": url,
+        })
+    return {
+        "_comment": cfg.get("_comment") or "investment-news sources config",
+        "fetch": {
+            "per_source": int(fetch.get("per_source") or 6),
+            "timeout": int(fetch.get("timeout") or 15),
+            "recent_days": int(fetch.get("recent_days") or 7),
+        },
+        "redline_keywords": list(dict.fromkeys(cfg.get("redline_keywords") or [])),
+        "industries": industries,
+        "sources": sources,
+    }
+
+
+def load_sources_config() -> dict:
+    return _normalize_config(json.load(open(SOURCES_FILE, encoding="utf-8")))
+
+
+def save_sources_config(payload: dict) -> dict:
+    cfg = _normalize_config(payload)
+    hint_keys = {item["key"] for item in cfg["industries"]}
+    for source in cfg["sources"]:
+        if source["hint"] not in hint_keys:
+            raise ValueError(f"信息源 {source['name']} 的 hint 未匹配任何主题：{source['hint']}")
+    tmp = SOURCES_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, SOURCES_FILE)
+    return cfg
 
 
 def _strip_html(s: str) -> str:
@@ -100,7 +178,7 @@ def _fetch_source(src: dict, per: int, cutoff, redline: list[str]):
 
 def fetch_radar() -> dict:
     """抓全部源，返回 12 赛道数据并落盘缓存。"""
-    cfg = json.load(open(SOURCES_FILE, encoding="utf-8"))
+    cfg = load_sources_config()
     days = cfg.get("fetch", {}).get("recent_days", 7)
     per = cfg.get("fetch", {}).get("per_source", 6)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -115,7 +193,8 @@ def fetch_radar() -> dict:
         pool = byhint.get(ind["key"], [])
         industries.append({"key": ind["key"], "name": ind["name"], "accent": ind["accent"], "total": len(pool), "items": []})
         for s in pool:
-            tasks.append((i, s))
+            if s.get("type") == "rss" and s.get("url"):
+                tasks.append((i, s))
 
     with ThreadPoolExecutor(max_workers=40) as ex:
         results = list(ex.map(lambda t: (t[0], _fetch_source(t[1], per, cutoff, redline)), tasks))
@@ -153,7 +232,7 @@ def load_cache():
 
 def skeleton() -> dict:
     """无缓存时返回赛道骨架（空 items），前端提示点刷新。"""
-    cfg = json.load(open(SOURCES_FILE, encoding="utf-8"))
+    cfg = load_sources_config()
     byhint: dict[str, int] = {}
     for s in cfg["sources"]:
         byhint[s["hint"]] = byhint.get(s["hint"], 0) + 1

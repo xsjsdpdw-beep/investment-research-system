@@ -23,9 +23,11 @@ DIRS = {
     "attachments": DATA_ROOT / "attachments",
 }
 ENTRIES_INDEX = DIRS["indexes"] / "knowledge_entries.json"
+ENTRY_ORDER_FILE = DIRS["indexes"] / "knowledge_entry_order.json"
 CALENDAR_INDEX = DIRS["indexes"] / "calendar_events.json"
 WATCHLIST_FILE = DIRS["watchlists"] / "watchlist.json"
 SECTOR_TREE_FILE = DIRS["indexes"] / "sector_tree.json"
+SECTOR_TREE_ORDER_FILE = DIRS["indexes"] / "sector_tree_order.json"
 SECTOR_INDICATORS_FILE = DIRS["indexes"] / "sector_indicators.json"
 SECTOR_MODULES_FILE = DIRS["indexes"] / "sector_modules.json"
 STOCK_MODULES_FILE = DIRS["indexes"] / "stock_modules.json"
@@ -85,6 +87,9 @@ def _read_json(path: Path, default: Any) -> Any:
 
 def _entry_defaults(meta: dict[str, Any]) -> dict[str, Any]:
     now = _now_iso()
+    investment_view = (meta.get("investment_view") or "").strip()
+    if investment_view not in {"bullish", "neutral", "bearish", ""}:
+        investment_view = ""
     return {
         "id": meta.get("id") or f"{datetime.now(BEIJING):%Y%m%d%H%M%S}-{_slugify(meta.get('title', 'entry'))}",
         "title": meta.get("title", "").strip(),
@@ -96,6 +101,7 @@ def _entry_defaults(meta: dict[str, Any]) -> dict[str, Any]:
         "summary_status": meta.get("summary_status") or "pending",
         "image_artifact_status": meta.get("image_artifact_status") or "pending",
         "summary_text": meta.get("summary_text") or "",
+        "investment_view": investment_view,
         "artifact_request": meta.get("artifact_request"),
         "created_at": meta.get("created_at") or now,
         "updated_at": now,
@@ -110,6 +116,15 @@ def _load_entries() -> list[dict[str, Any]]:
 
 def _save_entries(entries: list[dict[str, Any]]) -> None:
     _atomic_json(ENTRIES_INDEX, entries)
+
+
+def _load_entry_order() -> dict[str, list[str]]:
+    data = _read_json(ENTRY_ORDER_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
+def _save_entry_order(order_map: dict[str, list[str]]) -> None:
+    _atomic_json(ENTRY_ORDER_FILE, order_map)
 
 
 def _load_calendar() -> list[dict[str, Any]]:
@@ -147,12 +162,25 @@ def _default_sector_tree() -> dict[str, Any]:
     return {"nodes": [], "updated_at": _now_iso()}
 
 
+def _default_sector_tree_order() -> list[str]:
+    return []
+
+
 def load_sector_tree() -> dict[str, Any]:
     _ensure_dirs()
     data = _read_json(SECTOR_TREE_FILE, _default_sector_tree())
     data.setdefault("nodes", [])
     data.setdefault("updated_at", _now_iso())
-    nodes = sorted(data["nodes"], key=lambda item: (item.get("level", 0), item.get("sort_order", 0), item.get("name", "")))
+    saved_order = _read_json(SECTOR_TREE_ORDER_FILE, _default_sector_tree_order())
+    rank = {str(node_id): index for index, node_id in enumerate(saved_order if isinstance(saved_order, list) else [])}
+    nodes = sorted(
+        data["nodes"],
+        key=lambda item: (
+            rank.get(item.get("id", ""), len(rank) + 1000 + item.get("sort_order", 0)),
+            item.get("level", 0),
+            item.get("name", ""),
+        ),
+    )
     return {"nodes": nodes, "updated_at": data["updated_at"]}
 
 
@@ -184,6 +212,51 @@ def upsert_sector_node(payload: dict[str, Any]) -> dict[str, Any]:
     nodes.append(node)
     _atomic_json(SECTOR_TREE_FILE, {"nodes": nodes, "updated_at": now})
     return node
+
+
+def save_sector_tree_order(ids: list[str]) -> dict[str, Any]:
+    data = _read_json(SECTOR_TREE_FILE, _default_sector_tree())
+    data.setdefault("nodes", [])
+    known = {item.get("id", "") for item in data["nodes"]}
+    clean = [item_id.strip() for item_id in ids if item_id and item_id.strip() in known]
+    clean.extend(item.get("id", "") for item in data["nodes"] if item.get("id", "") not in clean)
+    _atomic_json(SECTOR_TREE_ORDER_FILE, clean)
+    return load_sector_tree()
+
+
+def delete_sector_node(node_id: str) -> dict[str, Any]:
+    target_id = (node_id or "").strip()
+    if not target_id:
+        raise ValueError("行业节点不能为空")
+
+    data = _read_json(SECTOR_TREE_FILE, _default_sector_tree())
+    nodes = data.get("nodes", [])
+    if not any(item.get("id") == target_id for item in nodes):
+        raise KeyError(target_id)
+
+    children_by_parent: dict[str, list[str]] = {}
+    for item in nodes:
+        parent_id = (item.get("parent_id") or "").strip()
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(item.get("id", ""))
+
+    to_delete = {target_id}
+    queue = [target_id]
+    while queue:
+        current = queue.pop(0)
+        for child_id in children_by_parent.get(current, []):
+            if child_id and child_id not in to_delete:
+                to_delete.add(child_id)
+                queue.append(child_id)
+
+    next_nodes = [item for item in nodes if item.get("id") not in to_delete]
+    now = _now_iso()
+    _atomic_json(SECTOR_TREE_FILE, {"nodes": next_nodes, "updated_at": now})
+
+    saved_order = _read_json(SECTOR_TREE_ORDER_FILE, _default_sector_tree_order())
+    if isinstance(saved_order, list):
+        _atomic_json(SECTOR_TREE_ORDER_FILE, [item_id for item_id in saved_order if item_id not in to_delete])
+    return load_sector_tree()
 
 
 def _default_sector_indicators() -> dict[str, Any]:
@@ -230,6 +303,38 @@ def upsert_sector_indicator(payload: dict[str, Any]) -> dict[str, Any]:
     items.append(indicator)
     _atomic_json(SECTOR_INDICATORS_FILE, {"items": items, "updated_at": now})
     return indicator
+
+
+def reorder_sector_indicators(sector: str, ids: list[str]) -> dict[str, Any]:
+    sector = (sector or "").strip()
+    if not sector:
+        raise ValueError("行业不能为空")
+    ordered_ids = [item.strip() for item in ids if item and item.strip()]
+    if not ordered_ids:
+        raise ValueError("排序列表不能为空")
+
+    data = _read_json(SECTOR_INDICATORS_FILE, _default_sector_indicators())
+    data.setdefault("items", [])
+    items = data["items"]
+    sector_items = [item for item in items if item.get("sector") == sector]
+    existing_ids = {item.get("id") for item in sector_items}
+    if set(ordered_ids) != existing_ids:
+        raise ValueError("排序列表与当前行业指标不一致")
+
+    now = _now_iso()
+    order_map = {item_id: index for index, item_id in enumerate(ordered_ids)}
+    updated_items = []
+    for item in items:
+        if item.get("sector") != sector:
+            updated_items.append(item)
+            continue
+        refreshed = dict(item)
+        refreshed["sort_order"] = order_map[item["id"]]
+        refreshed["updated_at"] = now
+        updated_items.append(refreshed)
+
+    _atomic_json(SECTOR_INDICATORS_FILE, {"items": updated_items, "updated_at": now})
+    return list_sector_indicators(sector=sector)
 
 
 def _default_stock_modules() -> dict[str, Any]:
@@ -281,6 +386,38 @@ def upsert_sector_module(payload: dict[str, Any]) -> dict[str, Any]:
     return module
 
 
+def reorder_sector_modules(sector: str, ids: list[str]) -> dict[str, Any]:
+    sector = (sector or "").strip()
+    if not sector:
+        raise ValueError("行业不能为空")
+    ordered_ids = [item.strip() for item in ids if item and item.strip()]
+    if not ordered_ids:
+        raise ValueError("排序列表不能为空")
+
+    data = _read_json(SECTOR_MODULES_FILE, _default_sector_modules())
+    data.setdefault("items", [])
+    items = data["items"]
+    sector_items = [item for item in items if item.get("sector") == sector]
+    existing_ids = {item.get("id") for item in sector_items}
+    if set(ordered_ids) != existing_ids:
+        raise ValueError("排序列表与当前行业模块不一致")
+
+    now = _now_iso()
+    order_map = {module_id: index for index, module_id in enumerate(ordered_ids)}
+    updated_items = []
+    for item in items:
+        if item.get("sector") != sector:
+            updated_items.append(item)
+            continue
+        refreshed = dict(item)
+        refreshed["sort_order"] = order_map[item["id"]]
+        refreshed["updated_at"] = now
+        updated_items.append(refreshed)
+
+    _atomic_json(SECTOR_MODULES_FILE, {"items": updated_items, "updated_at": now})
+    return list_sector_modules(sector=sector)
+
+
 def list_stock_modules(ticker: str | None = None) -> dict[str, Any]:
     _ensure_dirs()
     data = _read_json(STOCK_MODULES_FILE, _default_stock_modules())
@@ -322,6 +459,38 @@ def upsert_stock_module(payload: dict[str, Any]) -> dict[str, Any]:
     return module
 
 
+def reorder_stock_modules(ticker: str, ids: list[str]) -> dict[str, Any]:
+    ticker = (ticker or "").strip()
+    if not ticker:
+        raise ValueError("个股代码不能为空")
+    ordered_ids = [item.strip() for item in ids if item and item.strip()]
+    if not ordered_ids:
+        raise ValueError("排序列表不能为空")
+
+    data = _read_json(STOCK_MODULES_FILE, _default_stock_modules())
+    data.setdefault("items", [])
+    items = data["items"]
+    stock_items = [item for item in items if item.get("ticker") == ticker]
+    existing_ids = {item.get("id") for item in stock_items}
+    if set(ordered_ids) != existing_ids:
+        raise ValueError("排序列表与当前个股模块不一致")
+
+    now = _now_iso()
+    order_map = {module_id: index for index, module_id in enumerate(ordered_ids)}
+    updated_items = []
+    for item in items:
+        if item.get("ticker") != ticker:
+            updated_items.append(item)
+            continue
+        refreshed = dict(item)
+        refreshed["sort_order"] = order_map[item["id"]]
+        refreshed["updated_at"] = now
+        updated_items.append(refreshed)
+
+    _atomic_json(STOCK_MODULES_FILE, {"items": updated_items, "updated_at": now})
+    return list_stock_modules(ticker=ticker)
+
+
 def list_entries(kind: str | None = None, sector: str | None = None, stock: str | None = None) -> list[dict[str, Any]]:
     items = _load_entries()
     if kind:
@@ -331,6 +500,12 @@ def list_entries(kind: str | None = None, sector: str | None = None, stock: str 
     if stock:
         items = [item for item in items if stock in item.get("related_stocks", [])]
     ordered = sorted(items, key=lambda item: (item.get("date", ""), item.get("updated_at", "")), reverse=True)
+    if kind:
+        order_map = _load_entry_order()
+        saved = order_map.get(kind, [])
+        rank = {entry_id: index for index, entry_id in enumerate(saved)}
+        fallback_rank = {item.get("id", ""): index for index, item in enumerate(ordered)}
+        ordered = sorted(ordered, key=lambda item: (rank.get(item.get("id", ""), len(rank) + fallback_rank[item.get("id", "")]), fallback_rank[item.get("id", "")]))
     out = []
     for item in ordered:
         row = dict(item)
@@ -382,7 +557,7 @@ def update_entry(entry_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if item["id"] != entry_id:
             continue
         merged = dict(item)
-        for key in ("title", "date", "type", "tags", "related_sectors", "related_stocks", "summary_text"):
+        for key in ("title", "date", "type", "tags", "related_sectors", "related_stocks", "summary_text", "investment_view"):
             if key in payload and payload[key] is not None:
                 merged[key] = payload[key]
         merged["updated_at"] = _now_iso()
@@ -392,6 +567,7 @@ def update_entry(entry_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         entries[idx] = _entry_defaults(merged)
         entries[idx]["path"] = merged["path"]
         entries[idx]["summary_text"] = merged.get("summary_text", "")
+        entries[idx]["investment_view"] = merged.get("investment_view", "")
         entries[idx]["artifact_request"] = merged.get("artifact_request")
         _save_entries(entries)
         return get_entry(entry_id) or entries[idx]
@@ -428,6 +604,21 @@ def search_entries(query: str) -> list[dict[str, Any]]:
             hit["content_preview"] = _read_content(item.get("path", ""))[:180]
             hits.append(hit)
     return hits
+
+
+def save_entry_order(kind: str, ids: list[str]) -> list[dict[str, Any]]:
+    kind = (kind or "").strip()
+    if kind not in VALID_TYPES:
+        raise ValueError("条目类型不支持排序")
+    entries = _load_entries()
+    typed_ids = [item["id"] for item in entries if item.get("type") == kind]
+    known = set(typed_ids)
+    clean = [entry_id.strip() for entry_id in ids if entry_id and entry_id.strip() in known]
+    clean.extend(entry_id for entry_id in typed_ids if entry_id not in clean)
+    order_map = _load_entry_order()
+    order_map[kind] = clean
+    _save_entry_order(order_map)
+    return list_entries(kind=kind)
 
 
 def list_calendar_events(view: str = "upcoming", importance: str | None = None) -> list[dict[str, Any]]:

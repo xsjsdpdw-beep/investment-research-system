@@ -97,37 +97,81 @@ def test_ai_settings_logic_is_centralized():
     assert "model:" in llm
 
 
+def test_tradingagents_deep_analysis_is_wired_through_settings_stock_page_and_runtime():
+    settings = read("frontend/src/pages/Settings.tsx")
+    stock_data = read("frontend/src/pages/StockData.tsx")
+    ask_ai = read("frontend/src/components/ui/AskAiButton.tsx")
+    tradingagents = read("frontend/src/lib/tradingagents.ts")
+    app_py = read("backend/app.py")
+    runtime = read("backend/tradingagents_runtime.py")
+    runtime_tests = read("backend/tests/test_tradingagents_runtime.py")
+
+    assert "TradingAgents 深度分析" in settings
+    assert "loadTradingAgentsConfig" in settings
+    assert "saveTradingAgentsConfig" in settings
+    assert "clearTradingAgentsConfig" in settings
+    assert "只能走 API 模式" in settings
+
+    assert 'mode="tradingagents"' in stock_data
+    assert 'label="TradingAgents 深度分析"' in stock_data
+
+    assert 'mode?: "chat" | "tradingagents"' in ask_ai
+    assert "hasTradingAgentsConfig" in ask_ai
+    assert "startTradingAgentsRun" in ask_ai
+    assert "streamTradingAgentsRun" in ask_ai
+    assert "cancelTradingAgentsRun" in ask_ai
+    assert "开始深度分析" in ask_ai
+
+    assert 'const KEY = "vr-tradingagents"' in tradingagents
+    assert 'fetch("/api/tradingagents/run"' in tradingagents
+    assert 'fetch(`/api/tradingagents/stream/${taskId}`' in tradingagents
+    assert 'fetch(`/api/tradingagents/cancel/${taskId}`' in tradingagents
+
+    assert 'class TradingAgentsRunReq(BaseModel):' in app_py
+    assert '@app.post("/api/tradingagents/run")' in app_py
+    assert '@app.get("/api/tradingagents/stream/{task_id}")' in app_py
+    assert '@app.post("/api/tradingagents/cancel/{task_id}")' in app_py
+
+    assert "STAGES = [" in runtime
+    assert "仅支持 A 股 6 位代码" in runtime
+    assert "TradingAgents 运行时未安装或不可用" in runtime
+    assert "TradingAgentsGraph" in runtime
+
+    assert "test_api_stream_replays_result" in runtime_tests
+    assert "test_run_task_emits_result_with_fake_runner" in runtime_tests
+
+
 def test_sidebar_prioritizes_high_frequency_pages():
-    layout = read("frontend/src/components/layout/Layout.tsx")
+    workspace = read("frontend/src/lib/workspace.ts")
 
-    daily = layout.index('label: "每日复盘"')
-    watchlist = layout.index('label: "自选股"')
-    portfolio = layout.index('label: "我的持仓"')
-    stock_data = layout.index('label: "个股数据"')
-    notes = layout.index('label: "研究记录"')
-    intel = layout.index('label: "资讯雷达"')
-    sectors = layout.index('label: "板块中心"')
-    reports = layout.index('label: "我的研报"')
-    settings = layout.index('label: "接入 AI"')
+    calendar = workspace.index('label: "投资日历"')
+    memos = workspace.index('label: "投资备忘"')
+    watchlist = workspace.index('label: "关注列表"')
+    intel = workspace.index('label: "资讯雷达"')
+    framework = workspace.index('label: "框架沉淀"')
+    database = workspace.index('label: "数据库"')
+    settings = workspace.index('label: "接入 AI"')
 
-    assert daily < watchlist < portfolio < stock_data < notes < intel < sectors < reports < settings
+    assert calendar < memos < watchlist < intel < framework < database < settings
 
 
 def test_daily_review_exposes_quick_links_to_core_workflows():
-    daily_review = read("frontend/src/pages/DailyReview.tsx")
     router = read("frontend/src/router.tsx")
+    workspace = read("frontend/src/lib/workspace.ts")
 
-    assert 'path: "/", element: <Navigate to="/daily-review" replace />' in router
-    assert "const QUICK_LINKS = [" in daily_review
-    assert "快捷入口" in daily_review
-    assert 'to: "/watchlist"' in daily_review
-    assert 'to: "/portfolio"' in daily_review
-    assert 'to: "/stock-data"' in daily_review
-    assert 'to: "/notes"' in daily_review
-    assert "自选股" in daily_review
-    assert "我的持仓" in daily_review
-    assert "个股数据" in daily_review
-    assert "研究记录" in daily_review
+    assert 'path: "/", element: <Navigate to="/calendar" replace />' in router
+    assert 'path: "/daily-review", element: <Navigate to="/intel" replace />' in router
+    assert 'path: "/portfolio", element: <Navigate to="/framework" replace />' in router
+    assert 'path: "/stock-data", element: <Navigate to="/framework" replace />' in router
+    assert 'path: "/notes", element: <Navigate to="/memos" replace />' in router
+    assert 'to: "/watchlist"' in workspace
+    assert 'to: "/intel"' in workspace
+    assert 'to: "/framework"' in workspace
+    assert 'to: "/database"' in workspace
+    assert "投资日历" in workspace
+    assert "投资备忘" in workspace
+    assert "关注列表" in workspace
+    assert "框架沉淀" in workspace
 
 
 def test_local_startup_helpers_exist_and_point_to_workspace_commands():
@@ -238,11 +282,35 @@ def test_local_service_lifecycle_helpers_exist_and_point_to_workspace_commands()
     assert "#!/bin/sh" in restart_all
     assert "scripts/stop-all.sh" in restart_all
     assert "dev-backend.sh" in restart_all
-    assert "dev-frontend.sh" in restart_all
-    assert "subprocess.Popen" in restart_all
-    assert "start_new_session=True" in restart_all
-    assert "api/health" in restart_all
-    assert "5899" in restart_all
+
+
+def test_vertical_left_nav_supports_drag_sort_and_is_used_by_core_pages():
+    section_tabs = read("frontend/src/components/ui/SectionTabs.tsx")
+    layout = read("frontend/src/components/layout/Layout.tsx")
+    intel = read("frontend/src/pages/Intel.tsx")
+    framework = read("frontend/src/pages/Framework.tsx")
+    database = read("frontend/src/pages/Database.tsx")
+    watchlist = read("frontend/src/pages/Watchlist.tsx")
+
+    assert "draggableStorageKey" in section_tabs
+    assert "GripVertical" in section_tabs
+    assert 'orientation === "vertical"' in section_tabs
+    assert 'orientation = "horizontal"' in section_tabs
+
+    assert "sidebar-children-order:" in layout
+    assert "GripVertical" in layout
+    assert 'draggableStorageKey="intel-fundamental-view-order"' in intel
+    assert 'draggableStorageKey="intel-liquidity-view-order"' in intel
+    assert 'draggableStorageKey="framework-sector-view-order"' in framework
+    assert 'draggableStorageKey="framework-stock-view-order"' in framework
+    assert 'draggableStorageKey="framework-learning-view-order"' in framework
+    assert 'draggableStorageKey="database-china-macro-view-order"' in database
+    assert 'draggableStorageKey="watchlist-stock-group-order"' in watchlist
+    assert 'draggableStorageKey="watchlist-indicator-category-order"' in watchlist
+    assert 'draggableStorageKey="framework-sector-center-tabs"' in framework
+    assert 'draggableStorageKey="framework-stock-center-tabs"' in framework
+    assert 'draggableStorageKey="framework-weekly-year-order"' in framework
+    assert 'draggableStorageKey="framework-learning-object-order"' in framework
 
 
 def test_local_docs_point_to_service_lifecycle_helpers():

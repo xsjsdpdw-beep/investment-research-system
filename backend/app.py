@@ -116,6 +116,7 @@ class KnowledgeEntryIn(BaseModel):
     tags: list[str] = []
     related_sectors: list[str] = []
     related_stocks: list[str] = []
+    investment_view: str = ""
 
 
 class KnowledgeEntryUpdate(BaseModel):
@@ -126,6 +127,12 @@ class KnowledgeEntryUpdate(BaseModel):
     related_sectors: list[str] | None = None
     related_stocks: list[str] | None = None
     summary_text: str | None = None
+    investment_view: str | None = None
+
+
+class KnowledgeEntryOrderIn(BaseModel):
+    kind: str
+    ids: list[str] = []
 
 
 class CalendarEventIn(BaseModel):
@@ -153,6 +160,13 @@ class MarketReportIngestIn(BaseModel):
     max_reports_per_stock: int = 5
 
 
+class SectorReportIngestIn(BaseModel):
+    sector: str
+    days: int = 365
+    max_pages: int = 5
+    max_reports: int = 12
+
+
 class PremiumNoteIn(BaseModel):
     title: str
     content: str
@@ -164,6 +178,14 @@ class PremiumNoteIn(BaseModel):
     date: str = ""
     tags: list[str] = []
     summary_text: str = ""
+
+
+class SectorOverviewBuildIn(BaseModel):
+    sector: str
+
+
+class StockOverviewBuildIn(BaseModel):
+    ticker: str
 
 
 class LearningPackGenerateIn(BaseModel):
@@ -179,12 +201,20 @@ class DatabaseModuleIn(BaseModel):
     containers: list[dict] = []
 
 
+class DatabaseModuleOrderIn(BaseModel):
+    keys: list[str] = []
+
+
 class SectorNodeIn(BaseModel):
     id: str = ""
     name: str
     parent_id: str = ""
     description: str = ""
     sort_order: int = 0
+
+
+class SectorTreeOrderIn(BaseModel):
+    ids: list[str] = []
 
 
 class SectorIndicatorIn(BaseModel):
@@ -196,6 +226,11 @@ class SectorIndicatorIn(BaseModel):
     viewpoint: str = ""
     data_source: str = ""
     sort_order: int = 0
+
+
+class SectorIndicatorOrderIn(BaseModel):
+    sector: str
+    ids: list[str] = []
 
 
 class SectorModuleIn(BaseModel):
@@ -218,13 +253,38 @@ class StockModuleIn(BaseModel):
     sort_order: int = 0
 
 
+class SectorModuleOrderIn(BaseModel):
+    sector: str
+    ids: list[str] = []
+
+
+class StockModuleOrderIn(BaseModel):
+    ticker: str
+    ids: list[str] = []
+
+
 class IntelArtifactIn(BaseModel):
     kind: str
+
+
+class NewsRadarConfigIn(BaseModel):
+    fetch: dict = {}
+    redline_keywords: list[str] = []
+    industries: list[dict] = []
+    sources: list[dict] = []
 
 
 @app.get("/api/knowledge/entries")
 def knowledge_entries(kind: str | None = Query(None), sector: str | None = Query(None), stock: str | None = Query(None)):
     return {"data": knowledge.list_entries(kind=kind, sector=sector, stock=stock)}
+
+
+@app.put("/api/knowledge/entries/order")
+def knowledge_order_save(payload: KnowledgeEntryOrderIn):
+    try:
+        return {"data": knowledge.save_entry_order(payload.kind, payload.ids)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.get("/api/knowledge/entries/{entry_id}")
@@ -315,6 +375,21 @@ def framework_sector_tree_node_upsert(payload: SectorNodeIn):
         raise HTTPException(400, str(e)) from e
 
 
+@app.delete("/api/framework/sector-tree/nodes/{node_id}")
+def framework_sector_tree_node_delete(node_id: str):
+    try:
+        return {"data": knowledge.delete_sector_node(node_id)}
+    except KeyError:
+        raise HTTPException(404, "行业节点不存在") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/framework/sector-tree/order")
+def framework_sector_tree_order_save(payload: SectorTreeOrderIn):
+    return {"data": knowledge.save_sector_tree_order(payload.ids)}
+
+
 @app.get("/api/framework/sector-indicators")
 def framework_sector_indicators(sector: str | None = Query(None)):
     return {"data": knowledge.list_sector_indicators(sector=sector)}
@@ -324,6 +399,14 @@ def framework_sector_indicators(sector: str | None = Query(None)):
 def framework_sector_indicator_upsert(payload: SectorIndicatorIn):
     try:
         return {"data": knowledge.upsert_sector_indicator(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/framework/sector-indicators/order")
+def framework_sector_indicator_order(payload: SectorIndicatorOrderIn):
+    try:
+        return {"data": knowledge.reorder_sector_indicators(payload.sector, payload.ids)}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -341,6 +424,14 @@ def framework_sector_module_upsert(payload: SectorModuleIn):
         raise HTTPException(400, str(e)) from e
 
 
+@app.put("/api/framework/sector-modules/order")
+def framework_sector_module_order(payload: SectorModuleOrderIn):
+    try:
+        return {"data": knowledge.reorder_sector_modules(payload.sector, payload.ids)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @app.get("/api/framework/stock-modules")
 def framework_stock_modules(ticker: str | None = Query(None)):
     return {"data": knowledge.list_stock_modules(ticker=ticker)}
@@ -350,6 +441,14 @@ def framework_stock_modules(ticker: str | None = Query(None)):
 def framework_stock_module_upsert(payload: StockModuleIn):
     try:
         return {"data": knowledge.upsert_stock_module(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/framework/stock-modules/order")
+def framework_stock_module_order(payload: StockModuleOrderIn):
+    try:
+        return {"data": knowledge.reorder_stock_modules(payload.ticker, payload.ids)}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -371,10 +470,37 @@ def research_market_reports_ingest(payload: MarketReportIngestIn):
     return {"data": research_hub.ingest_market_reports(payload.tickers, pages=pages, max_reports_per_stock=max_reports)}
 
 
+@app.post("/api/research/sector-reports/ingest")
+def research_sector_reports_ingest(payload: SectorReportIngestIn):
+    days = min(max(payload.days, 30), 1825)
+    pages = min(max(payload.max_pages, 1), 10)
+    max_reports = min(max(payload.max_reports, 1), 50)
+    try:
+        return {"data": research_hub.ingest_sector_reports(payload.sector, days=days, max_pages=pages, max_reports=max_reports)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @app.post("/api/research/premium-notes")
 def research_premium_notes_ingest(payload: PremiumNoteIn):
     try:
         return {"data": research_hub.ingest_premium_note(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/sector-overview/build")
+def research_sector_overview_build(payload: SectorOverviewBuildIn):
+    try:
+        return {"data": research_hub.build_sector_overview_modules(payload.sector)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/stock-overview/build")
+def research_stock_overview_build(payload: StockOverviewBuildIn):
+    try:
+        return {"data": research_hub.build_stock_overview_modules(payload.ticker)}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -391,6 +517,19 @@ def research_intel_digest(payload: IntelArtifactIn):
 def research_intel_image_artifact(payload: IntelArtifactIn):
     try:
         return {"data": research_hub.generate_intel_image_artifact(payload.kind)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/news-sources-config")
+def research_news_sources_config():
+    return {"data": newsradar.load_sources_config()}
+
+
+@app.put("/api/research/news-sources-config")
+def research_news_sources_config_save(payload: NewsRadarConfigIn):
+    try:
+        return {"data": newsradar.save_sources_config(payload.model_dump())}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -442,6 +581,11 @@ def database_custom_module_upsert(payload: DatabaseModuleIn):
         return {"data": database_modules.upsert_custom_module(payload.model_dump())}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/database/modules/order")
+def database_modules_order_save(payload: DatabaseModuleOrderIn):
+    return {"data": database_modules.save_module_order(payload.keys)}
 
 
 @app.get("/api/database/china-macro-overview")
@@ -642,11 +786,11 @@ def portfolio_refresh():
 
 @app.get("/api/radar")
 def radar():
-    """资讯雷达：12 赛道公开 RSS 资讯（读缓存，无缓存返回赛道骨架）。"""
+    """投研资讯：12 赛道公开 RSS 资讯（读缓存，无缓存返回赛道骨架）。"""
     try:
         return {"data": newsradar.get_radar(force=False)}
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"资讯雷达异常：{e}") from e
+        raise HTTPException(502, f"投研资讯异常：{e}") from e
 
 
 @app.post("/api/radar/refresh")
@@ -655,7 +799,7 @@ def radar_refresh():
     try:
         return {"data": newsradar.fetch_radar()}
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"资讯雷达刷新失败：{e}") from e
+        raise HTTPException(502, f"投研资讯刷新失败：{e}") from e
 
 
 @app.get("/api/market/overview")

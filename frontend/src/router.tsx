@@ -7,6 +7,7 @@ import { Watchlist } from "@/pages/Watchlist";
 import { Notes } from "@/pages/Notes";
 import { Database } from "@/pages/Database";
 import { Settings } from "@/pages/Settings";
+import { Portfolio } from "@/pages/Portfolio";
 
 export const router = createBrowserRouter([
   {
@@ -15,8 +16,8 @@ export const router = createBrowserRouter([
       { path: "/", element: <Navigate to="/calendar" replace /> },
       { path: "/calendar", element: <Calendar /> },
       { path: "/daily-review", element: <Navigate to="/intel" replace /> },
-      { path: "/portfolio", element: <Navigate to="/framework" replace /> },
-      { path: "/stock-data", element: <Navigate to="/framework" replace /> },
+      { path: "/portfolio", element: <Portfolio /> },
+      { path: "/stock-data", element: <Navigate to="/database?sub=stock-data" replace /> },
       { path: "/my-reports", element: <Navigate to="/framework" replace /> },
       { path: "/sectors", element: <Navigate to="/framework" replace /> },
       { path: "/sectors/:key", element: <Navigate to="/framework" replace /> },
