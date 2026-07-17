@@ -1289,7 +1289,10 @@ function buildNotebookHeadingTree(headings: NotebookHeading[]): NotebookHeadingN
 }
 
 function knowledgeEntryCandidateSource(entry: KnowledgeEntry): OverviewCandidate["source_type"] {
-  if (entry.type === "attachment_link") return "attachment";
+  if (entry.type === "attachment_link") {
+    if (isUploadedAttachmentContent(entry.content || entry.content_preview || "") || isAutoReportAttachment(entry)) return "report";
+    return "attachment";
+  }
   if (entry.type === "research_note" || entry.type === "tracking_comment") return "note";
   return "attachment";
 }
@@ -2668,7 +2671,21 @@ export function Framework() {
       report: [] as OverviewCandidate[],
       expert_call: [] as OverviewCandidate[],
     };
-    picked.forEach((entry) => {
+    const fallbackEntries: KnowledgeEntry[] = [];
+    for (const entry of picked) {
+      try {
+        await api.importKnowledgeOverviewCandidate({
+          scope_type: scope,
+          scope_id: scopeId,
+          entry_id: entry.id,
+          title: entry.title,
+        });
+        continue;
+      } catch {
+        fallbackEntries.push(entry);
+      }
+    }
+    fallbackEntries.forEach((entry) => {
       const sourceType = knowledgeEntryCandidateSource(entry);
       bySource[sourceType].push({
         id: `${entry.id}-candidate`,
@@ -2699,7 +2716,14 @@ export function Framework() {
       setDeepWorkspaceView((current) => ({ ...current, [scope]: "review" }));
       if (scope === "sector") await loadSectorWorkbench(scopeId);
       else await loadStockWorkbench(scopeId);
-      toast.success("资料已加入未分类检查页");
+      const importedCount = picked.length - fallbackEntries.length;
+      if (fallbackEntries.length > 0 && importedCount > 0) {
+        toast.success(`资料已加入未分类检查页：${importedCount} 条走结构化提取，${fallbackEntries.length} 条按普通候选导入`);
+      } else if (fallbackEntries.length > 0) {
+        toast.success("资料已加入未分类检查页");
+      } else {
+        toast.success(`资料已加入未分类检查页：${importedCount} 条已结构化导入`);
+      }
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "资料导入失败");
     }

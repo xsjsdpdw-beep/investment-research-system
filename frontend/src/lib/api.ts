@@ -1017,6 +1017,12 @@ export const api = {
     report_id: string;
     title?: string;
   }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-report", "POST", payload),
+  importKnowledgeOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    entry_id: string;
+    title?: string;
+  }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-entry", "POST", payload),
   buildSectorOverview: (sector: string) =>
     request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
   buildStockOverview: (ticker: string) =>

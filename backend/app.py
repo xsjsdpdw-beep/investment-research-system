@@ -279,6 +279,11 @@ class OverviewRenderReportIn(OverviewWorkbenchQueryIn):
     title: str = ""
 
 
+class OverviewRenderEntryIn(OverviewWorkbenchQueryIn):
+    entry_id: str
+    title: str = ""
+
+
 class OverviewStructuredPreviewIn(OverviewWorkbenchQueryIn):
     draft_blocks: list[dict] = []
     deep_blocks: list[dict] = []
@@ -887,6 +892,48 @@ def research_overview_render_import_report(payload: OverviewRenderReportIn):
         candidate["source_entry_id"] = report_id
         workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "report", [candidate])
         return {"data": {"blocks": blocks, "workbench": workbench}}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/render/import-entry")
+def research_overview_render_import_entry(payload: OverviewRenderEntryIn):
+    entry = knowledge.get_entry(payload.entry_id.strip())
+    if not entry:
+        raise HTTPException(404, "资料条目不存在")
+
+    title = payload.title.strip() or entry.get("title", "").strip() or payload.scope_id
+    raw_content = (entry.get("content") or "").strip()
+    entry_type = (entry.get("type") or "").strip()
+
+    try:
+        if entry_type == "attachment_link" and raw_content.startswith("report:"):
+            report_id = raw_content.splitlines()[0].split(":", 1)[1].strip()
+            hit = mr.report_path(report_id)
+            if not hit:
+                raise HTTPException(404, "附件关联的研报文件不存在")
+            file_path, _filename = hit
+            blocks = research_ingest.extract_report_file_to_blocks(str(file_path), title)
+            candidate = research_ingest.build_structured_candidate_from_report_file(str(file_path), title)
+            candidate["id"] = f"entry-{entry['id']}"
+            candidate["source_type"] = "report"
+            candidate["source_entry_id"] = entry["id"]
+            candidate["source_title"] = entry.get("title") or title
+            candidate["title"] = entry.get("title") or title
+            workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "report", [candidate])
+            return {"data": {"blocks": blocks, "workbench": workbench}}
+
+        source_type = "note" if entry_type in {"research_note", "tracking_comment", "sector_profile", "stock_profile"} else "attachment"
+        candidate = research_ingest.build_structured_candidate_from_text(
+            source_type,
+            entry["id"],
+            raw_content,
+            title,
+        )
+        candidate["title"] = entry.get("title") or title
+        candidate["source_title"] = entry.get("title") or title
+        workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, source_type, [candidate])
+        return {"data": {"blocks": candidate["structured_blocks"], "workbench": workbench}}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

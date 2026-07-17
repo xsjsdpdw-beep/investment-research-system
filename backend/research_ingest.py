@@ -436,6 +436,36 @@ def ocr_result_to_structured_blocks(parsed: dict[str, Any], title: str) -> list[
     return markdown_to_structured_blocks(text or f"# {title}\n\n暂未提取到 OCR 正文。", title)
 
 
+def _summary_from_blocks(blocks: list[dict[str, Any]]) -> str:
+    if blocks and blocks[0].get("children"):
+        first_child = blocks[0]["children"][0]
+        return (first_child.get("content") or first_child.get("title") or "").strip()[:240]
+    return ""
+
+
+def build_structured_candidate_from_text(
+    source_type: str,
+    source_entry_id: str,
+    content: str,
+    title: str,
+) -> dict[str, Any]:
+    normalized_content = (content or "").strip()
+    blocks = markdown_to_structured_blocks(normalized_content or f"# {title}\n\n暂未提取到正文。", title)
+    summary = _summary_from_blocks(blocks)
+    return {
+        "id": f"{source_type}-{source_entry_id or Path(title).stem}",
+        "source_type": source_type,
+        "title": title,
+        "summary": summary,
+        "source_title": title,
+        "source_entry_id": source_entry_id,
+        "matched_card_id": "",
+        "target_block": "body",
+        "proposed_patch": normalized_content,
+        "structured_blocks": blocks,
+    }
+
+
 def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tuple[str, list[dict[str, Any]]]:
     note = youdao_sync.read_note(file_id)
     content = (note.get("content") or "").strip()
@@ -480,15 +510,12 @@ def extract_image_to_blocks(file_path: str, title: str) -> list[dict[str, Any]]:
 
 def build_structured_candidate_from_image(scope_type: str, scope_id: str, file_path: str, title: str) -> dict[str, Any]:
     blocks = extract_image_to_blocks(file_path, title)
-    summary = ""
-    if blocks and blocks[0].get("children"):
-        first_child = blocks[0]["children"][0]
-        summary = (first_child.get("content") or first_child.get("title") or "").strip()
+    summary = _summary_from_blocks(blocks)
     return {
         "id": f"img-{Path(file_path).stem}",
         "source_type": "attachment",
         "title": title,
-        "summary": summary[:240],
+        "summary": summary,
         "source_title": title,
         "source_entry_id": file_path,
         "matched_card_id": "",
@@ -519,15 +546,12 @@ def build_structured_candidate_from_report_file(file_path: str, title: str) -> d
     if ext in {".png", ".jpg", ".jpeg", ".webp"}:
         return build_structured_candidate_from_image("", "", file_path, title)
     blocks = extract_report_file_to_blocks(file_path, title)
-    summary = ""
-    if blocks and blocks[0].get("children"):
-        first_child = blocks[0]["children"][0]
-        summary = (first_child.get("content") or first_child.get("title") or "").strip()
+    summary = _summary_from_blocks(blocks)
     return {
         "id": f"file-{path.stem}",
         "source_type": "attachment",
         "title": title,
-        "summary": summary[:240],
+        "summary": summary,
         "source_title": title,
         "source_entry_id": file_path,
         "matched_card_id": "",
