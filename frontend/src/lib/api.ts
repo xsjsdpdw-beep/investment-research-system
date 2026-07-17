@@ -489,11 +489,161 @@ export interface PremiumNoteIngestResult {
   source_type: string;
 }
 
+export interface OverviewSourceInterface {
+  id: string;
+  label: string;
+  provider: string;
+  note: string;
+  enabled: boolean;
+  removable?: boolean;
+}
+
 export interface OverviewBuildResult {
   scope: "sector" | "stock";
   target: string;
   sources_count: number;
   modules: SectorModule[] | StockModule[];
+}
+
+export interface OverviewChartBlock {
+  type: string;
+  title?: string;
+  spec?: Record<string, unknown>;
+}
+
+export interface OverviewImageBlock {
+  id: string;
+  title?: string;
+  image_url: string;
+  caption?: string;
+  source_label?: string;
+}
+
+export interface OverviewSourceBlock {
+  id: string;
+  label: string;
+  url?: string;
+  note?: string;
+}
+
+export interface StructuredRenderBlock {
+  id: string;
+  type:
+    | "section"
+    | "paragraph"
+    | "bullet_list"
+    | "quote"
+    | "table"
+    | "metric_grid"
+    | "timeline"
+    | "process_flow"
+    | "industry_chain"
+    | "comparison_cards"
+    | "image"
+    | "chart_spec"
+    | "source_ref";
+  title: string;
+  section_key: string;
+  content: string;
+  items: string[];
+  table: Record<string, unknown>;
+  image: Record<string, unknown>;
+  chart_spec: Record<string, unknown>;
+  source_refs: Array<Record<string, unknown>>;
+  children: StructuredRenderBlock[];
+  render_hint: Record<string, unknown>;
+}
+
+export interface OverviewContentBlock {
+  id: string;
+  type: "section" | "text" | "image" | "chart" | "source";
+  title?: string;
+  text?: string;
+  image_url?: string;
+  caption?: string;
+  source_label?: string;
+  url?: string;
+  note?: string;
+  spec?: Record<string, unknown>;
+  children?: OverviewContentBlock[];
+}
+
+export interface OverviewDeepCard {
+  id: string;
+  title: string;
+  body: string;
+  preview_text?: string;
+  content_blocks?: OverviewContentBlock[];
+  image_blocks?: OverviewImageBlock[];
+  chart_blocks?: OverviewChartBlock[];
+  source_blocks?: OverviewSourceBlock[];
+  status?: string;
+  sources?: Record<string, unknown>[];
+  updated_at?: string;
+}
+
+export interface OverviewCandidate {
+  id: string;
+  source_type: "report" | "attachment" | "note" | "expert_call";
+  title: string;
+  summary?: string;
+  source_title?: string;
+  source_url?: string;
+  matched_card_id?: string;
+  target_block?: "body" | "image" | "chart" | "source";
+  proposed_patch?: string;
+  source_entry_id?: string;
+  status?: "pending" | "accepted" | "ignored" | "later";
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OverviewVersion {
+  version_id: string;
+  card_id: string;
+  action_type: "replace" | "append" | "partial" | "ignore" | string;
+  source_type: "report" | "attachment" | "note" | "expert_call" | string;
+  source_title: string;
+  before_snapshot: Record<string, unknown>;
+  after_snapshot: Record<string, unknown>;
+  change_summary?: string;
+  created_at: string;
+}
+
+export interface OverviewWorkbench {
+  scope_type: "sector" | "stock";
+  scope_id: string;
+  draft: {
+    summary?: string;
+    modules: SectorModule[] | StockModule[];
+    sources: OverviewSourceInterface[];
+    keywords?: string[];
+    updated_at?: string;
+  };
+  deep_cards: OverviewDeepCard[];
+  draft_structured_blocks?: StructuredRenderBlock[];
+  deep_structured_blocks?: StructuredRenderBlock[];
+  candidates: OverviewCandidate[];
+  versions: OverviewVersion[];
+  editor_binding?: OverviewEditorBinding;
+  updated_at?: string;
+}
+
+export interface OverviewEditorBinding {
+  provider: string;
+  file_id: string;
+  title: string;
+  parent_id?: string;
+  content?: string;
+  preview?: string;
+  updated_at?: string;
+  last_synced_at?: string;
+  message?: string;
+}
+
+export interface YoudaoNoteCandidate {
+  file_id: string;
+  title: string;
 }
 
 export interface MacroRegistryData {
@@ -693,6 +843,7 @@ export const api = {
     return get<CalendarEvent[]>(`/calendar/events${suffix}`);
   },
   upsertCalendarEvent: (payload: {
+    id?: string;
     title: string;
     date: string;
     category: string;
@@ -765,6 +916,75 @@ export const api = {
     tags?: string[];
     summary_text?: string;
   }) => request<PremiumNoteIngestResult>("/research/premium-notes", "POST", payload),
+  overviewWorkbench: (scopeType: "sector" | "stock", scopeId: string) =>
+    get<OverviewWorkbench>(`/research/overview-workbench?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}`),
+  saveOverviewDraft: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    draft: OverviewWorkbench["draft"];
+  }) => request<OverviewWorkbench>("/research/overview-workbench/draft", "POST", payload),
+  saveOverviewDeepCards: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    cards: OverviewDeepCard[];
+  }) => request<OverviewDeepCard[]>("/research/overview-workbench/deep-cards", "POST", payload),
+  appendOverviewCandidates: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    source_type: "report" | "attachment" | "note" | "expert_call";
+    candidates: OverviewCandidate[];
+  }) => request<OverviewWorkbench>("/research/overview-workbench/candidates", "POST", payload),
+  applyOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    candidate_id: string;
+    action: "replace" | "append" | "partial" | "ignore";
+    payload?: Record<string, unknown>;
+  }) => request<{ candidate: OverviewCandidate; card: OverviewDeepCard | null; version: OverviewVersion | null }>("/research/overview-workbench/candidates/apply", "POST", payload),
+  overviewVersions: (scopeType: "sector" | "stock", scopeId: string, cardId?: string) =>
+    get<OverviewVersion[]>(`/research/overview-workbench/versions?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}${cardId ? `&card_id=${encodeURIComponent(cardId)}` : ""}`),
+  overviewEditorBinding: (scopeType: "sector" | "stock", scopeId: string) =>
+    get<OverviewEditorBinding>(`/research/overview-workbench/editor?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}`),
+  bindOverviewEditor: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    provider: "youdao";
+    file_id: string;
+    title?: string;
+    parent_id?: string;
+    content?: string;
+  }) => request<OverviewEditorBinding>("/research/overview-workbench/editor/bind", "POST", payload),
+  createOverviewEditor: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    provider: "youdao";
+    title?: string;
+    parent_id?: string;
+    content?: string;
+  }) => request<OverviewEditorBinding>("/research/overview-workbench/editor/create", "POST", payload),
+  syncOverviewEditor: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+  }) => request<OverviewEditorBinding>("/research/overview-workbench/editor/sync", "POST", payload),
+  pushOverviewEditor: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    provider: "youdao";
+    file_id: string;
+    title?: string;
+    parent_id?: string;
+    content?: string;
+  }) => request<OverviewEditorBinding>("/research/overview-workbench/editor/push", "POST", payload),
+  openYoudaoApp: (fileId?: string) =>
+    request<{ ok: boolean; message: string }>("/research/overview-workbench/editor/open-app", "POST", { file_id: fileId || "" }),
+  searchYoudaoNotes: (keyword: string) =>
+    request<YoudaoNoteCandidate[]>("/research/overview-workbench/editor/search-notes", "POST", { keyword }),
+  importYoudaoOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    file_id: string;
+    title?: string;
+  }) => request<OverviewWorkbench>("/research/overview-workbench/editor/import-note", "POST", payload),
   buildSectorOverview: (sector: string) =>
     request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
   buildStockOverview: (ticker: string) =>

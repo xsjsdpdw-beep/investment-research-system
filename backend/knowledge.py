@@ -33,6 +33,7 @@ SECTOR_TREE_ORDER_FILE = DIRS["indexes"] / "sector_tree_order.json"
 SECTOR_INDICATORS_FILE = DIRS["indexes"] / "sector_indicators.json"
 SECTOR_MODULES_FILE = DIRS["indexes"] / "sector_modules.json"
 STOCK_MODULES_FILE = DIRS["indexes"] / "stock_modules.json"
+OVERVIEW_WORKBENCH_FILE = DIRS["indexes"] / "overview_workbench.json"
 ARTIFACT_DIR = DIRS["attachments"] / "artifacts"
 VALID_TYPES = {
     "memo",
@@ -45,6 +46,37 @@ VALID_TYPES = {
     "attachment_link",
     "learning_pack",
 }
+VALID_OVERVIEW_SCOPE_TYPES = {"sector", "stock"}
+VALID_OVERVIEW_SOURCE_TYPES = {"report", "attachment", "note", "expert_call"}
+VALID_OVERVIEW_CANDIDATE_STATES = {"pending", "accepted", "ignored", "later"}
+VALID_OVERVIEW_APPLY_ACTIONS = {"replace", "append", "partial", "ignore"}
+VALID_STRUCTURED_RENDER_BLOCK_TYPES = {
+    "section",
+    "paragraph",
+    "bullet_list",
+    "quote",
+    "table",
+    "metric_grid",
+    "timeline",
+    "process_flow",
+    "industry_chain",
+    "comparison_cards",
+    "image",
+    "chart_spec",
+    "source_ref",
+}
+
+
+def _overview_source_label(source_type: str | None) -> str:
+    if source_type == "report":
+        return "研报"
+    if source_type == "attachment":
+        return "附件"
+    if source_type == "note":
+        return "纪要"
+    if source_type == "expert_call":
+        return "专家会"
+    return source_type or "候选"
 
 
 def _ensure_dirs() -> None:
@@ -61,6 +93,10 @@ def _slugify(text: str) -> str:
     base = re.sub(r"[^\w\u4e00-\u9fff-]+", "-", (text or "").strip().lower())
     base = re.sub(r"-{2,}", "-", base).strip("-")
     return base or "entry"
+
+
+def _strip_html(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", (text or "").replace("&nbsp;", " "))).strip()
 
 
 def _entry_dir(kind: str) -> Path:
@@ -85,6 +121,431 @@ def _read_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return deepcopy(default)
+
+
+def _default_overview_workbench() -> dict[str, Any]:
+    return {"items": [], "updated_at": _now_iso()}
+
+
+def _load_overview_workbench() -> dict[str, Any]:
+    _ensure_dirs()
+    data = _read_json(OVERVIEW_WORKBENCH_FILE, _default_overview_workbench())
+    data.setdefault("items", [])
+    data.setdefault("updated_at", _now_iso())
+    return data
+
+
+def _save_overview_workbench(items: list[dict[str, Any]]) -> None:
+    _atomic_json(OVERVIEW_WORKBENCH_FILE, {"items": items, "updated_at": _now_iso()})
+
+
+def _normalize_overview_scope_type(scope_type: str) -> str:
+    scope = (scope_type or "").strip()
+    if scope not in VALID_OVERVIEW_SCOPE_TYPES:
+        raise ValueError("概览对象类型只支持 sector 或 stock")
+    return scope
+
+
+def _normalize_overview_source_type(source_type: str) -> str:
+    source = (source_type or "").strip()
+    if source not in VALID_OVERVIEW_SOURCE_TYPES:
+        raise ValueError("候选来源类型不支持")
+    return source
+
+
+def normalize_structured_render_block(block: dict[str, Any], index: int = 0) -> dict[str, Any]:
+    raw_type = (block.get("type") or "paragraph").strip()
+    normalized_type = raw_type if raw_type in VALID_STRUCTURED_RENDER_BLOCK_TYPES else "paragraph"
+    return {
+        "id": (block.get("id") or f"render-block-{index}").strip(),
+        "type": normalized_type,
+        "title": (block.get("title") or "").strip(),
+        "section_key": (block.get("section_key") or "").strip(),
+        "content": block.get("content") or "",
+        "items": deepcopy(block.get("items") or []),
+        "table": deepcopy(block.get("table") or {}),
+        "image": deepcopy(block.get("image") or {}),
+        "chart_spec": deepcopy(block.get("chart_spec") or {}),
+        "source_refs": deepcopy(block.get("source_refs") or []),
+        "children": [
+            normalize_structured_render_block(child, child_index)
+            for child_index, child in enumerate(block.get("children") or [])
+            if isinstance(child, dict)
+        ],
+        "render_hint": deepcopy(block.get("render_hint") or {}),
+    }
+
+
+def normalize_structured_render_blocks(blocks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [
+        normalize_structured_render_block(block, index)
+        for index, block in enumerate(blocks or [])
+        if isinstance(block, dict)
+    ]
+
+
+def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, Any] | None = None) -> dict[str, Any]:
+    now = _now_iso()
+    current = deepcopy(record or {})
+    return {
+        "scope_type": scope_type,
+        "scope_id": scope_id,
+        "draft": {
+            "summary": current.get("draft", {}).get("summary", ""),
+            "modules": current.get("draft", {}).get("modules", []) or [],
+            "sources": current.get("draft", {}).get("sources", []) or [],
+            "updated_at": current.get("draft", {}).get("updated_at") or now,
+            "keywords": current.get("draft", {}).get("keywords", []) or [],
+        },
+        "deep_cards": current.get("deep_cards", []) or [],
+        "candidates": current.get("candidates", []) or [],
+        "versions": current.get("versions", []) or [],
+        "editor_binding": current.get("editor_binding", {}) or {},
+        "draft_structured_blocks": normalize_structured_render_blocks(current.get("draft_structured_blocks") or []),
+        "deep_structured_blocks": normalize_structured_render_blocks(current.get("deep_structured_blocks") or []),
+        "updated_at": current.get("updated_at") or now,
+    }
+
+
+def _normalize_chart_blocks(chart_blocks: Any) -> list[dict[str, Any]]:
+    out = []
+    for block in chart_blocks or []:
+        if not isinstance(block, dict):
+            continue
+        out.append(
+            {
+                "type": (block.get("type") or "text").strip(),
+                "title": (block.get("title") or "").strip(),
+                "spec": deepcopy(block.get("spec") or {}),
+            }
+        )
+    return out
+
+
+def _normalize_content_blocks(blocks: Any, card_id: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for index, block in enumerate(blocks or []):
+        if not isinstance(block, dict):
+            continue
+        block_type = (block.get("type") or "text").strip()
+        normalized = {
+            "id": (block.get("id") or f"{card_id}-block-{index + 1}").strip(),
+            "type": block_type if block_type in {"section", "text", "image", "chart", "source"} else "text",
+            "title": (block.get("title") or "").strip(),
+            "text": (block.get("text") or "").strip(),
+            "image_url": (block.get("image_url") or "").strip(),
+            "caption": (block.get("caption") or "").strip(),
+            "source_label": (block.get("source_label") or "").strip(),
+            "url": (block.get("url") or "").strip(),
+            "note": (block.get("note") or "").strip(),
+            "spec": deepcopy(block.get("spec") or {}),
+            "children": [],
+        }
+        if normalized["type"] == "section":
+            normalized["children"] = _normalize_content_blocks(block.get("children") or [], normalized["id"])
+        out.append(normalized)
+    return out
+
+
+def _content_blocks_from_legacy(card_id: str, body: str, image_blocks: list[dict[str, Any]], chart_blocks: list[dict[str, Any]], source_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    section_children: list[dict[str, Any]] = []
+    if body.strip():
+        section_children.append({
+            "id": f"{card_id}-text-1",
+            "type": "text",
+            "title": "",
+            "text": body.strip(),
+            "children": [],
+        })
+    for index, block in enumerate(image_blocks):
+        section_children.append(
+            {
+                "id": block.get("id") or f"{card_id}-image-{index + 1}",
+                "type": "image",
+                "title": (block.get("title") or "").strip(),
+                "image_url": (block.get("image_url") or "").strip(),
+                "caption": (block.get("caption") or "").strip(),
+                "source_label": (block.get("source_label") or "").strip(),
+                "children": [],
+            }
+        )
+    for index, block in enumerate(chart_blocks):
+        section_children.append(
+            {
+                "id": f"{card_id}-chart-{index + 1}",
+                "type": "chart",
+                "title": (block.get("title") or "").strip(),
+                "note": str((block.get("spec") or {}).get("note") or "").strip(),
+                "spec": deepcopy(block.get("spec") or {}),
+                "children": [],
+            }
+        )
+    for index, block in enumerate(source_blocks):
+        section_children.append(
+            {
+                "id": block.get("id") or f"{card_id}-source-{index + 1}",
+                "type": "source",
+                "title": (block.get("label") or "").strip(),
+                "url": (block.get("url") or "").strip(),
+                "note": (block.get("note") or "").strip(),
+                "children": [],
+            }
+        )
+    if section_children:
+        blocks.append(
+            {
+                "id": f"{card_id}-section-1",
+                "type": "section",
+                "title": "核心内容",
+                "children": section_children,
+            }
+        )
+    return blocks
+
+
+def _flatten_content_blocks(blocks: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    text_parts: list[str] = []
+    image_blocks: list[dict[str, Any]] = []
+    chart_blocks: list[dict[str, Any]] = []
+    source_blocks: list[dict[str, Any]] = []
+
+    def walk(items: list[dict[str, Any]], prefix: list[int]) -> None:
+        section_index = 0
+        for block in items:
+            block_type = block.get("type")
+            if block_type == "section":
+                section_index += 1
+                number = ".".join(str(part) for part in [*prefix, section_index])
+                title = (block.get("title") or "").strip()
+                if title:
+                    text_parts.append(f"{number} {title}")
+                walk(block.get("children") or [], [*prefix, section_index])
+            elif block_type == "text":
+                text = _strip_html((block.get("text") or "").strip())
+                if text:
+                    text_parts.append(text)
+            elif block_type == "image":
+                image_blocks.append(
+                    {
+                        "id": (block.get("id") or "").strip(),
+                        "title": (block.get("title") or "").strip(),
+                        "image_url": (block.get("image_url") or "").strip(),
+                        "caption": (block.get("caption") or "").strip(),
+                        "source_label": (block.get("source_label") or "").strip(),
+                    }
+                )
+            elif block_type == "chart":
+                chart_blocks.append(
+                    {
+                        "type": "line",
+                        "title": (block.get("title") or "").strip(),
+                        "spec": deepcopy(block.get("spec") or {}),
+                    }
+                )
+            elif block_type == "source":
+                source_blocks.append(
+                    {
+                        "id": (block.get("id") or "").strip(),
+                        "label": (block.get("title") or "").strip(),
+                        "url": (block.get("url") or "").strip(),
+                        "note": (block.get("note") or "").strip(),
+                    }
+                )
+
+    walk(blocks, [])
+    return "\n\n".join(part for part in text_parts if part.strip()), image_blocks, chart_blocks, source_blocks
+
+
+def _candidate_to_content_block(candidate: dict[str, Any], card_id: str, target_block: str) -> dict[str, Any]:
+    suffix = datetime.now(BEIJING).strftime("%Y%m%d%H%M%S")
+    base_id = f"{card_id}-candidate-{suffix}-{_slugify(candidate.get('id') or candidate.get('title') or 'patch')}"
+    block_type = (target_block or candidate.get("target_block") or "body").strip()
+    patch_text = (candidate.get("proposed_patch") or candidate.get("summary") or "").strip()
+    source_title = (candidate.get("source_title") or candidate.get("title") or "").strip()
+    source_url = (candidate.get("source_url") or "").strip()
+    if block_type == "source":
+        return {
+            "id": f"{base_id}-source",
+            "type": "source",
+            "title": source_title or "新增来源",
+            "url": source_url,
+            "note": patch_text,
+            "children": [],
+        }
+    if block_type == "image":
+        return {
+            "id": f"{base_id}-image",
+            "type": "image",
+            "title": source_title or "新增图片",
+            "image_url": source_url,
+            "caption": patch_text,
+            "source_label": _overview_source_label(candidate.get("source_type")),
+            "children": [],
+        }
+    if block_type == "chart":
+        return {
+            "id": f"{base_id}-chart",
+            "type": "chart",
+            "title": source_title or "新增图表",
+            "note": patch_text,
+            "spec": {"note": patch_text},
+            "children": [],
+        }
+    return {
+        "id": f"{base_id}-text",
+        "type": "text",
+        "text": patch_text,
+        "children": [],
+    }
+
+
+def _find_block(blocks: list[dict[str, Any]], block_id: str) -> dict[str, Any] | None:
+    for block in blocks:
+        if block.get("id") == block_id:
+            return block
+        children = block.get("children") or []
+        if children:
+            found = _find_block(children, block_id)
+            if found:
+                return found
+    return None
+
+
+def _insert_block_relative(blocks: list[dict[str, Any]], anchor_id: str, new_block: dict[str, Any]) -> list[dict[str, Any]]:
+    next_blocks = deepcopy(blocks)
+
+    def insert_in(items: list[dict[str, Any]]) -> bool:
+        for index, block in enumerate(items):
+            if block.get("id") == anchor_id:
+                if block.get("type") == "section":
+                    children = list(block.get("children") or [])
+                    children.append(new_block)
+                    block["children"] = children
+                else:
+                    items.insert(index + 1, new_block)
+                return True
+            children = block.get("children") or []
+            if children and insert_in(children):
+                return True
+        return False
+
+    if insert_in(next_blocks):
+        return next_blocks
+    next_blocks.append(new_block)
+    return next_blocks
+
+
+def _replace_block_content(blocks: list[dict[str, Any]], block_id: str, new_block: dict[str, Any]) -> list[dict[str, Any]]:
+    next_blocks = deepcopy(blocks)
+
+    def replace_in(items: list[dict[str, Any]]) -> bool:
+        for index, block in enumerate(items):
+            if block.get("id") == block_id:
+                if block.get("type") == "text" and new_block.get("type") == "text":
+                    block["text"] = new_block.get("text", "")
+                elif block.get("type") == "section":
+                    children = list(block.get("children") or [])
+                    children.append(new_block)
+                    block["children"] = children
+                else:
+                    items[index] = new_block
+                return True
+            children = block.get("children") or []
+            if children and replace_in(children):
+                return True
+        return False
+
+    if replace_in(next_blocks):
+        return next_blocks
+    next_blocks.append(new_block)
+    return next_blocks
+
+
+def _normalize_deep_card(card: dict[str, Any], index: int) -> dict[str, Any]:
+    now = _now_iso()
+    card_id = (card.get("id") or f"card-{index + 1}").strip()
+    body = (card.get("body") or "").strip()
+    image_blocks = []
+    for image_index, block in enumerate(card.get("image_blocks") or []):
+        if not isinstance(block, dict):
+            continue
+        image_blocks.append(
+            {
+                "id": (block.get("id") or f"{card_id}-image-{image_index + 1}").strip(),
+                "title": (block.get("title") or "").strip(),
+                "image_url": (block.get("image_url") or "").strip(),
+                "caption": (block.get("caption") or "").strip(),
+                "source_label": (block.get("source_label") or "").strip(),
+            }
+        )
+    source_blocks = []
+    for source_index, block in enumerate(card.get("source_blocks") or []):
+        if not isinstance(block, dict):
+            continue
+        source_blocks.append(
+            {
+                "id": (block.get("id") or f"{card_id}-source-{source_index + 1}").strip(),
+                "label": (block.get("label") or "").strip(),
+                "url": (block.get("url") or "").strip(),
+                "note": (block.get("note") or "").strip(),
+            }
+        )
+    content_blocks = _normalize_content_blocks(card.get("content_blocks"), card_id)
+    if not content_blocks:
+        content_blocks = _content_blocks_from_legacy(card_id, body, image_blocks, _normalize_chart_blocks(card.get("chart_blocks")), source_blocks)
+    flattened_body, flattened_images, flattened_charts, flattened_sources = _flatten_content_blocks(content_blocks)
+    return {
+        "id": card_id,
+        "title": (card.get("title") or card_id).strip(),
+        "body": flattened_body or body,
+        "preview_text": (card.get("preview_text") or "\n".join((flattened_body or body).splitlines()[:3])).strip(),
+        "content_blocks": content_blocks,
+        "image_blocks": flattened_images or image_blocks,
+        "chart_blocks": flattened_charts or _normalize_chart_blocks(card.get("chart_blocks")),
+        "source_blocks": flattened_sources or source_blocks,
+        "status": (card.get("status") or "active").strip(),
+        "sources": deepcopy(card.get("sources") or []),
+        "updated_at": card.get("updated_at") or now,
+    }
+
+
+def _normalize_candidate(candidate: dict[str, Any], source_type: str, index: int) -> dict[str, Any]:
+    now = _now_iso()
+    state = (candidate.get("status") or "pending").strip()
+    if state not in VALID_OVERVIEW_CANDIDATE_STATES:
+        state = "pending"
+    candidate_id = (candidate.get("id") or f"{source_type}-{datetime.now(BEIJING):%Y%m%d%H%M%S}-{index}").strip()
+    return {
+        "id": candidate_id,
+        "source_type": source_type,
+        "title": (candidate.get("title") or candidate_id).strip(),
+        "summary": (candidate.get("summary") or "").strip(),
+        "source_title": (candidate.get("source_title") or candidate.get("title") or "").strip(),
+        "source_url": (candidate.get("source_url") or "").strip(),
+        "matched_card_id": (candidate.get("matched_card_id") or "").strip(),
+        "target_block": (candidate.get("target_block") or "body").strip(),
+        "proposed_patch": (candidate.get("proposed_patch") or candidate.get("summary") or "").strip(),
+        "source_entry_id": (candidate.get("source_entry_id") or "").strip(),
+        "status": state,
+        "created_at": candidate.get("created_at") or now,
+        "updated_at": now,
+    }
+
+
+def _get_or_create_overview_record(scope_type: str, scope_id: str) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+    scope = _normalize_overview_scope_type(scope_type)
+    key = (scope_id or "").strip()
+    if not key:
+        raise ValueError("概览对象不能为空")
+    data = _load_overview_workbench()
+    items = data["items"]
+    for index, item in enumerate(items):
+        if item.get("scope_type") == scope and item.get("scope_id") == key:
+            return _overview_record_defaults(scope, key, item), items, index
+    record = _overview_record_defaults(scope, key)
+    items.append(record)
+    return record, items, len(items) - 1
 
 
 def _entry_defaults(meta: dict[str, Any]) -> dict[str, Any]:
@@ -491,6 +952,227 @@ def reorder_stock_modules(ticker: str, ids: list[str]) -> dict[str, Any]:
 
     _atomic_json(STOCK_MODULES_FILE, {"items": updated_items, "updated_at": now})
     return list_stock_modules(ticker=ticker)
+
+
+def get_overview_workbench(scope_type: str, scope_id: str) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record)
+
+
+def save_overview_draft(scope_type: str, scope_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    now = _now_iso()
+    record["draft"] = {
+        "summary": (payload.get("summary") or "").strip(),
+        "modules": deepcopy(payload.get("modules") or []),
+        "sources": deepcopy(payload.get("sources") or []),
+        "keywords": deepcopy(payload.get("keywords") or []),
+        "updated_at": now,
+    }
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record)
+
+
+def save_overview_deep_cards(scope_type: str, scope_id: str, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    now = _now_iso()
+    record["deep_cards"] = [_normalize_deep_card(card, card_index) for card_index, card in enumerate(cards)]
+    for card in record["deep_cards"]:
+        card["updated_at"] = now
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record["deep_cards"])
+
+
+def save_overview_structured_preview(scope_type: str, scope_id: str, draft_blocks: list[dict[str, Any]], deep_blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    record["draft_structured_blocks"] = normalize_structured_render_blocks(draft_blocks)
+    record["deep_structured_blocks"] = normalize_structured_render_blocks(deep_blocks)
+    record["updated_at"] = _now_iso()
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record)
+
+
+def get_overview_editor_binding(scope_type: str, scope_id: str) -> dict[str, Any]:
+    record = get_overview_workbench(scope_type, scope_id)
+    binding = deepcopy(record.get("editor_binding") or {})
+    binding.setdefault("provider", "")
+    binding.setdefault("file_id", "")
+    binding.setdefault("title", "")
+    binding.setdefault("parent_id", "")
+    binding.setdefault("content", "")
+    binding.setdefault("preview", "")
+    binding.setdefault("updated_at", "")
+    binding.setdefault("last_synced_at", "")
+    return binding
+
+
+def save_overview_editor_binding(scope_type: str, scope_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    current = deepcopy(record.get("editor_binding") or {})
+    now = _now_iso()
+    binding = {
+        "provider": (payload.get("provider") or current.get("provider") or "youdao").strip(),
+        "file_id": (payload.get("file_id") or current.get("file_id") or "").strip(),
+        "title": (payload.get("title") or current.get("title") or "").strip(),
+        "parent_id": (payload.get("parent_id") or current.get("parent_id") or "").strip(),
+        "content": payload.get("content") if payload.get("content") is not None else current.get("content", ""),
+        "preview": payload.get("preview") if payload.get("preview") is not None else current.get("preview", ""),
+        "updated_at": now,
+        "last_synced_at": payload.get("last_synced_at") or current.get("last_synced_at") or "",
+    }
+    record["editor_binding"] = binding
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(binding)
+
+
+def clear_overview_editor_binding(scope_type: str, scope_id: str, message: str = "") -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    now = _now_iso()
+    binding = {
+        "provider": "youdao",
+        "file_id": "",
+        "title": "",
+        "parent_id": "",
+        "content": "",
+        "preview": "",
+        "updated_at": now,
+        "last_synced_at": "",
+    }
+    if message:
+        binding["message"] = message
+    record["editor_binding"] = binding
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(binding)
+
+
+def append_overview_candidates(scope_type: str, scope_id: str, source_type: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    source = _normalize_overview_source_type(source_type)
+    now = _now_iso()
+    existing = {item.get("id"): item for item in record["candidates"]}
+    for candidate_index, candidate in enumerate(candidates):
+        normalized = _normalize_candidate(candidate, source, candidate_index)
+        existing[normalized["id"]] = normalized
+    record["candidates"] = sorted(existing.values(), key=lambda item: (item.get("created_at", ""), item.get("id", "")), reverse=True)
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record)
+
+
+def list_overview_versions(scope_type: str, scope_id: str, card_id: str | None = None) -> list[dict[str, Any]]:
+    record = get_overview_workbench(scope_type, scope_id)
+    versions = record["versions"]
+    if card_id:
+        target = (card_id or "").strip()
+        versions = [item for item in versions if item.get("card_id") == target]
+    return sorted(versions, key=lambda item: (item.get("created_at", ""), item.get("version_id", "")), reverse=True)
+
+
+def apply_overview_candidate(scope_type: str, scope_id: str, candidate_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_action = (action or "").strip()
+    if normalized_action not in VALID_OVERVIEW_APPLY_ACTIONS:
+        raise ValueError("候选处理动作不支持")
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    target_id = (candidate_id or "").strip()
+    candidate = next((item for item in record["candidates"] if item.get("id") == target_id), None)
+    if not candidate:
+        raise KeyError(target_id)
+    now = _now_iso()
+    if normalized_action == "ignore":
+        candidate["status"] = "ignored"
+        candidate["updated_at"] = now
+        record["updated_at"] = now
+        items[index] = record
+        _save_overview_workbench(items)
+        return {"candidate": deepcopy(candidate), "card": None, "version": None}
+
+    card_id = (payload.get("card_id") or candidate.get("matched_card_id") or "").strip()
+    if not card_id:
+        raise ValueError("缺少命中的深度卡片")
+    card = next((item for item in record["deep_cards"] if item.get("id") == card_id), None)
+    if not card:
+        raise KeyError(card_id)
+
+    before_snapshot = {
+        "title": card.get("title", ""),
+        "body": card.get("body", ""),
+        "chart_blocks": deepcopy(card.get("chart_blocks") or []),
+        "content_blocks": deepcopy(card.get("content_blocks") or []),
+    }
+    proposed_patch = (candidate.get("proposed_patch") or candidate.get("summary") or "").strip()
+    current_body = card.get("body", "")
+    current_blocks = _normalize_content_blocks(card.get("content_blocks"), card_id)
+    if not current_blocks:
+        current_blocks = _content_blocks_from_legacy(
+            card_id,
+            current_body,
+            card.get("image_blocks") or [],
+            _normalize_chart_blocks(card.get("chart_blocks")),
+            card.get("source_blocks") or [],
+        )
+    target_anchor_id = (payload.get("target_anchor_id") or "").strip()
+    target_block = (payload.get("target_block") or candidate.get("target_block") or "body").strip()
+    candidate_block = _candidate_to_content_block(candidate, card_id, target_block)
+    anchor_block = _find_block(current_blocks, target_anchor_id) if target_anchor_id else None
+
+    if normalized_action == "replace" and target_anchor_id and anchor_block:
+        next_blocks = _replace_block_content(current_blocks, target_anchor_id, candidate_block)
+    elif normalized_action in {"append", "partial", "replace"} and target_anchor_id:
+        next_blocks = _insert_block_relative(current_blocks, target_anchor_id, candidate_block)
+    elif normalized_action == "replace":
+        next_blocks = [candidate_block]
+    elif normalized_action == "append":
+        next_blocks = [*deepcopy(current_blocks), candidate_block]
+    else:
+        next_blocks = [*deepcopy(current_blocks), candidate_block]
+
+    next_body, next_images, next_charts, next_sources = _flatten_content_blocks(next_blocks)
+    if normalized_action == "partial" and not next_body.strip():
+        next_body = (payload.get("merged_body") or proposed_patch or current_body).strip()
+
+    card["content_blocks"] = next_blocks
+    card["body"] = next_body
+    card["image_blocks"] = next_images
+    card["chart_blocks"] = next_charts
+    card["source_blocks"] = next_sources
+    card["preview_text"] = (card.get("preview_text") or "\n".join(next_body.splitlines()[:3])).strip() or "\n".join(next_body.splitlines()[:3]).strip()
+    card["updated_at"] = now
+    candidate["status"] = "accepted"
+    candidate["matched_card_id"] = card_id
+    candidate["updated_at"] = now
+    version = {
+        "version_id": f"ver-{datetime.now(BEIJING):%Y%m%d%H%M%S}-{_slugify(card_id)}",
+        "card_id": card_id,
+        "action_type": normalized_action,
+        "source_type": candidate.get("source_type", ""),
+        "source_title": candidate.get("source_title") or candidate.get("title") or "",
+        "before_snapshot": before_snapshot,
+        "after_snapshot": {
+            "title": card.get("title", ""),
+            "body": card.get("body", ""),
+            "chart_blocks": deepcopy(card.get("chart_blocks") or []),
+            "content_blocks": deepcopy(card.get("content_blocks") or []),
+        },
+        "change_summary": (payload.get("change_summary") or f"{candidate.get('title') or '候选项'} -> {card.get('title') or card_id}").strip(),
+        "created_at": now,
+    }
+    record["versions"].append(version)
+    record["updated_at"] = now
+    items[index] = record
+    _save_overview_workbench(items)
+    return {"candidate": deepcopy(candidate), "card": deepcopy(card), "version": deepcopy(version)}
 
 
 def list_entries(kind: str | None = None, sector: str | None = None, stock: str | None = None) -> list[dict[str, Any]]:
