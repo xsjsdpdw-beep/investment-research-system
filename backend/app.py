@@ -404,6 +404,16 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
     binding["content"] = note["content"]
     binding["preview"] = note["content"].replace("\n", " ")[:240]
     data["editor_binding"] = binding
+    if not (data.get("deep_structured_blocks") or []):
+        refreshed = knowledge.save_overview_structured_preview(
+            scope_type,
+            scope_id,
+            data.get("draft_structured_blocks") or [],
+            research_ingest.youdao_note_content_to_blocks(note["content"], binding.get("title") or ""),
+        )
+        data["draft_structured_blocks"] = refreshed.get("draft_structured_blocks") or []
+        data["deep_structured_blocks"] = refreshed.get("deep_structured_blocks") or []
+        data["updated_at"] = refreshed.get("updated_at") or data.get("updated_at", "")
     return data
 
 
@@ -747,6 +757,7 @@ def research_overview_workbench_editor_sync(payload: OverviewWorkbenchQueryIn):
         if not file_id:
             raise ValueError("当前还没有绑定有道笔记")
         note = youdao_sync.read_note(file_id)
+        deep_blocks = research_ingest.youdao_note_content_to_blocks(note["content"], binding.get("title") or "")
         binding = knowledge.save_overview_editor_binding(
             payload.scope_type,
             payload.scope_id,
@@ -759,6 +770,13 @@ def research_overview_workbench_editor_sync(payload: OverviewWorkbenchQueryIn):
                 "preview": note["content"].replace("\n", " ")[:240],
                 "last_synced_at": knowledge._now_iso(),
             },
+        )
+        record = knowledge.get_overview_workbench(payload.scope_type, payload.scope_id)
+        knowledge.save_overview_structured_preview(
+            payload.scope_type,
+            payload.scope_id,
+            record.get("draft_structured_blocks") or [],
+            deep_blocks,
         )
         return {"data": binding}
     except ValueError as e:

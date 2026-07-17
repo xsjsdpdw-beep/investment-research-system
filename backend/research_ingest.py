@@ -40,6 +40,87 @@ def _blank_block(index: int, block_type: str, title: str = "", content: str = ""
     }
 
 
+def _looks_like_youdao_note(title: str, raw: str) -> bool:
+    text = (raw or "").strip()
+    if not text:
+        return False
+    if (title or "").lower().endswith(".note"):
+        return True
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    markdown_headings = sum(1 for line in lines if re.match(r"^#{1,4}\s+", line))
+    long_plain_lines = sum(1 for line in lines if len(line) > 32 and not re.match(r"^[-*]\s+", line))
+    note_headings = sum(1 for line in lines if _detect_youdao_heading(line) is not None)
+    return markdown_headings == 0 and (note_headings >= 2 or long_plain_lines >= 6)
+
+
+def _detect_youdao_heading(line: str) -> tuple[int, str] | None:
+    stripped = (line or "").strip()
+    if not stripped:
+        return None
+    if re.fullmatch(r"(问题清单|管理理念|管理|业务|产品|国内|海外|制造、销售|矿山|财务|盈利预测与估值|风险提示|投资逻辑)", stripped):
+        return 2, stripped
+    chinese_match = re.match(r"^([一二三四五六七八九十]+)[、.]\s*(.+)$", stripped)
+    if chinese_match:
+        return 2, chinese_match.group(2).strip() or stripped
+    numeric_match = re.match(r"^(\d+)(?:\.(\d+))?[、.]?\s*(.+)$", stripped)
+    if numeric_match and numeric_match.group(3):
+        level = 2 if not numeric_match.group(2) else 3
+        return level, numeric_match.group(3).strip()
+    bracket_match = re.match(r"^[（(](\d+)[)）]\s*(.+)$", stripped)
+    if bracket_match:
+        return 3, bracket_match.group(2).strip() or stripped
+    return None
+
+
+def normalize_youdao_note_markdown(raw: str, title: str) -> str:
+    original = (raw or "").replace("\r", "").strip()
+    if not original or not _looks_like_youdao_note(title, original):
+        return original
+
+    lines = [line.strip() for line in original.split("\n")]
+    blocks: list[str] = []
+    paragraph_buffer: list[str] = []
+
+    def flush_paragraph() -> None:
+        text = " ".join(part for part in paragraph_buffer if part).strip()
+        if text:
+            blocks.append(text)
+        paragraph_buffer.clear()
+
+    first_nonempty = next((line for line in lines if line), "")
+    first_line_promoted = False
+    if first_nonempty and not first_nonempty.startswith("#") and len(first_nonempty) <= 60:
+        blocks.append(f"# {first_nonempty}")
+        first_line_promoted = True
+
+    for line in lines:
+        if not line:
+            flush_paragraph()
+            continue
+        if first_line_promoted and line == first_nonempty:
+            continue
+        heading = _detect_youdao_heading(line)
+        if heading:
+            flush_paragraph()
+            level, heading_text = heading
+            blocks.append(f"{'#' * level} {heading_text}")
+            continue
+        if re.match(r"^[-*•]\s+", line):
+            flush_paragraph()
+            blocks.append(f"- {re.sub(r'^[-*•]\s+', '', line).strip()}")
+            continue
+        paragraph_buffer.append(line)
+
+    flush_paragraph()
+    return "\n\n".join(blocks).strip() or original
+
+
+def youdao_note_content_to_blocks(content: str, title: str) -> list[dict[str, Any]]:
+    resolved_title = (title or "").strip() or _first_heading_or_default(content, "有道笔记")
+    normalized = normalize_youdao_note_markdown(content, resolved_title)
+    return markdown_to_structured_blocks(normalized, resolved_title)
+
+
 def _consume_markdown_table(lines: list[str], start: int) -> tuple[dict[str, Any] | None, int]:
     if start + 1 >= len(lines):
         return None, start
@@ -472,7 +553,7 @@ def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tup
     if not content:
         raise ValueError("这篇有道笔记还没有可导入内容")
     resolved_title = (title or "").strip() or _first_heading_or_default(content, "有道笔记")
-    return content, markdown_to_structured_blocks(content, resolved_title)
+    return content, youdao_note_content_to_blocks(content, resolved_title)
 
 
 def extract_youdao_note_image_to_blocks(image_path: str, title: str) -> list[dict[str, Any]]:

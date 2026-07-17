@@ -9,6 +9,7 @@ import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { api, ApiError, type Announcement, type GlobalIndex, type IntelDigestResult, type MarketOverview, type NewsItem, type NewsRadarConfig, type ResearchHubData, type TurnoverTop } from "@/lib/api";
 import { type DropIndicator, type DropPosition, getDropPosition, reorderWithDropPosition } from "@/lib/drag-sort";
+import { runIntelRefresh } from "@/lib/intel-refresh";
 import { cn } from "@/lib/utils";
 import { INTEL_TABS } from "@/lib/workspace";
 
@@ -239,37 +240,32 @@ export function Intel() {
     const silent = options?.silent ?? false;
     if (!silent) setRefreshState("loading");
     try {
-      const [hubData, overview, globals, turnover, watchlistData, configData] = await Promise.all([
-        api.researchHub(),
-        api.marketOverview().catch(() => null),
-        api.globalIndices().catch(() => []),
-        api.turnoverTop().catch(() => null),
-        api.watchlist().catch(() => ({ stocks: [], indicators: [], updated_at: "" })),
-        api.newsSourcesConfig().catch(() => null),
-      ]);
-      const watchStocks = watchlistData.stocks.slice(0, 8);
-      const stockFeeds = await Promise.all(watchStocks.map(async (item) => {
-        const [announcements, news] = await Promise.all([
-          api.announcements(item.code).catch(() => []),
-          api.news(item.code).catch(() => []),
-        ]);
-        return {
-          ticker: `${item.code}.${item.market}`,
-          name: item.name,
-          group: item.group,
-          announcements: announcements.slice(0, 3),
-          news: news.slice(0, 2),
-          highlights: [
-            announcements[0]?.title ? `公告：${announcements[0].title}` : "",
-            news[0]?.新闻标题 ? `新闻：${news[0].新闻标题}` : "",
-          ].filter(Boolean),
-        } satisfies StockFeedItem;
-      }));
+      const {
+        hubData,
+        overview,
+        globals,
+        turnover,
+        configData,
+        stockFeeds,
+      } = await runIntelRefresh({
+        forceRadarRefresh: !silent,
+        refreshRadar: async () => {
+          await api.radarRefresh();
+        },
+        loadHub: () => api.researchHub(),
+        loadMarketOverview: () => api.marketOverview().catch(() => null),
+        loadGlobalIndices: () => api.globalIndices().catch(() => []),
+        loadTurnoverTop: () => api.turnoverTop().catch(() => null),
+        loadWatchlist: () => api.watchlist().catch(() => ({ stocks: [], indicators: [], updated_at: "" })),
+        loadNewsSourcesConfig: () => api.newsSourcesConfig().catch(() => null),
+        loadAnnouncements: (code) => api.announcements(code).catch(() => []),
+        loadNews: (code) => api.news(code).catch(() => []),
+      });
       setHub(hubData);
       setMarketOverview(overview);
       setGlobalIndices(globals);
       setTurnoverTop(turnover);
-      setStockFeedItems(stockFeeds);
+      setStockFeedItems(stockFeeds as StockFeedItem[]);
       setRadarConfig(configData || hubData.fundamental.news_source_config);
       if (!silent) {
         setRefreshState("success");
