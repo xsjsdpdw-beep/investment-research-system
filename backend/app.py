@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,8 +32,10 @@ import newsradar
 import portfolio as pf
 import market
 import myreports as mr
+import research_ingest
 import research_hub
 import tradingagents_runtime
+import youdao_sync
 
 app = FastAPI(title="投研体系 API", version="0.1.3")
 
@@ -209,6 +212,58 @@ class StockOverviewBuildIn(BaseModel):
     ticker: str
 
 
+class OverviewWorkbenchQueryIn(BaseModel):
+    scope_type: Literal["sector", "stock"]
+    scope_id: str
+
+
+class OverviewDraftIn(OverviewWorkbenchQueryIn):
+    draft: dict[str, Any]
+
+
+class OverviewDeepCardsIn(OverviewWorkbenchQueryIn):
+    cards: list[dict[str, Any]]
+
+
+class OverviewCandidatesIn(OverviewWorkbenchQueryIn):
+    source_type: Literal["report", "attachment", "note", "expert_call"]
+    candidates: list[dict[str, Any]]
+
+
+class OverviewCandidateApplyIn(OverviewWorkbenchQueryIn):
+    candidate_id: str
+    action: Literal["replace", "append", "partial", "ignore"]
+    payload: dict[str, Any] = {}
+
+
+class OverviewEditorBindIn(OverviewWorkbenchQueryIn):
+    provider: Literal["youdao"] = "youdao"
+    file_id: str = ""
+    title: str = ""
+    parent_id: str = ""
+    content: str = ""
+
+
+class OverviewEditorCreateIn(OverviewWorkbenchQueryIn):
+    provider: Literal["youdao"] = "youdao"
+    title: str = ""
+    parent_id: str = ""
+    content: str = ""
+
+
+class OverviewEditorOpenIn(BaseModel):
+    file_id: str = ""
+
+
+class OverviewEditorSearchIn(BaseModel):
+    keyword: str = ""
+
+
+class OverviewEditorImportNoteIn(OverviewWorkbenchQueryIn):
+    file_id: str = ""
+    title: str = ""
+
+
 class LearningPackGenerateIn(BaseModel):
     source_entry_id: str
     title: str | None = None
@@ -293,6 +348,38 @@ class NewsRadarConfigIn(BaseModel):
     redline_keywords: list[str] = []
     industries: list[dict] = []
     sources: list[dict] = []
+
+
+def _should_invalidate_youdao_binding(error: Exception) -> bool:
+    message = str(error or "").strip()
+    markers = [
+        "获取笔记内容失败",
+        "笔记不存在",
+        "not found",
+        "file not found",
+    ]
+    return any(marker.lower() in message.lower() for marker in markers)
+
+
+def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_id: str) -> dict:
+    data = knowledge.get_overview_workbench(scope_type, scope_id)
+    binding = data.get("editor_binding") or {}
+    file_id = (binding.get("file_id") or "").strip()
+    if not file_id:
+        return data
+    try:
+        note = youdao_sync.read_note(file_id)
+    except youdao_sync.YoudaoSyncError as e:
+        if _should_invalidate_youdao_binding(e):
+            reset = knowledge.clear_overview_editor_binding(scope_type, scope_id, "已检测到有道主笔记失效，当前已回到未绑定状态。")
+            data["editor_binding"] = reset
+            data["updated_at"] = reset.get("updated_at") or data.get("updated_at", "")
+            return data
+        raise
+    binding["content"] = note["content"]
+    binding["preview"] = note["content"].replace("\n", " ")[:240]
+    data["editor_binding"] = binding
+    return data
 
 
 @app.get("/api/knowledge/entries")
@@ -523,6 +610,216 @@ def research_stock_overview_build(payload: StockOverviewBuildIn):
     try:
         return {"data": research_hub.build_stock_overview_modules(payload.ticker)}
     except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/overview-workbench")
+def research_overview_workbench(scope_type: Literal["sector", "stock"] = Query(...), scope_id: str = Query(..., min_length=1)):
+    try:
+        return {"data": _validated_overview_workbench(scope_type, scope_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except youdao_sync.YoudaoSyncError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/draft")
+def research_overview_workbench_save_draft(payload: OverviewDraftIn):
+    try:
+        return {"data": knowledge.save_overview_draft(payload.scope_type, payload.scope_id, payload.draft)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/deep-cards")
+def research_overview_workbench_save_deep_cards(payload: OverviewDeepCardsIn):
+    try:
+        return {"data": knowledge.save_overview_deep_cards(payload.scope_type, payload.scope_id, payload.cards)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/candidates")
+def research_overview_workbench_append_candidates(payload: OverviewCandidatesIn):
+    try:
+        return {"data": knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, payload.source_type, payload.candidates)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/candidates/apply")
+def research_overview_workbench_apply_candidate(payload: OverviewCandidateApplyIn):
+    try:
+        return {"data": knowledge.apply_overview_candidate(payload.scope_type, payload.scope_id, payload.candidate_id, payload.action, payload.payload)}
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/overview-workbench/versions")
+def research_overview_workbench_versions(
+    scope_type: Literal["sector", "stock"] = Query(...),
+    scope_id: str = Query(..., min_length=1),
+    card_id: str | None = Query(default=None),
+):
+    try:
+        return {"data": knowledge.list_overview_versions(scope_type, scope_id, card_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/overview-workbench/editor")
+def research_overview_workbench_editor(scope_type: Literal["sector", "stock"] = Query(...), scope_id: str = Query(..., min_length=1)):
+    try:
+        data = _validated_overview_workbench(scope_type, scope_id)
+        return {"data": data.get("editor_binding") or knowledge.get_overview_editor_binding(scope_type, scope_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except youdao_sync.YoudaoSyncError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/bind")
+def research_overview_workbench_editor_bind(payload: OverviewEditorBindIn):
+    try:
+        binding = knowledge.save_overview_editor_binding(
+            payload.scope_type,
+            payload.scope_id,
+            payload.model_dump(),
+        )
+        return {"data": binding}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/create")
+def research_overview_workbench_editor_create(payload: OverviewEditorCreateIn):
+    try:
+        title = payload.title.strip() or (f"{payload.scope_id} {'行业概览' if payload.scope_type == 'sector' else '个股概览'}.md")
+        created = youdao_sync.create_markdown_note(title, payload.content or f"# {payload.scope_id}\n", payload.parent_id)
+        binding = knowledge.save_overview_editor_binding(
+            payload.scope_type,
+            payload.scope_id,
+            {
+                "provider": payload.provider,
+                "file_id": created["file_id"],
+                "title": title,
+                "parent_id": payload.parent_id,
+                "content": payload.content or "",
+                "preview": (payload.content or "").replace("\n", " ")[:240],
+                "last_synced_at": knowledge._now_iso(),
+            },
+        )
+        return {"data": binding}
+    except (ValueError, youdao_sync.YoudaoSyncError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/sync")
+def research_overview_workbench_editor_sync(payload: OverviewWorkbenchQueryIn):
+    try:
+        binding = knowledge.get_overview_editor_binding(payload.scope_type, payload.scope_id)
+        file_id = (binding.get("file_id") or "").strip()
+        if not file_id:
+            raise ValueError("当前还没有绑定有道笔记")
+        note = youdao_sync.read_note(file_id)
+        binding = knowledge.save_overview_editor_binding(
+            payload.scope_type,
+            payload.scope_id,
+            {
+                "provider": "youdao",
+                "file_id": file_id,
+                "title": binding.get("title") or "",
+                "parent_id": binding.get("parent_id") or "",
+                "content": note["content"],
+                "preview": note["content"].replace("\n", " ")[:240],
+                "last_synced_at": knowledge._now_iso(),
+            },
+        )
+        return {"data": binding}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except youdao_sync.YoudaoSyncError as e:
+        if _should_invalidate_youdao_binding(e):
+            reset = knowledge.clear_overview_editor_binding(payload.scope_type, payload.scope_id, "已检测到有道主笔记失效，当前已回到未绑定状态。")
+            return {"data": reset}
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/push")
+def research_overview_workbench_editor_push(payload: OverviewEditorBindIn):
+    try:
+        file_id = payload.file_id.strip()
+        if not file_id:
+            raise ValueError("缺少有道笔记 file_id")
+        result = youdao_sync.update_markdown_note(file_id, payload.content or "", payload.title.strip())
+        binding = knowledge.save_overview_editor_binding(
+            payload.scope_type,
+            payload.scope_id,
+            {
+                "provider": payload.provider,
+                "file_id": file_id,
+                "title": payload.title,
+                "parent_id": payload.parent_id,
+                "content": payload.content or "",
+                "preview": (payload.content or "").replace("\n", " ")[:240],
+                "last_synced_at": knowledge._now_iso(),
+            },
+        )
+        binding["message"] = result.get("message", "")
+        return {"data": binding}
+    except (ValueError, youdao_sync.YoudaoSyncError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/open-app")
+def research_overview_workbench_editor_open_app(payload: OverviewEditorOpenIn):
+    try:
+        return {"data": youdao_sync.open_app(payload.file_id)}
+    except youdao_sync.YoudaoSyncError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/search-notes")
+def research_overview_workbench_editor_search_notes(payload: OverviewEditorSearchIn):
+    keyword = payload.keyword.strip()
+    if not keyword:
+        raise HTTPException(400, "缺少搜索关键词")
+    try:
+        return {"data": youdao_sync.search_notes(keyword)}
+    except youdao_sync.YoudaoSyncError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/editor/import-note")
+def research_overview_workbench_editor_import_note(payload: OverviewEditorImportNoteIn):
+    file_id = payload.file_id.strip()
+    if not file_id:
+        raise HTTPException(400, "缺少有道笔记 file_id")
+    try:
+        note = youdao_sync.read_note(file_id)
+        content = (note.get("content") or "").strip()
+        if not content:
+            raise ValueError("这篇有道笔记还没有可导入内容")
+        title = payload.title.strip() or f"{payload.scope_id} 投喂笔记"
+        snippet = content.replace("\r", " ").replace("\n", " ").strip()[:240]
+        workbench = knowledge.append_overview_candidates(
+            payload.scope_type,
+            payload.scope_id,
+            "note",
+            [{
+                "id": f"youdao-note-{file_id}",
+                "source_type": "note",
+                "title": title,
+                "summary": snippet,
+                "source_title": title,
+                "source_entry_id": file_id,
+                "matched_card_id": "",
+                "target_block": "body",
+                "proposed_patch": content,
+            }],
+        )
+        return {"data": workbench}
+    except (ValueError, youdao_sync.YoudaoSyncError) as e:
         raise HTTPException(400, str(e)) from e
 
 
