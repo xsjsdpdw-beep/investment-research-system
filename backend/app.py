@@ -264,6 +264,11 @@ class OverviewEditorImportNoteIn(OverviewWorkbenchQueryIn):
     title: str = ""
 
 
+class OverviewRenderPdfIn(OverviewWorkbenchQueryIn):
+    file_path: str
+    title: str = ""
+
+
 class LearningPackGenerateIn(BaseModel):
     source_entry_id: str
     title: str | None = None
@@ -820,6 +825,23 @@ def research_overview_workbench_editor_import_note(payload: OverviewEditorImport
         )
         return {"data": workbench}
     except (ValueError, youdao_sync.YoudaoSyncError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/render/import-pdf")
+def research_overview_render_import_pdf(payload: OverviewRenderPdfIn):
+    title = payload.title.strip() or Path(payload.file_path).stem or payload.scope_id
+    try:
+        blocks = research_ingest.extract_pdf_report_to_blocks(payload.file_path, title)
+        candidate = research_ingest.build_structured_candidate_from_pdf(
+            payload.scope_type,
+            payload.scope_id,
+            payload.file_path,
+            title,
+        )
+        workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "report", [candidate])
+        return {"data": {"blocks": blocks, "workbench": workbench}}
+    except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
 

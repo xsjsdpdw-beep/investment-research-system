@@ -646,6 +646,11 @@ export interface YoudaoNoteCandidate {
   title: string;
 }
 
+export interface StructuredOverviewImportResult {
+  blocks: StructuredRenderBlock[];
+  workbench: OverviewWorkbench;
+}
+
 export interface MacroRegistryData {
   title: string;
   groups: {
@@ -985,6 +990,12 @@ export const api = {
     file_id: string;
     title?: string;
   }) => request<OverviewWorkbench>("/research/overview-workbench/editor/import-note", "POST", payload),
+  importPdfOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    file_path: string;
+    title: string;
+  }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-pdf", "POST", payload),
   buildSectorOverview: (sector: string) =>
     request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
   buildStockOverview: (ticker: string) =>
