@@ -1,16 +1,16 @@
-# Research Render Skill Chain Implementation Plan
+# Research Ingest Skill Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a local `有道云笔记 / PDF研报 -> 结构化提取 -> 候选版本 -> 美化预览 -> 人工确认替换` pipeline for 行业概览 and 个股概览.
+**Goal:** Build a local unified `research_ingest_skill` foundation that routes 有道云笔记、PDF研报、扫描件、图片资料 through OCR/extraction, structured normalization, candidate generation, and beautified preview for 行业概览 and 个股概览.
 
-**Architecture:** Keep the existing overview workbench and candidate workflow, but add a new structured rendering layer inside the current backend. Extraction adapters convert Youdao notes and PDF reports into `StructuredRenderBlock[]`, candidate builders store structured patches alongside existing text fields, and the frontend renders draft/deep previews from structured blocks using a unified left-directory/right-content layout.
+**Architecture:** Keep the existing overview workbench and candidate workflow, but add a new backend-local `research_ingest_skill` foundation. Source adapters normalize 有道、PDF、图片输入; an OCR/extract router decides between MinerU, OCRmyPDF, PaddleOCR, and Umi-OCR; normalizers convert all outputs into `StructuredRenderBlock[]`; candidate builders store structured patches alongside current text fields; and the frontend renders draft/deep previews from structured blocks using a unified left-directory/right-content layout.
 
-**Tech Stack:** Python/FastAPI backend, local JSON persistence in `backend/knowledge.py`, React/TypeScript frontend in `frontend/src/pages/Framework.tsx`, pytest, Vitest/TypeScript build, local MinerU adapter shell.
+**Tech Stack:** Python/FastAPI backend, local JSON persistence in `backend/knowledge.py`, React/TypeScript frontend in `frontend/src/pages/Framework.tsx`, pytest, Vitest/TypeScript build, local adapters for MinerU, OCRmyPDF, PaddleOCR, and Umi-OCR.
 
 ## Global Constraints
 
-- Only support `有道云笔记` and `本地 PDF / 研报文件` in this phase.
+- Only support `有道云笔记`、`本地 PDF / 研报文件`、and `单独上传图片` through the unified skill in this phase.
 - Only service `行业概览` and `个股概览` in this phase.
 - Never auto-overwrite deep content; always generate candidate versions for human confirmation.
 - Keep the existing `初稿 / 深度 / 待吸收` workflow and existing candidate apply semantics.
@@ -151,10 +151,93 @@ git add backend/knowledge.py backend/app.py frontend/src/lib/api.ts tests/test_r
 git commit -m "feat: add structured render models for overview workbench"
 ```
 
-### Task 2: Build The PDF Report Extraction Adapter Around MinerU
+### Task 2: Build The Unified OCR/Extraction Router Skeleton
 
 **Files:**
-- Create: `backend/research_render.py`
+- Create: `backend/research_ingest.py`
+- Create: `tests/test_research_ingest_router.py`
+- Modify: `backend/app.py`
+
+**Interfaces:**
+- Consumes:
+  - source metadata: `source_type`, `file_path`, `mime_type`, `provider`, `content`
+- Produces:
+  - `route_ingest_source(source: dict[str, Any]) -> dict[str, Any]`
+  - `detect_pdf_kind(file_path: str) -> Literal["digital_pdf", "scanned_pdf"]`
+  - `detect_source_kind(source: dict[str, Any]) -> str`
+
+- [ ] **Step 1: Write the failing router test**
+
+```python
+from backend import research_ingest
+
+
+def test_detect_source_kind_routes_youdao_image_to_ocr():
+    source = {
+        "source_type": "note_image",
+        "provider": "youdao",
+        "file_path": "",
+        "content": "",
+    }
+
+    result = research_ingest.detect_source_kind(source)
+
+    assert result == "youdao_image"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_research_ingest_router.py::test_detect_source_kind_routes_youdao_image_to_ocr -v`
+
+Expected: FAIL with `ModuleNotFoundError: No module named 'backend.research_ingest'`
+
+- [ ] **Step 3: Implement source-kind and route skeleton**
+
+```python
+def detect_source_kind(source: dict[str, Any]) -> str:
+    source_type = (source.get("source_type") or "").strip()
+    provider = (source.get("provider") or "").strip()
+    file_path = (source.get("file_path") or "").strip().lower()
+    if provider == "youdao" and source_type == "note_image":
+        return "youdao_image"
+    if provider == "youdao" and source_type in {"note", "note_text"}:
+        return "youdao_text"
+    if file_path.endswith(".pdf"):
+        return "pdf"
+    if file_path.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+        return "image"
+    return "text"
+
+
+def route_ingest_source(source: dict[str, Any]) -> dict[str, Any]:
+    kind = detect_source_kind(source)
+    if kind == "pdf":
+        pdf_kind = detect_pdf_kind(source["file_path"])
+        return {"kind": kind, "engine_chain": ["ocrmypdf", "paddleocr"] if pdf_kind == "scanned_pdf" else ["mineru"]}
+    if kind in {"youdao_image", "image"}:
+        return {"kind": kind, "engine_chain": ["paddleocr", "umi_ocr"]}
+    if kind == "youdao_text":
+        return {"kind": kind, "engine_chain": ["native_youdao"]}
+    return {"kind": kind, "engine_chain": ["plain_text"]}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `pytest tests/test_research_ingest_router.py -v`
+
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/research_ingest.py backend/app.py tests/test_research_ingest_router.py
+git commit -m "feat: add unified ingest router skeleton"
+```
+
+### Task 3: Build The PDF Report Extraction Adapter Around The Unified Skill
+
+**Files:**
+- Modify: `backend/research_ingest.py`
 - Create: `tests/test_research_render_pdf.py`
 - Modify: `backend/app.py`
 - Modify: `backend/knowledge.py`
@@ -170,14 +253,14 @@ git commit -m "feat: add structured render models for overview workbench"
 - [ ] **Step 1: Write the failing PDF adapter test**
 
 ```python
-from backend import research_render
+from backend import research_ingest
 
 
 def test_extract_pdf_report_to_blocks_falls_back_to_paragraph_blocks(tmp_path):
     report = tmp_path / "sample.md"
     report.write_text("# HBM行业\n\n需求继续扩张。\n\n| 环节 | 份额 |\n| --- | --- |\n| HBM | 32% |\n", encoding="utf-8")
 
-    blocks = research_render.extract_pdf_report_to_blocks(str(report), "HBM行业")
+    blocks = research_ingest.extract_pdf_report_to_blocks(str(report), "HBM行业")
 
     assert blocks[0]["type"] == "section"
     assert blocks[0]["title"] == "HBM行业"
@@ -188,7 +271,7 @@ def test_extract_pdf_report_to_blocks_falls_back_to_paragraph_blocks(tmp_path):
 
 Run: `pytest tests/test_research_render_pdf.py::test_extract_pdf_report_to_blocks_falls_back_to_paragraph_blocks -v`
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'backend.research_render'`
+Expected: FAIL because `extract_pdf_report_to_blocks` is not implemented on `backend.research_ingest`
 
 - [ ] **Step 3: Write the adapter with MinerU-first, markdown-fallback behavior**
 
@@ -200,9 +283,16 @@ def extract_pdf_report_to_blocks(file_path: str, title: str) -> list[dict[str, A
     if path.suffix.lower() == ".md":
         raw = path.read_text(encoding="utf-8")
         return markdown_to_structured_blocks(raw, title)
-    parsed = _run_mineru_if_available(path)
-    if parsed:
-        return mineru_json_to_structured_blocks(parsed, title)
+    route = route_ingest_source({"source_type": "report", "file_path": str(path), "provider": ""})
+    if route["engine_chain"] == ["mineru"]:
+        parsed = _run_mineru_if_available(path)
+        if parsed:
+            return mineru_json_to_structured_blocks(parsed, title)
+    else:
+        ocr_ready_path = _run_ocrmypdf_if_available(path)
+        parsed = _run_paddleocr_if_available(ocr_ready_path or path)
+        if parsed:
+            return paddleocr_json_to_structured_blocks(parsed, title)
     raw = _extract_plain_text(path)
     return markdown_to_structured_blocks(raw or f"# {title}\n\n暂未提取到正文。", title)
 ```
@@ -232,15 +322,15 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/research_render.py backend/app.py backend/knowledge.py tests/test_research_render_pdf.py
-git commit -m "feat: add pdf report extraction adapter"
+git add backend/research_ingest.py backend/app.py backend/knowledge.py tests/test_research_render_pdf.py
+git commit -m "feat: add pdf extraction to unified ingest skill"
 ```
 
-### Task 3: Add Structured Extraction For Youdao Notes
+### Task 4: Add Structured Extraction For Youdao Notes And Embedded Images
 
 **Files:**
 - Create: `tests/test_research_render_youdao.py`
-- Modify: `backend/research_render.py`
+- Modify: `backend/research_ingest.py`
 - Modify: `backend/app.py`
 
 **Interfaces:**
@@ -255,17 +345,17 @@ git commit -m "feat: add pdf report extraction adapter"
 - [ ] **Step 1: Write the failing Youdao extraction test**
 
 ```python
-from backend import research_render
+from backend import research_ingest
 
 
 def test_extract_youdao_note_to_blocks_preserves_headings(monkeypatch):
     monkeypatch.setattr(
-        research_render.youdao_sync,
+        research_ingest.youdao_sync,
         "read_note",
         lambda file_id: {"content": "# 工程机械\n\n## 产业链\n\n主机厂需求回暖。"},
     )
 
-    content, blocks = research_render.extract_youdao_note_to_blocks("note-1", "工程机械")
+    content, blocks = research_ingest.extract_youdao_note_to_blocks("note-1", "工程机械")
 
     assert "工程机械" in content
     assert blocks[0]["title"] == "工程机械"
@@ -276,7 +366,7 @@ def test_extract_youdao_note_to_blocks_preserves_headings(monkeypatch):
 
 Run: `pytest tests/test_research_render_youdao.py::test_extract_youdao_note_to_blocks_preserves_headings -v`
 
-Expected: FAIL with `AttributeError: module 'backend.research_render' has no attribute 'extract_youdao_note_to_blocks'`
+Expected: FAIL with `AttributeError: module 'backend.research_ingest' has no attribute 'extract_youdao_note_to_blocks'`
 
 - [ ] **Step 3: Implement Youdao note extraction**
 
@@ -290,11 +380,22 @@ def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tup
     return content, markdown_to_structured_blocks(content, resolved_title)
 ```
 
-- [ ] **Step 4: Upgrade the import-note endpoint to store structured candidate patches**
+- [ ] **Step 4: Add a helper for embedded note images**
 
 ```python
-content, blocks = research_render.extract_youdao_note_to_blocks(file_id, title)
-candidate = research_render.build_structured_candidate_from_youdao(
+def extract_youdao_note_image_to_blocks(image_path: str, title: str) -> list[dict[str, Any]]:
+    route = route_ingest_source({"source_type": "note_image", "provider": "youdao", "file_path": image_path})
+    parsed = _run_paddleocr_if_available(Path(image_path))
+    if not parsed and route["engine_chain"][-1] == "umi_ocr":
+        parsed = _run_umiocr_if_available(Path(image_path))
+    return ocr_result_to_structured_blocks(parsed or {}, title)
+```
+
+- [ ] **Step 5: Upgrade the import-note endpoint to store structured candidate patches**
+
+```python
+content, blocks = research_ingest.extract_youdao_note_to_blocks(file_id, title)
+candidate = research_ingest.build_structured_candidate_from_youdao(
     payload.scope_type,
     payload.scope_id,
     file_id,
@@ -303,20 +404,97 @@ candidate = research_render.build_structured_candidate_from_youdao(
 workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "note", [candidate])
 ```
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 6: Run tests**
 
 Run: `pytest tests/test_research_render_youdao.py -v`
+
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/research_ingest.py backend/app.py tests/test_research_render_youdao.py
+git commit -m "feat: add structured extraction for youdao notes and images"
+```
+
+### Task 5: Add Image OCR Ingestion Through The Unified Skill
+
+**Files:**
+- Create: `tests/test_research_ingest_images.py`
+- Modify: `backend/research_ingest.py`
+- Modify: `backend/app.py`
+- Modify: `frontend/src/lib/api.ts`
+- Modify: `frontend/src/pages/Framework.tsx`
+
+**Interfaces:**
+- Consumes:
+  - `route_ingest_source(source: dict[str, Any]) -> dict[str, Any]`
+- Produces:
+  - `extract_image_to_blocks(file_path: str, title: str) -> list[dict[str, Any]]`
+  - `POST /api/research/overview-workbench/render/import-image`
+
+- [ ] **Step 1: Write the failing image ingest test**
+
+```python
+from backend import research_ingest
+
+
+def test_extract_image_to_blocks_uses_ocr_fallback(monkeypatch, tmp_path):
+    image = tmp_path / "note.png"
+    image.write_bytes(b"fake")
+    monkeypatch.setattr(research_ingest, "_run_paddleocr_if_available", lambda path: None)
+    monkeypatch.setattr(research_ingest, "_run_umiocr_if_available", lambda path: {"text": "渠道库存下降"})
+
+    blocks = research_ingest.extract_image_to_blocks(str(image), "渠道反馈")
+
+    assert blocks
+    assert any("渠道库存下降" in (block.get("content") or "") for block in blocks)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/test_research_ingest_images.py::test_extract_image_to_blocks_uses_ocr_fallback -v`
+
+Expected: FAIL because `extract_image_to_blocks` does not exist
+
+- [ ] **Step 3: Implement image OCR ingestion**
+
+```python
+def extract_image_to_blocks(file_path: str, title: str) -> list[dict[str, Any]]:
+    path = Path(file_path)
+    if not path.exists():
+        raise ValueError("图片文件不存在")
+    parsed = _run_paddleocr_if_available(path)
+    if not parsed:
+        parsed = _run_umiocr_if_available(path)
+    return ocr_result_to_structured_blocks(parsed or {"text": ""}, title)
+```
+
+- [ ] **Step 4: Add frontend API and attachment action**
+
+```ts
+importImageOverviewCandidate: (payload: {
+  scope_type: "sector" | "stock";
+  scope_id: string;
+  file_path: string;
+  title: string;
+}) => request<{ blocks: StructuredRenderBlock[]; workbench: OverviewWorkbench }>("/research/overview-workbench/render/import-image", "POST", payload),
+```
+
+- [ ] **Step 5: Run tests**
+
+Run: `pytest tests/test_research_ingest_images.py -v`
 
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/research_render.py backend/app.py tests/test_research_render_youdao.py
-git commit -m "feat: add structured extraction for youdao notes"
+git add backend/research_ingest.py backend/app.py frontend/src/lib/api.ts frontend/src/pages/Framework.tsx tests/test_research_ingest_images.py
+git commit -m "feat: add image ocr ingestion to unified skill"
 ```
 
-### Task 4: Extend Candidate Storage And Apply Logic For Structured Patches
+### Task 6: Extend Candidate Storage And Apply Logic For Structured Patches
 
 **Files:**
 - Create: `tests/test_overview_structured_candidates.py`
@@ -419,7 +597,7 @@ git add backend/knowledge.py backend/app.py frontend/src/lib/api.ts tests/test_o
 git commit -m "feat: support structured patches in overview candidates"
 ```
 
-### Task 5: Build The Frontend Structured Preview Renderer
+### Task 7: Build The Frontend Structured Preview Renderer
 
 **Files:**
 - Create: `frontend/src/components/research/StructuredOverviewRenderer.tsx`
@@ -555,7 +733,7 @@ git add frontend/src/components/research/StructuredOverviewRenderer.tsx frontend
 git commit -m "feat: add structured overview renderer"
 ```
 
-### Task 6: Wire Attachment Ingestion And Candidate Review End-To-End
+### Task 8: Wire Attachment Ingestion And Candidate Review End-To-End
 
 **Files:**
 - Create: `tests/test_research_render_endpoints.py`
@@ -584,7 +762,7 @@ client = TestClient(app)
 
 def test_import_note_endpoint_returns_structured_candidate(monkeypatch):
     monkeypatch.setattr(
-        "backend.research_render.extract_youdao_note_to_blocks",
+        "backend.research_ingest.extract_youdao_note_to_blocks",
         lambda file_id, title=None: ("# 工程机械\n\n需求回暖", [{"id": "s1", "type": "section", "title": "工程机械", "children": []}]),
     )
 
@@ -613,6 +791,13 @@ importPdfOverviewCandidate: (payload: {
   file_path: string;
   title: string;
 }) => request<{ blocks: StructuredRenderBlock[]; workbench: OverviewWorkbench }>("/research/overview-workbench/render/import-pdf", "POST", payload),
+
+importImageOverviewCandidate: (payload: {
+  scope_type: "sector" | "stock";
+  scope_id: string;
+  file_path: string;
+  title: string;
+}) => request<{ blocks: StructuredRenderBlock[]; workbench: OverviewWorkbench }>("/research/overview-workbench/render/import-image", "POST", payload),
 ```
 
 - [ ] **Step 4: Upgrade compare preview to render structured candidate content**
@@ -647,7 +832,7 @@ Run: `pytest tests/test_research_render_endpoints.py -v`
 
 Expected: PASS
 
-Run: `pytest tests/test_research_render_models.py tests/test_research_render_pdf.py tests/test_research_render_youdao.py tests/test_overview_structured_candidates.py tests/test_research_render_endpoints.py -v`
+Run: `pytest tests/test_research_render_models.py tests/test_research_ingest_router.py tests/test_research_render_pdf.py tests/test_research_render_youdao.py tests/test_research_ingest_images.py tests/test_overview_structured_candidates.py tests/test_research_render_endpoints.py -v`
 
 Expected: PASS
 
@@ -667,11 +852,13 @@ git commit -m "feat: wire research render ingestion end to end"
 ### Spec coverage
 
 - `有道云笔记` and `本地 PDF / 研报文件` only: covered by Tasks 2, 3, and 6.
+- unified ingest skill with OCR routing: covered by Tasks 2, 3, 4, and 5.
+- `有道云笔记`、`本地 PDF / 研报文件`、`单独上传图片`: covered by Tasks 3, 4, 5, and 8.
 - `行业概览` and `个股概览` only: all tasks wire through existing `scope_type: "sector" | "stock"` interfaces.
 - `候选版本，人工确认后替换`: Task 4 preserves candidate apply flow and extends it with structured patches.
 - `附件投喂入口 + 候选池联动`: Task 6 wires new ingestion routes into existing Framework attachment/candidate flows.
 - `初稿 / 深度` unified rendering shell: Task 5 introduces a structured renderer for both tabs.
-- `MinerU + markdown-viewer/skills + Kami + CyberPPT` role split: Tasks 2 and 5 implement the extraction/rendering boundaries without expanding scope into PPT generation.
+- `MinerU + OCRmyPDF + PaddleOCR + Umi-OCR + markdown-viewer/skills + Kami + CyberPPT` role split: Tasks 2, 3, 4, 5, and 7 implement the extraction/rendering boundaries without expanding scope into PPT generation.
 
 ### Placeholder scan
 
@@ -684,4 +871,3 @@ git commit -m "feat: wire research render ingestion end to end"
 - Backend model name is consistently `StructuredRenderBlock`.
 - Candidate payload fields are consistently `structured_blocks`, `render_recipe`, and `diff_preview`.
 - Frontend renderer consumes `StructuredRenderBlock[]` in both draft and deep modes.
-
