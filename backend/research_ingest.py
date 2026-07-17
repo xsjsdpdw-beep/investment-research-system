@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
+import youdao_sync
+
 
 def _first_heading_or_default(content: str, fallback: str) -> str:
     for line in (content or "").splitlines():
@@ -240,5 +242,44 @@ def build_structured_candidate_from_pdf(scope_type: str, scope_id: str, file_pat
         "matched_card_id": "",
         "target_block": "body",
         "proposed_patch": summary,
+        "structured_blocks": blocks,
+    }
+
+
+def ocr_result_to_structured_blocks(parsed: dict[str, Any], title: str) -> list[dict[str, Any]]:
+    text = (parsed.get("markdown") or parsed.get("text") or "").strip()
+    return markdown_to_structured_blocks(text or f"# {title}\n\n暂未提取到 OCR 正文。", title)
+
+
+def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+    note = youdao_sync.read_note(file_id)
+    content = (note.get("content") or "").strip()
+    if not content:
+        raise ValueError("这篇有道笔记还没有可导入内容")
+    resolved_title = (title or "").strip() or _first_heading_or_default(content, "有道笔记")
+    return content, markdown_to_structured_blocks(content, resolved_title)
+
+
+def extract_youdao_note_image_to_blocks(image_path: str, title: str) -> list[dict[str, Any]]:
+    route = route_ingest_source({"source_type": "note_image", "provider": "youdao", "file_path": image_path})
+    parsed = _run_paddleocr_if_available(Path(image_path))
+    if not parsed and route["engine_chain"][-1] == "umi_ocr":
+        parsed = None
+    return ocr_result_to_structured_blocks(parsed or {}, title)
+
+
+def build_structured_candidate_from_youdao(scope_type: str, scope_id: str, file_id: str, title: str) -> dict[str, Any]:
+    content, blocks = extract_youdao_note_to_blocks(file_id, title)
+    snippet = content.replace("\r", " ").replace("\n", " ").strip()[:240]
+    return {
+        "id": f"youdao-note-{file_id}",
+        "source_type": "note",
+        "title": title,
+        "summary": snippet,
+        "source_title": title,
+        "source_entry_id": file_id,
+        "matched_card_id": "",
+        "target_block": "body",
+        "proposed_patch": content,
         "structured_blocks": blocks,
     }

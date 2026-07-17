@@ -801,27 +801,19 @@ def research_overview_workbench_editor_import_note(payload: OverviewEditorImport
     if not file_id:
         raise HTTPException(400, "缺少有道笔记 file_id")
     try:
-        note = youdao_sync.read_note(file_id)
-        content = (note.get("content") or "").strip()
-        if not content:
-            raise ValueError("这篇有道笔记还没有可导入内容")
         title = payload.title.strip() or f"{payload.scope_id} 投喂笔记"
-        snippet = content.replace("\r", " ").replace("\n", " ").strip()[:240]
+        content, _blocks = research_ingest.extract_youdao_note_to_blocks(file_id, title)
+        candidate = research_ingest.build_structured_candidate_from_youdao(
+            payload.scope_type,
+            payload.scope_id,
+            file_id,
+            title,
+        )
         workbench = knowledge.append_overview_candidates(
             payload.scope_type,
             payload.scope_id,
             "note",
-            [{
-                "id": f"youdao-note-{file_id}",
-                "source_type": "note",
-                "title": title,
-                "summary": snippet,
-                "source_title": title,
-                "source_entry_id": file_id,
-                "matched_card_id": "",
-                "target_block": "body",
-                "proposed_patch": content,
-            }],
+            [candidate],
         )
         return {"data": workbench}
     except (ValueError, youdao_sync.YoudaoSyncError) as e:
