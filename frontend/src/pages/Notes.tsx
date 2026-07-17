@@ -26,6 +26,9 @@ export function Notes() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [expandedYears, setExpandedYears] = useState<Record<string, boolean>>({});
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
   const [draftDate, setDraftDate] = useState(todayDate());
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
@@ -68,6 +71,51 @@ export function Notes() {
     }, {});
   }, [entries]);
 
+  const timelineTree = useMemo(() => {
+    const years = new Map<string, Map<string, KnowledgeEntry[]>>();
+    entries.forEach((entry) => {
+      const date = entry.date || "未设置日期";
+      const year = date.slice(0, 4) || "未分年";
+      const month = date.length >= 7 ? date.slice(5, 7) : "未分月";
+      if (!years.has(year)) years.set(year, new Map());
+      const months = years.get(year)!;
+      months.set(month, [...(months.get(month) || []), entry]);
+    });
+    return Array.from(years.entries()).map(([year, months]) => ({
+      year,
+      months: Array.from(months.entries()).map(([month, rows]) => ({
+        month,
+        key: `${year}-${month}`,
+        rows,
+      })),
+    }));
+  }, [entries]);
+
+  useEffect(() => {
+    setExpandedYears((current) => {
+      const next = { ...current };
+      timelineTree.forEach((group, index) => {
+        if (!(group.year in next)) next[group.year] = index === 0;
+      });
+      Object.keys(next).forEach((year) => {
+        if (!timelineTree.some((group) => group.year === year)) delete next[year];
+      });
+      return next;
+    });
+    setExpandedMonths((current) => {
+      const next = { ...current };
+      timelineTree.forEach((group, yearIndex) => {
+        group.months.forEach((monthGroup, monthIndex) => {
+          if (!(monthGroup.key in next)) next[monthGroup.key] = yearIndex === 0 && monthIndex === 0;
+        });
+      });
+      Object.keys(next).forEach((key) => {
+        if (!timelineTree.some((group) => group.months.some((monthGroup) => monthGroup.key === key))) delete next[key];
+      });
+      return next;
+    });
+  }, [timelineTree]);
+
   const createEntry = async () => {
     if (!draftContent.trim()) {
       toast.error("先写下这次的想法");
@@ -95,13 +143,6 @@ export function Notes() {
     }
   };
 
-  const startNewDraft = () => {
-    setDraftDate(todayDate());
-    setDraftTitle("");
-    setDraftContent("");
-    setSelectedId(null);
-  };
-
   const remove = async (id: string) => {
     try {
       await api.deleteKnowledgeEntry(id);
@@ -126,14 +167,14 @@ export function Notes() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-foreground">备忘时间线</p>
-              <p className="mt-1 text-xs text-muted-foreground">左侧按日期回看，新增时自动按日期归档。</p>
+              <p className="mt-1 text-xs text-muted-foreground">左侧按年度、月度折叠回看，月度下面按 07-16 这种日度顺序查看备忘。</p>
             </div>
             <button
-              onClick={startNewDraft}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/25"
+              onClick={() => setEditing((current) => !current)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium ${editing ? "bg-primary/20 text-primary" : "bg-primary/15 text-primary hover:bg-primary/25"}`}
             >
               <PenSquare className="h-4 w-4" />
-              新增
+              {editing ? "完成编辑" : "编辑"}
             </button>
           </div>
 
@@ -143,24 +184,61 @@ export function Notes() {
             <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">还没有备忘。先从右侧写下第一条想法。</div>
           ) : (
             <div className="space-y-4">
-              {Object.entries(groupedByDate).map(([date, items]) => (
-                <div key={date} className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">{date}</p>
-                  <div className="space-y-2">
-                    {items.map((entry) => {
-                      const active = entry.id === selectedId;
-                      return (
-                        <button
-                          key={entry.id}
-                          onClick={() => setSelectedId(entry.id)}
-                          className={`w-full rounded-xl border px-3 py-3 text-left transition ${active ? "border-primary/50 bg-primary/10 shadow-glow" : "border-border/40 bg-black/15 hover:border-primary/30 hover:bg-primary/5"}`}
-                        >
-                          <p className="text-sm font-medium text-foreground">{entry.title}</p>
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{entry.content_preview || entry.content || "点击查看全文"}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {timelineTree.map(({ year, months }) => (
+                <div key={year} className="space-y-2">
+                  <button
+                    onClick={() => setExpandedYears((current) => ({ ...current, [year]: !current[year] }))}
+                    className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-black/10 px-3 py-2 text-left"
+                  >
+                    <span className="text-xs font-medium uppercase tracking-[0.18em] text-primary/80">{year}</span>
+                    <span className="text-[11px] text-muted-foreground">{expandedYears[year] ? "收起" : "展开"} · {months.reduce((sum, item) => sum + item.rows.length, 0)} 条</span>
+                  </button>
+                  {expandedYears[year] && (
+                    <div className="space-y-2">
+                      {months.map(({ month, key, rows }) => (
+                        <div key={key} className="space-y-2 pl-3">
+                          <button
+                            onClick={() => setExpandedMonths((current) => ({ ...current, [key]: !current[key] }))}
+                            className="flex w-full items-center justify-between rounded-lg border border-border/30 bg-black/10 px-3 py-2 text-left"
+                          >
+                            <span className="text-xs font-medium text-foreground">{month} 月</span>
+                            <span className="text-[11px] text-muted-foreground">{expandedMonths[key] ? "收起" : "展开"} · {rows.length} 条</span>
+                          </button>
+                          {expandedMonths[key] && (
+                            <div className="space-y-2 pl-3">
+                              {rows.map((entry) => {
+                                const active = entry.id === selectedId;
+                                const dayLabel = (entry.date || "").slice(5, 10) || "未设置";
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className={`rounded-xl border px-3 py-3 transition ${active ? "border-primary/50 bg-primary/10 shadow-glow" : "border-border/40 bg-black/15 hover:border-primary/30 hover:bg-primary/5"}`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <button onClick={() => setSelectedId(entry.id)} className="min-w-0 flex-1 text-left">
+                                        <p className="text-[11px] font-medium text-primary/80">{dayLabel}</p>
+                                        <p className="mt-1 text-sm font-medium text-foreground">{entry.title}</p>
+                                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{entry.content_preview || entry.content || "点击查看全文"}</p>
+                                      </button>
+                                      {editing && (
+                                        <button
+                                          onClick={() => void remove(entry.id)}
+                                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                                          title="删除这条备忘"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -212,7 +290,7 @@ export function Notes() {
                 <BookOpenText className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold">备忘内容</h3>
               </div>
-              {selectedEntry && (
+              {selectedEntry && editing && (
                 <button
                   onClick={() => void remove(selectedEntry.id)}
                   className="text-muted-foreground hover:text-destructive"

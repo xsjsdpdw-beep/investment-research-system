@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -175,25 +181,204 @@ def route_ingest_source(source: dict[str, Any]) -> dict[str, Any]:
     return {"kind": kind, "engine_chain": ["plain_text"]}
 
 
+def _module_exists(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        return False
+
+
+def _resolve_command(name: str) -> str | None:
+    candidate_dirs = [
+        Path(__file__).resolve().parent.parent / ".tools" / "ocr" / "bin",
+        Path(sys.executable).resolve().parent,
+        Path(__file__).resolve().parent / ".venv" / "bin",
+    ]
+    for base in candidate_dirs:
+        venv_cmd = base / name
+        if venv_cmd.exists() and os.access(venv_cmd, os.X_OK):
+            return str(venv_cmd)
+    direct = shutil.which(name)
+    if direct:
+        return direct
+    return None
+
+
+def _ocr_env_paths() -> tuple[Path, Path]:
+    root = Path(__file__).resolve().parent.parent / ".tools" / "ocr"
+    return root / "bin", root / "lib"
+
+
+def _build_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    ocr_bin, _ocr_lib = _ocr_env_paths()
+    path_parts = [str(ocr_bin)] if ocr_bin.exists() else []
+    if env.get("PATH"):
+        path_parts.append(env["PATH"])
+    if path_parts:
+        env["PATH"] = ":".join(path_parts)
+    return env
+
+
+def _command_exists(name: str) -> bool:
+    return bool(_resolve_command(name))
+
+
+def _ocrmypdf_runtime_ready() -> bool:
+    cmd = _resolve_command("ocrmypdf")
+    if not (cmd and _resolve_command("tesseract") and _resolve_command("gs")):
+        return False
+    try:
+        result = subprocess.run(
+            [cmd, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+            env=_build_subprocess_env(),
+        )
+    except Exception:
+        return False
+    return result.returncode == 0
+
+
+def engine_status() -> dict[str, Any]:
+    return {
+        "mineru": {"ready": _module_exists("mineru") or _module_exists("magic_pdf"), "fallback": "pypdf"},
+        "pypdf": {"ready": _module_exists("pypdf")},
+        "ocrmypdf": {
+            "ready": _ocrmypdf_runtime_ready(),
+            "command": _command_exists("ocrmypdf"),
+            "tesseract": _command_exists("tesseract"),
+            "ghostscript": _command_exists("gs"),
+        },
+        "paddleocr": {"ready": _module_exists("paddleocr")},
+        "umi_ocr": {"ready": bool(os.environ.get("VR_UMI_OCR_CMD", "").strip())},
+        "tesseract": {"ready": _command_exists("tesseract")},
+    }
+
+
+def _pdf_to_markdown_with_pypdf(path: Path) -> str:
+    if not _module_exists("pypdf"):
+        return ""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(path))
+    except Exception:
+        return ""
+    sections: list[str] = []
+    for index, page in enumerate(reader.pages):
+        try:
+            text = (page.extract_text() or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            sections.append(f"## 第{index + 1}页\n\n{text}")
+    return "\n\n".join(sections).strip()
+
+
 def _run_mineru_if_available(path: Path) -> dict[str, Any] | None:
+    markdown = _pdf_to_markdown_with_pypdf(path)
+    if markdown:
+        return {
+            "markdown": markdown,
+            "engine": "mineru" if engine_status()["mineru"]["ready"] else "pypdf",
+        }
     return None
 
 
 def _run_ocrmypdf_if_available(path: Path) -> Path | None:
-    return None
+    cmd = _resolve_command("ocrmypdf")
+    if not cmd or not _ocrmypdf_runtime_ready():
+        return None
+    tmpdir = Path(tempfile.mkdtemp(prefix="vr-ocrmypdf-"))
+    out = tmpdir / path.name
+    try:
+        result = subprocess.run(
+            [cmd, "--skip-text", str(path), str(out)],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+            env=_build_subprocess_env(),
+        )
+    except Exception:
+        return None
+    return out if result.returncode == 0 and out.exists() else None
 
 
 def _run_paddleocr_if_available(path: Path) -> dict[str, Any] | None:
-    return None
+    if not _module_exists("paddleocr"):
+        return None
+    try:
+        from paddleocr import PaddleOCR
+        ocr = PaddleOCR(use_angle_cls=True, lang="ch")
+        result = ocr.ocr(str(path), cls=True)
+    except Exception:
+        return None
+    lines: list[str] = []
+    for page in result or []:
+        for row in page or []:
+            if not row or len(row) < 2:
+                continue
+            text = str((row[1] or [""])[0]).strip()
+            if text:
+                lines.append(text)
+    text = "\n".join(lines).strip()
+    return {"text": text, "engine": "paddleocr"} if text else None
+
+
+def _run_umiocr_if_available(path: Path) -> dict[str, Any] | None:
+    cmd = os.environ.get("VR_UMI_OCR_CMD", "").strip()
+    if not cmd:
+        return None
+    try:
+        result = subprocess.run(
+            [cmd, str(path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            env=_build_subprocess_env(),
+        )
+    except Exception:
+        return None
+    text = (result.stdout or "").strip()
+    return {"text": text, "engine": "umi_ocr"} if text else None
+
+
+def _run_tesseract_if_available(path: Path) -> dict[str, Any] | None:
+    cmd = _resolve_command("tesseract")
+    if not cmd:
+        return None
+    try:
+        result = subprocess.run(
+            [cmd, str(path), "stdout", "-l", "chi_sim+eng"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            env=_build_subprocess_env(),
+        )
+    except Exception:
+        return None
+    text = (result.stdout or "").strip()
+    return {"text": text, "engine": "tesseract"} if text else None
 
 
 def _extract_plain_text(path: Path) -> str:
+    if path.suffix.lower() == ".pdf":
+        return _pdf_to_markdown_with_pypdf(path)
     if path.suffix.lower() == ".md":
         return path.read_text(encoding="utf-8")
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return ""
+
+
+def _run_best_image_ocr(path: Path) -> dict[str, Any] | None:
+    return _run_paddleocr_if_available(path) or _run_umiocr_if_available(path) or _run_tesseract_if_available(path)
 
 
 def mineru_json_to_structured_blocks(parsed: dict[str, Any], title: str) -> list[dict[str, Any]]:
@@ -219,7 +404,7 @@ def extract_pdf_report_to_blocks(file_path: str, title: str) -> list[dict[str, A
             return mineru_json_to_structured_blocks(parsed, title)
     else:
         ocr_ready_path = _run_ocrmypdf_if_available(path)
-        parsed = _run_paddleocr_if_available(ocr_ready_path or path)
+        parsed = _run_best_image_ocr(ocr_ready_path or path)
         if parsed:
             return paddleocr_json_to_structured_blocks(parsed, title)
     raw = _extract_plain_text(path)
@@ -262,9 +447,9 @@ def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tup
 
 def extract_youdao_note_image_to_blocks(image_path: str, title: str) -> list[dict[str, Any]]:
     route = route_ingest_source({"source_type": "note_image", "provider": "youdao", "file_path": image_path})
-    parsed = _run_paddleocr_if_available(Path(image_path))
+    parsed = _run_best_image_ocr(Path(image_path))
     if not parsed and route["engine_chain"][-1] == "umi_ocr":
-        parsed = None
+        parsed = _run_umiocr_if_available(Path(image_path))
     return ocr_result_to_structured_blocks(parsed or {}, title)
 
 
@@ -281,5 +466,72 @@ def build_structured_candidate_from_youdao(scope_type: str, scope_id: str, file_
         "matched_card_id": "",
         "target_block": "body",
         "proposed_patch": content,
+        "structured_blocks": blocks,
+    }
+
+
+def extract_image_to_blocks(file_path: str, title: str) -> list[dict[str, Any]]:
+    path = Path(file_path)
+    if not path.exists():
+        raise ValueError("图片文件不存在")
+    parsed = _run_best_image_ocr(path)
+    return ocr_result_to_structured_blocks(parsed or {"text": ""}, title)
+
+
+def build_structured_candidate_from_image(scope_type: str, scope_id: str, file_path: str, title: str) -> dict[str, Any]:
+    blocks = extract_image_to_blocks(file_path, title)
+    summary = ""
+    if blocks and blocks[0].get("children"):
+        first_child = blocks[0]["children"][0]
+        summary = (first_child.get("content") or first_child.get("title") or "").strip()
+    return {
+        "id": f"img-{Path(file_path).stem}",
+        "source_type": "attachment",
+        "title": title,
+        "summary": summary[:240],
+        "source_title": title,
+        "source_entry_id": file_path,
+        "matched_card_id": "",
+        "target_block": "body",
+        "proposed_patch": summary,
+        "structured_blocks": blocks,
+    }
+
+
+def extract_report_file_to_blocks(file_path: str, title: str) -> list[dict[str, Any]]:
+    path = Path(file_path)
+    if not path.exists():
+        raise ValueError("资料文件不存在")
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return extract_pdf_report_to_blocks(file_path, title)
+    if ext in {".png", ".jpg", ".jpeg", ".webp"}:
+        return extract_image_to_blocks(file_path, title)
+    text = _extract_plain_text(path)
+    return markdown_to_structured_blocks(text or f"# {title}\n\n暂未提取到正文。", title)
+
+
+def build_structured_candidate_from_report_file(file_path: str, title: str) -> dict[str, Any]:
+    path = Path(file_path)
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return build_structured_candidate_from_pdf("", "", file_path, title)
+    if ext in {".png", ".jpg", ".jpeg", ".webp"}:
+        return build_structured_candidate_from_image("", "", file_path, title)
+    blocks = extract_report_file_to_blocks(file_path, title)
+    summary = ""
+    if blocks and blocks[0].get("children"):
+        first_child = blocks[0]["children"][0]
+        summary = (first_child.get("content") or first_child.get("title") or "").strip()
+    return {
+        "id": f"file-{path.stem}",
+        "source_type": "attachment",
+        "title": title,
+        "summary": summary[:240],
+        "source_title": title,
+        "source_entry_id": file_path,
+        "matched_card_id": "",
+        "target_block": "body",
+        "proposed_patch": summary,
         "structured_blocks": blocks,
     }

@@ -593,6 +593,9 @@ export interface OverviewCandidate {
   target_block?: "body" | "image" | "chart" | "source";
   proposed_patch?: string;
   source_entry_id?: string;
+  structured_blocks?: StructuredRenderBlock[];
+  render_recipe?: Record<string, unknown>;
+  diff_preview?: Record<string, unknown>;
   status?: "pending" | "accepted" | "ignored" | "later";
   created_at?: string;
   updated_at?: string;
@@ -933,6 +936,12 @@ export const api = {
     scope_id: string;
     cards: OverviewDeepCard[];
   }) => request<OverviewDeepCard[]>("/research/overview-workbench/deep-cards", "POST", payload),
+  saveOverviewStructuredPreview: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    draft_blocks: StructuredRenderBlock[];
+    deep_blocks: StructuredRenderBlock[];
+  }) => request<OverviewWorkbench>("/research/overview-workbench/structured-preview", "POST", payload),
   appendOverviewCandidates: (payload: {
     scope_type: "sector" | "stock";
     scope_id: string;
@@ -996,6 +1005,18 @@ export const api = {
     file_path: string;
     title: string;
   }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-pdf", "POST", payload),
+  importImageOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    file_path: string;
+    title: string;
+  }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-image", "POST", payload),
+  importStoredReportOverviewCandidate: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    report_id: string;
+    title?: string;
+  }) => request<StructuredOverviewImportResult>("/research/overview-workbench/render/import-report", "POST", payload),
   buildSectorOverview: (sector: string) =>
     request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
   buildStockOverview: (ticker: string) =>

@@ -357,6 +357,102 @@ def _flatten_content_blocks(blocks: list[dict[str, Any]]) -> tuple[str, list[dic
     return "\n\n".join(part for part in text_parts if part.strip()), image_blocks, chart_blocks, source_blocks
 
 
+def _structured_blocks_to_content_blocks(blocks: list[dict[str, Any]], parent_id: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for index, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            continue
+        block_type = (block.get("type") or "paragraph").strip()
+        block_id = (block.get("id") or f"{parent_id}-structured-{index + 1}").strip()
+        title = (block.get("title") or "").strip()
+        content = (block.get("content") or "").strip()
+        children = normalize_structured_render_blocks(block.get("children") or [])
+        if block_type == "section":
+            out.append(
+                {
+                    "id": block_id,
+                    "type": "section",
+                    "title": title or "结构化章节",
+                    "children": _structured_blocks_to_content_blocks(children, block_id),
+                }
+            )
+            continue
+        if block_type == "image":
+            image_payload = block.get("image") or {}
+            out.append(
+                {
+                    "id": block_id,
+                    "type": "image",
+                    "title": title,
+                    "image_url": (image_payload.get("url") or image_payload.get("image_url") or "").strip(),
+                    "caption": (image_payload.get("caption") or content or "").strip(),
+                    "source_label": "",
+                    "children": [],
+                }
+            )
+            continue
+        if block_type == "chart_spec":
+            out.append(
+                {
+                    "id": block_id,
+                    "type": "chart",
+                    "title": title or "结构化图表",
+                    "note": content,
+                    "spec": deepcopy(block.get("chart_spec") or {}),
+                    "children": [],
+                }
+            )
+            continue
+        if block_type == "source_ref":
+            source_payload = (block.get("source_refs") or [{}])[0] if (block.get("source_refs") or []) else {}
+            out.append(
+                {
+                    "id": block_id,
+                    "type": "source",
+                    "title": title or "来源",
+                    "url": (source_payload.get("url") or "").strip(),
+                    "note": content,
+                    "children": [],
+                }
+            )
+            continue
+        if block_type in {"bullet_list", "timeline", "process_flow", "industry_chain", "comparison_cards", "metric_grid", "table", "quote"}:
+            rendered = content
+            if block_type == "table":
+                table = block.get("table") or {}
+                headers = table.get("headers") or []
+                rows = table.get("rows") or []
+                table_lines = []
+                if headers:
+                    table_lines.append("| " + " | ".join(str(item) for item in headers) + " |")
+                    table_lines.append("| " + " | ".join("---" for _ in headers) + " |")
+                for row in rows:
+                    table_lines.append("| " + " | ".join(str(item) for item in row) + " |")
+                rendered = "\n".join(table_lines).strip()
+            elif block.get("items"):
+                rendered = "\n".join(f"- {item}" for item in block.get("items") or [])
+            out.append(
+                {
+                    "id": block_id,
+                    "type": "text",
+                    "title": title,
+                    "text": rendered.strip(),
+                    "children": [],
+                }
+            )
+            continue
+        out.append(
+            {
+                "id": block_id,
+                "type": "text",
+                "title": title,
+                "text": content,
+                "children": [],
+            }
+        )
+    return out
+
+
 def _candidate_to_content_block(candidate: dict[str, Any], card_id: str, target_block: str) -> dict[str, Any]:
     suffix = datetime.now(BEIJING).strftime("%Y%m%d%H%M%S")
     base_id = f"{card_id}-candidate-{suffix}-{_slugify(candidate.get('id') or candidate.get('title') or 'patch')}"
@@ -364,6 +460,14 @@ def _candidate_to_content_block(candidate: dict[str, Any], card_id: str, target_
     patch_text = (candidate.get("proposed_patch") or candidate.get("summary") or "").strip()
     source_title = (candidate.get("source_title") or candidate.get("title") or "").strip()
     source_url = (candidate.get("source_url") or "").strip()
+    structured_blocks = normalize_structured_render_blocks(candidate.get("structured_blocks") or [])
+    if structured_blocks:
+        return {
+            "id": f"{base_id}-structured",
+            "type": "section",
+            "title": candidate.get("title") or "候选更新",
+            "children": _structured_blocks_to_content_blocks(structured_blocks, f"{base_id}-structured"),
+        }
     if block_type == "source":
         return {
             "id": f"{base_id}-source",
@@ -527,6 +631,9 @@ def _normalize_candidate(candidate: dict[str, Any], source_type: str, index: int
         "target_block": (candidate.get("target_block") or "body").strip(),
         "proposed_patch": (candidate.get("proposed_patch") or candidate.get("summary") or "").strip(),
         "source_entry_id": (candidate.get("source_entry_id") or "").strip(),
+        "structured_blocks": normalize_structured_render_blocks(candidate.get("structured_blocks") or []),
+        "render_recipe": deepcopy(candidate.get("render_recipe") or {}),
+        "diff_preview": deepcopy(candidate.get("diff_preview") or {}),
         "status": state,
         "created_at": candidate.get("created_at") or now,
         "updated_at": now,

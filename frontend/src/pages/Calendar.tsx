@@ -59,6 +59,22 @@ function eventTone(item: CalendarEvent) {
   return "border-border/40 bg-black/15 text-foreground";
 }
 
+function categoryLabel(item: CalendarEvent) {
+  if (item.category === "manual") return "";
+  if (item.category === "earnings") return "财报";
+  if (item.category === "conference_call") return "电话会";
+  if (item.category === "macro") return "宏观";
+  if (item.category === "policy") return "政策";
+  return item.category;
+}
+
+function importanceLabel(value: string) {
+  if (value === "high") return "高优先级";
+  if (value === "medium") return "中优先级";
+  if (value === "low") return "低优先级";
+  return value;
+}
+
 export function Calendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [importance, setImportance] = useState("");
@@ -66,6 +82,9 @@ export function Calendar() {
   const [anchorDate, setAnchorDate] = useState(todayKey());
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [quickFormOpen, setQuickFormOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState("");
+  const [inlineEditingEventId, setInlineEditingEventId] = useState("");
+  const [inlineTitleDraft, setInlineTitleDraft] = useState("");
   const [form, setForm] = useState({
     title: "",
     date: todayKey(),
@@ -116,7 +135,13 @@ export function Calendar() {
   const selectDate = (key: string, openForm = false) => {
     setSelectedDate(key);
     setAnchorDate(key);
-    if (openForm) setQuickFormOpen(true);
+    if (openForm) {
+      setEditingEventId("");
+      setInlineEditingEventId("");
+      setInlineTitleDraft("");
+      setForm((prev) => ({ ...prev, title: "", date: key, importance: "medium", category: "manual", source: "manual", notes: "" }));
+      setQuickFormOpen(true);
+    }
   };
 
   const shiftRange = (direction: -1 | 1) => {
@@ -127,15 +152,58 @@ export function Calendar() {
     selectDate(toKey(next));
   };
 
+  const canInlineEdit = (item: CalendarEvent) => item.source === "manual" || item.category === "manual";
+
+  const openInlineEditor = (item: CalendarEvent) => {
+    if (!canInlineEdit(item)) {
+      toast.message("自动事件暂时先保持只读，避免误改自动数据源内容。");
+      return;
+    }
+    setInlineEditingEventId(item.id);
+    setInlineTitleDraft(item.title);
+  };
+
+  const commitInlineTitle = async (item: CalendarEvent) => {
+    const nextTitle = inlineTitleDraft.trim();
+    if (!nextTitle) {
+      toast.error("事件标题不能为空");
+      return;
+    }
+    if (nextTitle === item.title) {
+      setInlineEditingEventId("");
+      setInlineTitleDraft("");
+      return;
+    }
+    try {
+      await api.upsertCalendarEvent({
+        id: item.id,
+        title: nextTitle,
+        date: item.date,
+        category: item.category,
+        importance: item.importance,
+        source: item.source,
+        notes: item.notes,
+      });
+      setEvents((current) => current.map((row) => row.id === item.id ? { ...row, title: nextTitle, updated_at: new Date().toISOString() } : row));
+      toast.success("事件标题已更新");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "更新事件标题失败");
+    } finally {
+      setInlineEditingEventId("");
+      setInlineTitleDraft("");
+    }
+  };
+
   const submit = async () => {
     if (!form.title.trim()) {
       toast.error("先写一个事件标题");
       return;
     }
     try {
-      await api.upsertCalendarEvent({ ...form, date: selectedDate });
-      toast.success("日历事件已加入");
+      await api.upsertCalendarEvent({ ...form, id: editingEventId || undefined, date: selectedDate });
+      toast.success(editingEventId ? "日历事件已更新" : "日历事件已加入");
       setForm((prev) => ({ ...prev, title: "", notes: "" }));
+      setEditingEventId("");
       setQuickFormOpen(false);
       await load(importance || undefined);
     } catch (error) {
@@ -198,29 +266,76 @@ export function Calendar() {
                 const isToday = key === todayKey();
                 const inMonth = date.getMonth() === anchor.getMonth();
                 return (
-                  <button
+                  <div
                     key={key}
-                    onClick={() => selectDate(key, true)}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => selectDate(key)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        selectDate(key);
+                      }
+                    }}
                     className={`min-h-[136px] rounded-2xl border p-3 text-left transition ${
                       isSelected ? "border-primary/60 bg-primary/10 shadow-glow" : "border-border/40 bg-black/10 hover:border-primary/30 hover:bg-primary/5"
                     } ${!inMonth && view === "month" ? "opacity-45" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className={`text-sm font-medium ${isToday ? "text-primary" : "text-foreground"}`}>{date.getDate()}</span>
-                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Plus className="h-3 w-3" />{dayEvents.length}项</span>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectDate(key, true);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                      >
+                        <Plus className="h-3 w-3" />{dayEvents.length}项
+                      </button>
                     </div>
                     <div className="mt-3 space-y-2">
                       {dayEvents.slice(0, view === "week" ? 3 : 4).map((item) => (
-                        <div key={item.id} className={`rounded-lg border px-2 py-1.5 text-[11px] leading-4 ${eventTone(item)}`}>
-                          <div className="truncate font-medium">{item.title}</div>
-                          <div className="mt-0.5 truncate text-muted-foreground">{item.category}</div>
+                        <div
+                          key={item.id}
+                          onClick={(event) => event.stopPropagation()}
+                          onDoubleClick={(event) => {
+                            event.stopPropagation();
+                            openInlineEditor(item);
+                          }}
+                          className={`rounded-lg border px-2 py-1.5 text-[11px] leading-4 ${eventTone(item)}`}
+                        >
+                          {inlineEditingEventId === item.id ? (
+                            <input
+                              autoFocus
+                              value={inlineTitleDraft}
+                              onChange={(event) => setInlineTitleDraft(event.target.value)}
+                              onBlur={() => void commitInlineTitle(item)}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void commitInlineTitle(item);
+                                }
+                                if (event.key === "Escape") {
+                                  setInlineEditingEventId("");
+                                  setInlineTitleDraft("");
+                                }
+                              }}
+                              className="w-full rounded border border-primary/40 bg-black/20 px-1.5 py-1 font-medium text-foreground outline-none"
+                            />
+                          ) : (
+                            <div className="truncate font-medium">{item.title}</div>
+                          )}
+                          {((item.notes || "").trim() || categoryLabel(item)) && (
+                            <div className="mt-0.5 truncate text-muted-foreground">{(item.notes || "").trim() || categoryLabel(item)}</div>
+                          )}
                         </div>
                       ))}
                       {dayEvents.length > (view === "week" ? 3 : 4) && (
                         <div className="text-[11px] text-muted-foreground">还有 {dayEvents.length - (view === "week" ? 3 : 4)} 项...</div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -247,12 +362,37 @@ export function Calendar() {
           ) : (
             <div className="space-y-3">
               {selectedEvents.map((item) => (
-                <div key={item.id} className={`rounded-xl border px-4 py-3 ${eventTone(item)}`}>
+                <div
+                  key={item.id}
+                  onDoubleClick={() => openInlineEditor(item)}
+                  className={`rounded-xl border px-4 py-3 ${eventTone(item)} ${canInlineEdit(item) ? "cursor-text" : ""}`}
+                >
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{item.title}</p>
-                    <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{item.category}</span>
-                    <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{item.importance}</span>
-                    <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{item.source}</span>
+                    {inlineEditingEventId === item.id ? (
+                      <input
+                        autoFocus
+                        value={inlineTitleDraft}
+                        onChange={(event) => setInlineTitleDraft(event.target.value)}
+                        onBlur={() => void commitInlineTitle(item)}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void commitInlineTitle(item);
+                          }
+                          if (event.key === "Escape") {
+                            setInlineEditingEventId("");
+                            setInlineTitleDraft("");
+                          }
+                        }}
+                        className="rounded border border-primary/40 bg-black/20 px-2 py-1 font-medium text-foreground outline-none"
+                      />
+                    ) : (
+                      <p className="font-medium">{item.title}</p>
+                    )}
+                    {categoryLabel(item) && <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{categoryLabel(item)}</span>}
+                    <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{importanceLabel(item.importance)}</span>
+                    {item.source !== "manual" && <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{item.source}</span>}
                   </div>
                   {item.notes && <p className="mt-2 text-sm text-muted-foreground">{item.notes}</p>}
                 </div>
@@ -268,7 +408,7 @@ export function Calendar() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <h3 className="flex items-center gap-1.5 font-semibold">
                 <CalendarPlus2 className="h-4 w-4 text-primary" />
-                在 {selectedDate} 新增事件
+                {editingEventId ? `编辑 ${selectedDate} 事件` : `在 ${selectedDate} 新增事件`}
               </h3>
               <button onClick={() => setQuickFormOpen(false)} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -294,7 +434,7 @@ export function Calendar() {
                 取消
               </button>
               <button onClick={() => void submit()} className="rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25">
-                加入当天日历
+                {editingEventId ? "保存修改" : "加入当天日历"}
               </button>
             </div>
           </div>

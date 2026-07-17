@@ -269,6 +269,21 @@ class OverviewRenderPdfIn(OverviewWorkbenchQueryIn):
     title: str = ""
 
 
+class OverviewRenderImageIn(OverviewWorkbenchQueryIn):
+    file_path: str
+    title: str = ""
+
+
+class OverviewRenderReportIn(OverviewWorkbenchQueryIn):
+    report_id: str
+    title: str = ""
+
+
+class OverviewStructuredPreviewIn(OverviewWorkbenchQueryIn):
+    draft_blocks: list[dict] = []
+    deep_blocks: list[dict] = []
+
+
 class LearningPackGenerateIn(BaseModel):
     source_entry_id: str
     title: str | None = None
@@ -835,6 +850,65 @@ def research_overview_render_import_pdf(payload: OverviewRenderPdfIn):
         return {"data": {"blocks": blocks, "workbench": workbench}}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/render/import-image")
+def research_overview_render_import_image(payload: OverviewRenderImageIn):
+    title = payload.title.strip() or Path(payload.file_path).stem or payload.scope_id
+    try:
+        blocks = research_ingest.extract_image_to_blocks(payload.file_path, title)
+        candidate = research_ingest.build_structured_candidate_from_image(
+            payload.scope_type,
+            payload.scope_id,
+            payload.file_path,
+            title,
+        )
+        workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "attachment", [candidate])
+        return {"data": {"blocks": blocks, "workbench": workbench}}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/render/import-report")
+def research_overview_render_import_report(payload: OverviewRenderReportIn):
+    report_id = payload.report_id.strip()
+    if not report_id:
+        raise HTTPException(400, "缺少 report_id")
+    hit = mr.report_path(report_id)
+    if not hit:
+        raise HTTPException(404, "研报不存在")
+    file_path, filename = hit
+    title = payload.title.strip() or Path(filename).stem or payload.scope_id
+    try:
+        blocks = research_ingest.extract_report_file_to_blocks(str(file_path), title)
+        candidate = research_ingest.build_structured_candidate_from_report_file(str(file_path), title)
+        candidate["id"] = f"report-{report_id}"
+        candidate["source_type"] = "report"
+        candidate["source_entry_id"] = report_id
+        workbench = knowledge.append_overview_candidates(payload.scope_type, payload.scope_id, "report", [candidate])
+        return {"data": {"blocks": blocks, "workbench": workbench}}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/structured-preview")
+def research_overview_workbench_structured_preview(payload: OverviewStructuredPreviewIn):
+    try:
+        return {
+            "data": knowledge.save_overview_structured_preview(
+                payload.scope_type,
+                payload.scope_id,
+                payload.draft_blocks,
+                payload.deep_blocks,
+            )
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/research/ingest/status")
+def research_ingest_status():
+    return {"data": research_ingest.engine_status()}
 
 
 @app.post("/api/research/intel-digest")

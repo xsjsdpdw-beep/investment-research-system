@@ -35,6 +35,19 @@ def test_backend_runtime_identity_uses_local_product_name():
     assert "你是 投研体系 里的投研助理" in chat_py
 
 
+def test_overview_youdao_binding_auto_resets_when_note_is_missing():
+    app_py = read("backend/app.py")
+    knowledge_py = read("backend/knowledge.py")
+    framework = read("frontend/src/pages/Framework.tsx")
+
+    assert "def _should_invalidate_youdao_binding" in app_py
+    assert "获取笔记内容失败" in app_py
+    assert "knowledge.clear_overview_editor_binding" in app_py
+    assert '已检测到有道主笔记失效，当前已回到未绑定状态。' in app_py
+    assert "def clear_overview_editor_binding" in knowledge_py
+    assert "if (!synced.file_id) toast.error(synced.message" in framework
+
+
 def test_frontend_config_constants_are_centralized():
     config = read("frontend/src/lib/app-config.ts")
     layout = read("frontend/src/components/layout/Layout.tsx")

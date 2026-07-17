@@ -34,6 +34,32 @@ const marketLabel = (market: string) => {
   return market || "指标";
 };
 
+const primaryButtonClass = "inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60";
+const secondaryButtonClass = "rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-primary";
+
+function CompactNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-border/30 bg-muted/15 px-2.5 py-1.5 text-[11px] leading-4.5 text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function StatsBar({ items }: { items: Array<{ label: string; value: string | number }> }) {
+  return (
+    <div className="rounded-lg border border-border/30 bg-muted/12 px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+        {items.map((item) => (
+          <div key={item.label} className="inline-flex items-center gap-1.5">
+            <span>{item.label}</span>
+            <span className="font-medium text-foreground">{item.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Watchlist() {
   const [stocks, setStocks] = useState<WatchStock[]>([]);
   const [indicators, setIndicators] = useState<WatchIndicator[]>([]);
@@ -171,6 +197,14 @@ export function Watchlist() {
     [rows, selectedGroup],
   );
 
+  const stockCount = stocks.length;
+  const indicatorCount = indicators.length;
+  const marketBreakdown = useMemo(() => ({
+    a: stocks.filter((item) => ["SZ", "SH", "BJ"].includes(item.market)).length,
+    hk: stocks.filter((item) => item.market === "HK").length,
+    us: stocks.filter((item) => !["SZ", "SH", "BJ", "HK"].includes(item.market)).length,
+  }), [stocks]);
+
   const aiContext = rows.length
     ? rows.map((item) => {
         if (item.kind === "stock") {
@@ -282,20 +316,34 @@ export function Watchlist() {
         actions={rows.length > 0 ? <AskAiButton context={aiContext} label="让 AI 看关注列表" suggestions={["帮我按资产类别复盘", "哪些对象需要放入投资日历", "这份关注池还缺什么"]} /> : undefined}
       />
 
-      <div className="space-y-4">
-        <GlassCard className="space-y-3">
+      <div className="space-y-3">
+        <StatsBar
+          items={[
+            { label: "重点个股", value: stockCount },
+            { label: "重点指标", value: indicatorCount },
+            { label: "A股", value: marketBreakdown.a },
+            { label: "港股", value: marketBreakdown.hk },
+            { label: "美股", value: marketBreakdown.us },
+          ]}
+        />
+
+        <GlassCard className="space-y-2.5 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Star className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium">{selectedGroup ? `${selectedGroup} · 关注对象` : "全部重点关注对象"}</p>
+              <p className="text-sm font-medium">{selectedGroup ? `${selectedGroup} · 关注对象` : "全部重点个股与重点指标"}</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{visibleRows.length} 项</span>
-              <button onClick={() => void refreshQuotes(stocks)} className="text-muted-foreground hover:text-primary" title="刷新行情">
+              <span className="text-[11px] text-muted-foreground">{visibleRows.length} 项</span>
+              <button onClick={() => void refreshQuotes(stocks)} className={secondaryButtonClass} title="刷新行情">
                 <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
               </button>
             </div>
           </div>
+
+          <CompactNotice>
+            这里只维护一份高频关注池。拖动即可调整顺序，分组页签也支持拖动重排。
+          </CompactNotice>
 
           {groups.length > 0 && (
             <SectionTabs
@@ -309,14 +357,14 @@ export function Watchlist() {
           {loading ? (
             <p className="text-sm text-muted-foreground">正在读取关注列表…</p>
           ) : visibleRows.length === 0 ? (
-            <div className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">还没有关注对象。可以在下方新增 A股、港股、美股、商品或利率指标。</div>
+            <CompactNotice>还没有关注对象。可以在下方新增 A股、港股、美股、商品或利率指标。</CompactNotice>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-muted-foreground">
                     {["", "名称", "代码/Key", "类型/市场", "分组", "现价/值", "涨跌%", "备注", ""].map((header) => (
-                      <th key={header} className="px-3 py-2 font-medium">{header}</th>
+                      <th key={header} className="px-2.5 py-2 font-medium">{header}</th>
                     ))}
                   </tr>
                 </thead>
@@ -354,15 +402,15 @@ export function Watchlist() {
                           draggingKey === item.id && "opacity-60",
                         )}
                       >
-                        <td className="px-3 py-2 text-muted-foreground"><GripVertical className="h-4 w-4 cursor-grab active:cursor-grabbing" /></td>
-                        <td className="px-3 py-2 font-medium">{item.name}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{item.kind === "stock" ? `${item.code}.${item.market}` : item.key}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{item.kind === "stock" ? marketLabel(item.market) : item.group}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{item.group}</td>
-                        <td className={cn("px-3 py-2 font-mono", item.kind === "stock" ? color(pct) : "text-primary")}>{item.kind === "stock" ? aQuote?.price ?? gQuote?.price ?? "—" : item.value}</td>
-                        <td className={cn("px-3 py-2 font-mono", color(pct))}>{item.kind === "stock" ? pct == null ? "—" : `${pct > 0 ? "+" : ""}${pct}%` : "—"}</td>
-                        <td className="max-w-[260px] truncate px-3 py-2 text-muted-foreground">{item.kind === "indicator" ? item.note : ""}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-2.5 py-2 text-muted-foreground"><GripVertical className="h-4 w-4 cursor-grab active:cursor-grabbing" /></td>
+                        <td className="px-2.5 py-2 font-medium">{item.name}</td>
+                        <td className="px-2.5 py-2 font-mono text-xs text-muted-foreground">{item.kind === "stock" ? `${item.code}.${item.market}` : item.key}</td>
+                        <td className="px-2.5 py-2 text-muted-foreground">{item.kind === "stock" ? marketLabel(item.market) : item.group}</td>
+                        <td className="px-2.5 py-2 text-muted-foreground">{item.group}</td>
+                        <td className={cn("px-2.5 py-2 font-mono", item.kind === "stock" ? color(pct) : "text-primary")}>{item.kind === "stock" ? aQuote?.price ?? gQuote?.price ?? "—" : item.value}</td>
+                        <td className={cn("px-2.5 py-2 font-mono", color(pct))}>{item.kind === "stock" ? pct == null ? "—" : `${pct > 0 ? "+" : ""}${pct}%` : "—"}</td>
+                        <td className="max-w-[220px] truncate px-2.5 py-2 text-muted-foreground">{item.kind === "indicator" ? item.note : ""}</td>
+                        <td className="px-2.5 py-2">
                           <button onClick={() => void deleteRow(item)} className="text-muted-foreground hover:text-destructive">
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -376,8 +424,11 @@ export function Watchlist() {
           )}
         </GlassCard>
 
-        <GlassCard className="space-y-3">
+        <GlassCard className="space-y-2.5 p-3">
           <h3 className="flex items-center gap-2 font-semibold"><Plus className="h-4 w-4 text-primary" />新增关注对象</h3>
+          <CompactNotice>
+            股票支持 A股名称搜索下拉选择；商品、利率、汇率等对象先以代码 / Key 方式加入，后面再逐步接自动行情。
+          </CompactNotice>
           <SectionTabs
             tabs={ASSET_TYPES}
             active={assetType}
@@ -440,7 +491,7 @@ export function Watchlist() {
                 <input value={stockInput.code} onChange={(event) => setStockInput((prev) => ({ ...prev, code: event.target.value }))} placeholder="代码" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
                 <input value={stockInput.name} onChange={(event) => setStockInput((prev) => ({ ...prev, name: event.target.value }))} placeholder="名称，港美股可留空自动解析" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
                 <input value={stockInput.group} onChange={(event) => setStockInput((prev) => ({ ...prev, group: event.target.value }))} placeholder="分组/行业，A股可自动补申万三级" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                <button onClick={() => void addStock()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25">
+                <button onClick={() => void addStock()} className={primaryButtonClass}>
                   <Plus className="h-4 w-4" /> 加入关注
                 </button>
               </div>
@@ -452,7 +503,7 @@ export function Watchlist() {
               <input value={assetInput.category} onChange={(event) => setAssetInput((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
               <input value={assetInput.value} onChange={(event) => setAssetInput((prev) => ({ ...prev, value: event.target.value }))} placeholder="当前值，iFind 接通后自动更新" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
               <textarea value={assetInput.note} onChange={(event) => setAssetInput((prev) => ({ ...prev, note: event.target.value }))} rows={3} placeholder="备注 / 跟踪要点" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 md:col-span-2" />
-              <button onClick={() => void addIndicator()} className="rounded-lg bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25 md:col-span-2">加入关注</button>
+              <button onClick={() => void addIndicator()} className={`${primaryButtonClass} md:col-span-2`}>加入关注</button>
             </div>
           )}
         </GlassCard>

@@ -199,8 +199,15 @@ def test_stock_center_aggregation_and_provider_status(workspace_client: TestClie
     assert provider_data["china_macro_overview"]["active_provider"] in {"public", "ifind"}
     assert "ifind" in provider_data["providers"]
     assert "premium_notes" in provider_data["providers"]
+    assert "research_ingest" in provider_data["providers"]
     assert "industry_expert_notes" in provider_data
     assert "stock_expert_notes" in provider_data
+
+    ingest_status = workspace_client.get("/api/research/ingest/status")
+    assert ingest_status.status_code == 200
+    ingest_data = ingest_status.json()["data"]
+    assert "mineru" in ingest_data
+    assert "pypdf" in ingest_data
 
     registry = workspace_client.get("/api/database/china-macro-registry")
     assert registry.status_code == 200

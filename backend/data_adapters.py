@@ -604,6 +604,12 @@ def provider_status() -> dict[str, Any]:
                 "label": "高价值纪要源",
                 "notes": "设置 VR_PREMIUM_NOTES_ENABLED=1 与 VR_PREMIUM_NOTES_DSN 后，可接专家会议纪要、渠道会纪要等高价值内容。",
             },
+            "research_ingest": {
+                "enabled": True,
+                "ready": True,
+                "label": "资料结构化提取",
+                "notes": "统一投喂与结构化候选底座，具体 OCR/PDF 引擎状态请看 /api/research/ingest/status。",
+            },
         },
         **dataset_status,
     }

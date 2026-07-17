@@ -31,6 +31,8 @@ frontend/tsconfig.tsbuildinfo
 
 # ── 编辑器 / 系统 / 工具 ──────────────────────────────────────────
 **/.claude/
+.codex-runtime/
+.tools/
 .DS_Store
 *.log
 .vscode/

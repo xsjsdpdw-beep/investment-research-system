@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { api, ApiError, type Announcement, type GlobalIndex, type IntelDigestResult, type MarketOverview, type NewsItem, type NewsRadarConfig, type ResearchHubData, type TurnoverTop } from "@/lib/api";
+import { type DropIndicator, type DropPosition, getDropPosition, reorderWithDropPosition } from "@/lib/drag-sort";
+import { cn } from "@/lib/utils";
 import { INTEL_TABS } from "@/lib/workspace";
 
 const FUNDAMENTAL_VIEW_TABS = [
@@ -192,7 +194,9 @@ export function Intel() {
   const [intelDigests, setIntelDigests] = useState<Partial<Record<IntelKind, IntelDigestResult>>>({});
   const [busyKind, setBusyKind] = useState<IntelKind | "">("");
   const [overviewBusy, setOverviewBusy] = useState<"" | "digest" | "artifact">("");
+  const [refreshState, setRefreshState] = useState<"" | "loading" | "success">("");
   const [draggingModule, setDraggingModule] = useState<IntelKind | "">("");
+  const [moduleDropIndicator, setModuleDropIndicator] = useState<DropIndicator<IntelKind>>(null);
   const [stockFeedItems, setStockFeedItems] = useState<StockFeedItem[]>([]);
   const [radarConfig, setRadarConfig] = useState<NewsRadarConfig | null>(null);
   const [configSaving, setConfigSaving] = useState(false);
@@ -231,7 +235,9 @@ export function Intel() {
     stock: "",
   });
 
-  const load = async () => {
+  const load = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setRefreshState("loading");
     try {
       const [hubData, overview, globals, turnover, watchlistData, configData] = await Promise.all([
         api.researchHub(),
@@ -265,13 +271,24 @@ export function Intel() {
       setTurnoverTop(turnover);
       setStockFeedItems(stockFeeds);
       setRadarConfig(configData || hubData.fundamental.news_source_config);
+      if (!silent) {
+        setRefreshState("success");
+        window.setTimeout(() => {
+          setRefreshState((current) => current === "success" ? "" : current);
+        }, 1500);
+      }
     } catch (error) {
+      if (!silent) setRefreshState("");
       toast.error(error instanceof ApiError ? error.message : "投研资讯加载失败");
+    } finally {
+      if (!silent) {
+        setRefreshState((current) => current === "loading" ? "" : current);
+      }
     }
   };
 
   useEffect(() => {
-    void load();
+    void load({ silent: true });
   }, []);
 
   useEffect(() => {
@@ -444,17 +461,9 @@ export function Intel() {
     }
   };
 
-  const moveModule = (target: IntelKind) => {
+  const moveModule = (target: IntelKind, position: DropPosition) => {
     if (!draggingModule || draggingModule === target) return;
-    setModuleOrder((current) => {
-      const next = [...current];
-      const fromIndex = next.indexOf(draggingModule);
-      const toIndex = next.indexOf(target);
-      if (fromIndex < 0 || toIndex < 0) return current;
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
+    setModuleOrder((current) => reorderWithDropPosition(current, draggingModule, target, position));
   };
 
   const addSource = async (kind: IntelKind) => {
@@ -931,23 +940,50 @@ export function Intel() {
     if (!meta) return null;
     const Icon = meta.icon;
     const digestText = intelDigests[kind]?.summary_text || buildDigestPreview(kind, hub) || "这里保留给 AI 提炼要点，你也可以点击按钮生成固定格式图片请求。";
+    const isDropBefore = compact && moduleDropIndicator?.targetKey === kind && moduleDropIndicator.position === "before" && draggingModule !== kind;
+    const isDropAfter = compact && moduleDropIndicator?.targetKey === kind && moduleDropIndicator.position === "after" && draggingModule !== kind;
 
     return (
       <div
         key={kind}
         draggable={compact}
-        onDragStart={() => compact && setDraggingModule(kind)}
+        onDragStart={() => {
+          if (!compact) return;
+          setDraggingModule(kind);
+          setModuleDropIndicator(null);
+        }}
         onDragOver={(event: DragEvent<HTMLDivElement>) => {
           if (!compact) return;
           event.preventDefault();
+          const position = getDropPosition({
+            axis: "y",
+            clientX: event.clientX,
+            clientY: event.clientY,
+            rect: event.currentTarget.getBoundingClientRect(),
+          });
+          setModuleDropIndicator({ targetKey: kind, position });
+        }}
+        onDragLeave={() => {
+          if (!compact) return;
+          if (moduleDropIndicator?.targetKey === kind) setModuleDropIndicator(null);
         }}
         onDrop={(event: DragEvent<HTMLDivElement>) => {
-          if (!compact) return;
+          if (!compact || !moduleDropIndicator || moduleDropIndicator.targetKey !== kind) return;
           event.preventDefault();
-          moveModule(kind);
+          moveModule(kind, moduleDropIndicator.position);
+          setModuleDropIndicator(null);
+          setDraggingModule("");
         }}
-        onDragEnd={() => setDraggingModule("")}
-        className={`${compact ? "cursor-default" : ""} ${draggingModule === kind ? "opacity-70" : ""}`}
+        onDragEnd={() => {
+          setDraggingModule("");
+          setModuleDropIndicator(null);
+        }}
+        className={cn(
+          compact && "relative cursor-default transition-[opacity,transform] duration-150",
+          draggingModule === kind && "scale-[0.985] opacity-60",
+          isDropBefore && "before:absolute before:-top-2 before:left-4 before:right-4 before:h-1 before:rounded-full before:bg-primary before:shadow-glow",
+          isDropAfter && "after:absolute after:-bottom-2 after:left-4 after:right-4 after:h-1 after:rounded-full after:bg-primary after:shadow-glow",
+        )}
       >
         <GlassCard>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -986,8 +1022,13 @@ export function Intel() {
         title="投研资讯"
         subtitle="把基本面和流动性拆开管理，既能追踪最新信息，也能保留给 AI 做统一提炼。"
         actions={
-          <button onClick={() => void load()} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
-            <RefreshCw className="h-4 w-4" /> 刷新
+          <button
+            onClick={() => void load()}
+            disabled={refreshState === "loading"}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshState === "loading" && "animate-spin", refreshState === "success" && "text-primary")} />
+            {refreshState === "loading" ? "刷新中..." : refreshState === "success" ? "刚刚更新" : "刷新"}
           </button>
         }
       />
