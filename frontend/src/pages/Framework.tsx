@@ -12,6 +12,8 @@ import { AskAiButton } from "@/components/ui/AskAiButton";
 import { StructuredOverviewRenderer } from "@/components/research/StructuredOverviewRenderer";
 import { StructuredOverviewSidebar } from "@/components/research/StructuredOverviewSidebar";
 import { HBMDraftDashboard } from "@/components/research/HBMDraftDashboard";
+import { IndustryDraftCanvas } from "@/components/research/IndustryDraftCanvas";
+import { shouldUseIndustryDraftCanvas } from "@/components/research/industry-draft-canvas";
 import { shouldUseHBMDraftDashboard } from "@/components/research/hbm-draft-dashboard";
 import { api, ApiError, type KnowledgeEntry, type OverviewCandidate, type OverviewContentBlock, type OverviewDeepCard, type OverviewEditorBinding, type OverviewWorkbench, type SectorIndicator, type SectorModule, type SectorTreeNode, type StockCenterData, type StockModule, type StructuredRenderBlock, type WatchIndicator, type WatchStock, type YoudaoNoteCandidate } from "@/lib/api";
 import { FRAMEWORK_TABS } from "@/lib/workspace";
@@ -5988,7 +5990,9 @@ export function Framework() {
                   {renderOverviewHintBar(
                     sectorWorkbench?.draft.summary || "这里承接自动提取研报后的第一版框架。后续即便有新研报进入，也只会更新初稿，不会覆盖你的深度版本。",
                   )}
-                  {shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
+                  {shouldUseIndustryDraftCanvas(selectedSector || "", sectorWorkbench)
+                    ? <IndustryDraftCanvas data={sectorWorkbench.draft_theme_schema} />
+                    : shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
                     ? <HBMDraftDashboard data={sectorWorkbench.draft_theme_schema} />
                     : (sectorWorkbench?.draft_structured_blocks || []).length > 0
                     ? renderStructuredOverviewShell(sectorWorkbench?.draft_structured_blocks || [], {
