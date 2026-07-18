@@ -594,12 +594,22 @@ export interface OverviewBuildResult {
   draft_theme_schema?: HBMDraftDashboardData;
 }
 
-export interface IndustryDraftCanvasCard {
+export interface IndustryDraftBlock {
   id: string;
-  type: "summary_hero" | "metric_grid" | "range_band" | "comparison_cards" | "timeline";
+  type:
+    | "summary_hero"
+    | "metric_grid"
+    | "range_band"
+    | "comparison_cards"
+    | "timeline"
+    | "flow_map"
+    | "industry_chain"
+    | "comparison_table"
+    | "chart_spec"
+    | "evidence_table";
   title?: string;
-  layout?: string;
-  content: Record<string, unknown>;
+  subtitle?: string;
+  spec: Record<string, unknown>;
   sources?: string[];
   footnote?: string;
   style_variant?: string;
@@ -608,7 +618,8 @@ export interface IndustryDraftCanvasCard {
 export interface IndustryDraftCanvasTab {
   id: string;
   title: string;
-  cards: IndustryDraftCanvasCard[];
+  blocks: IndustryDraftBlock[];
+  cards?: never;
 }
 
 export interface IndustryDraftCanvasSchema {

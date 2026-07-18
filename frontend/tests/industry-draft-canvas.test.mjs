@@ -6,9 +6,35 @@ import {
   createCanvasCard,
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
+  migrateCanvasCardsToBlocks,
   moveItem,
   shouldUseIndustryDraftCanvas,
 } from "../src/components/research/industry-draft-canvas.ts";
+
+test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
+  const result = migrateCanvasCardsToBlocks({
+    kind: "industry_draft_canvas",
+    version: "v1",
+    scope: "HBM",
+    tabs: [
+      {
+        id: "tab-overview",
+        title: "总览",
+        cards: [
+          {
+            id: "card-1",
+            type: "summary_hero",
+            title: "景气总览",
+            content: { headline: "HBM 需求偏强" },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
+  assert.equal(result.tabs[0].blocks[0].spec.headline, "HBM 需求偏强");
+});
 
 const legacy = {
   kind: "hbm_draft_dashboard",
@@ -27,12 +53,12 @@ const legacy = {
   generated_at: "2026-07-18T00:00:00+08:00",
 };
 
-test("adaptLegacyHBMDashboardToCanvas maps summary into summary_hero card", () => {
+test("adaptLegacyHBMDashboardToCanvas maps summary into summary_hero block", () => {
   const canvas = adaptLegacyHBMDashboardToCanvas(legacy);
 
   assert.equal(canvas.kind, "industry_draft_canvas");
-  assert.equal(canvas.tabs[0].cards[0].type, "summary_hero");
-  assert.equal(canvas.tabs[0].cards[0].sources[0], "HBM 行业概览.md");
+  assert.equal(canvas.tabs[0].blocks[0].type, "summary_hero");
+  assert.equal(canvas.tabs[0].blocks[0].sources[0], "HBM 行业概览.md");
 });
 
 test("getIndustryDraftActiveTab resolves requested tab and falls back to first tab", () => {
@@ -51,13 +77,13 @@ test("shouldUseIndustryDraftCanvas is HBM-only and requires matching schema", ()
 test("createEmptyCanvasTab returns editable tab shell", () => {
   const tab = createEmptyCanvasTab();
   assert.equal(tab.title, "未命名栏目");
-  assert.deepEqual(tab.cards, []);
+  assert.deepEqual(tab.blocks, []);
 });
 
-test("createCanvasCard creates metric grid with editable items array", () => {
+test("createCanvasCard creates metric grid with editable spec items array", () => {
   const card = createCanvasCard("metric_grid");
   assert.equal(card.type, "metric_grid");
-  assert.ok(Array.isArray(card.content.items));
+  assert.ok(Array.isArray(card.spec.items));
 });
 
 test("moveItem reorders arrays by button-style deltas", () => {

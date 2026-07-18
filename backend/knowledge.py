@@ -193,42 +193,48 @@ def normalize_structured_render_blocks(blocks: list[dict[str, Any]] | None) -> l
     ]
 
 
+def _normalize_industry_draft_block(raw: dict[str, Any], index: int) -> dict[str, Any]:
+    content = dict(raw.get("content") or {})
+    spec = dict(raw.get("spec") or content)
+    return {
+        "id": str(raw.get("id") or f"block-{index + 1}"),
+        "type": str(raw.get("type") or "summary_hero"),
+        "title": str(raw.get("title") or ""),
+        "subtitle": str(raw.get("subtitle") or ""),
+        "spec": spec,
+        "sources": [str(item) for item in (raw.get("sources") or []) if str(item).strip()],
+        "footnote": str(raw.get("footnote") or ""),
+        "style_variant": str(raw.get("style_variant") or "dark-report"),
+    }
+
+
 def normalize_industry_draft_canvas(schema: dict[str, Any] | None) -> dict[str, Any]:
     raw = deepcopy(schema or {})
     if raw.get("kind") != "industry_draft_canvas":
         return raw
-    raw["version"] = str(raw.get("version") or "v1")
-    raw["scope"] = str(raw.get("scope") or "")
-    tabs: list[dict[str, Any]] = []
-    for index, tab in enumerate(raw.get("tabs") or []):
+    tabs = []
+    for tab_index, tab in enumerate(raw.get("tabs") or []):
         if not isinstance(tab, dict):
             continue
-        cards: list[dict[str, Any]] = []
-        for card_index, card in enumerate(tab.get("cards") or []):
-            if not isinstance(card, dict):
-                continue
-            cards.append(
-                {
-                    "id": str(card.get("id") or f"card-{index}-{card_index}"),
-                    "type": str(card.get("type") or "summary_hero"),
-                    "title": str(card.get("title") or ""),
-                    "layout": str(card.get("layout") or ""),
-                    "content": deepcopy(card.get("content") or {}),
-                    "sources": [str(item) for item in (card.get("sources") or []) if str(item).strip()],
-                    "footnote": str(card.get("footnote") or ""),
-                    "style_variant": str(card.get("style_variant") or ""),
-                }
-            )
+        block_inputs = tab.get("blocks") or tab.get("cards") or []
         tabs.append(
             {
-                "id": str(tab.get("id") or f"tab-{index}"),
+                "id": str(tab.get("id") or f"tab-{tab_index + 1}"),
                 "title": str(tab.get("title") or "未命名栏目"),
-                "cards": cards,
+                "blocks": [
+                    _normalize_industry_draft_block(block, block_index)
+                    for block_index, block in enumerate(block_inputs)
+                    if isinstance(block, dict)
+                ],
             }
         )
-    raw["tabs"] = tabs
-    raw["meta"] = deepcopy(raw.get("meta") or {})
-    return raw
+    return {
+        "kind": "industry_draft_canvas",
+        "version": str(raw.get("version") or "v2"),
+        "scope": str(raw.get("scope") or ""),
+        "tabs": tabs,
+        "meta": dict(raw.get("meta") or {}),
+    }
 
 
 def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -250,7 +256,7 @@ def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, 
         "editor_binding": current.get("editor_binding", {}) or {},
         "draft_structured_blocks": normalize_structured_render_blocks(current.get("draft_structured_blocks") or []),
         "deep_structured_blocks": normalize_structured_render_blocks(current.get("deep_structured_blocks") or []),
-        "draft_theme_schema": deepcopy(current.get("draft_theme_schema") or {}),
+        "draft_theme_schema": normalize_industry_draft_canvas(current.get("draft_theme_schema") or {}),
         "updated_at": current.get("updated_at") or now,
     }
 

@@ -1,10 +1,43 @@
 import type {
   HBMDraftDashboardData,
-  IndustryDraftCanvasCard,
+  IndustryDraftBlock,
   IndustryDraftCanvasSchema,
   IndustryDraftCanvasTab,
   OverviewWorkbench,
 } from "@/lib/api";
+
+type LegacyIndustryDraftCanvasSchema = Omit<IndustryDraftCanvasSchema, "tabs"> & {
+  tabs?: Array<{
+    id?: string;
+    title?: string;
+    blocks?: IndustryDraftBlock[];
+    cards?: Array<Record<string, unknown>>;
+  }>;
+};
+
+export function migrateCanvasCardsToBlocks(
+  schema: LegacyIndustryDraftCanvasSchema | IndustryDraftCanvasSchema | null | undefined,
+): IndustryDraftCanvasSchema | null {
+  if (!schema || schema.kind !== "industry_draft_canvas") return null;
+  return {
+    ...schema,
+    version: schema.version || "v2",
+    tabs: (schema.tabs || []).map((tab, tabIndex) => ({
+      id: tab.id || `tab-${tabIndex + 1}`,
+      title: tab.title || "未命名栏目",
+      blocks: (tab.blocks || tab.cards || []).map((item, blockIndex) => ({
+        id: item.id || `block-${blockIndex + 1}`,
+        type: item.type || "summary_hero",
+        title: item.title || "",
+        subtitle: item.subtitle || "",
+        spec: item.spec || item.content || {},
+        sources: item.sources || [],
+        footnote: item.footnote || "",
+        style_variant: item.style_variant || "dark-report",
+      })),
+    })),
+  } as IndustryDraftCanvasSchema;
+}
 
 export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): IndustryDraftCanvasSchema {
   return {
@@ -12,13 +45,12 @@ export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): In
     version: "v1",
     scope: "HBM",
     tabs: (data.tabs || []).map((tab, index) => {
-      const cards: IndustryDraftCanvasCard[] = [
+      const blocks: IndustryDraftBlock[] = [
         {
           id: `${tab.key || `tab-${index}`}-hero`,
           type: "summary_hero",
           title: tab.title || "",
-          layout: "hero",
-          content: {
+          spec: {
             headline: tab.headline || "",
             bullets: tab.summary || [],
             tags: (tab.metrics || []).map((metric) => metric.value).filter(Boolean),
@@ -28,12 +60,11 @@ export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): In
       ];
 
       if (tab.metrics?.length) {
-        cards.push({
+        blocks.push({
           id: `${tab.key}-metrics`,
           type: "metric_grid",
           title: "关键指标",
-          layout: "grid",
-          content: {
+          spec: {
             items: tab.metrics.map((metric) => ({
               label: metric.label,
               value: metric.value,
@@ -44,22 +75,20 @@ export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): In
       }
 
       if (tab.generation_steps?.length) {
-        cards.push({
+        blocks.push({
           id: `${tab.key}-timeline`,
           type: "timeline",
           title: "技术代际",
-          layout: "timeline",
-          content: { steps: tab.generation_steps },
+          spec: { steps: tab.generation_steps },
         });
       }
 
       if (tab.cost_stack?.length) {
-        cards.push({
+        blocks.push({
           id: `${tab.key}-band`,
           type: "range_band",
           title: "成本与卡口",
-          layout: "band",
-          content: {
+          spec: {
             current_label: "核心约束",
             current_value: tab.metrics?.[0]?.value || "",
             segments: tab.cost_stack,
@@ -68,19 +97,18 @@ export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): In
       }
 
       if (tab.leader_cards?.length) {
-        cards.push({
+        blocks.push({
           id: `${tab.key}-comparison`,
           type: "comparison_cards",
           title: "龙头对比",
-          layout: "comparison",
-          content: { items: tab.leader_cards },
+          spec: { items: tab.leader_cards },
         });
       }
 
       return {
         id: `tab-${tab.key || index}`,
         title: tab.title || "未命名栏目",
-        cards,
+        blocks,
       };
     }),
     meta: {
@@ -107,18 +135,17 @@ export function createEmptyCanvasTab(): IndustryDraftCanvasTab {
   return {
     id: uniqueId("tab"),
     title: "未命名栏目",
-    cards: [],
+    blocks: [],
   };
 }
 
-export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): IndustryDraftCanvasCard {
+export function createCanvasCard(type: IndustryDraftBlock["type"]): IndustryDraftBlock {
   if (type === "metric_grid") {
     return {
       id: uniqueId("card"),
       type,
       title: "关键指标",
-      layout: "grid",
-      content: {
+      spec: {
         items: [{ label: "指标", value: "—", note: "" }],
       },
     };
@@ -128,8 +155,7 @@ export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): Industr
       id: uniqueId("card"),
       type,
       title: "区间带",
-      layout: "band",
-      content: {
+      spec: {
         current_label: "当前位置",
         current_value: "—",
         segments: [{ label: "区间", weight: 50, note: "" }],
@@ -141,8 +167,7 @@ export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): Industr
       id: uniqueId("card"),
       type,
       title: "对比卡",
-      layout: "comparison",
-      content: {
+      spec: {
         items: [{ name: "对象", headline: "", detail: "", tag: "" }],
       },
     };
@@ -152,8 +177,7 @@ export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): Industr
       id: uniqueId("card"),
       type,
       title: "时间线",
-      layout: "timeline",
-      content: {
+      spec: {
         steps: [{ label: "阶段", caption: "", active: false }],
       },
     };
@@ -162,8 +186,7 @@ export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): Industr
     id: uniqueId("card"),
     type: "summary_hero",
     title: "速览卡",
-    layout: "hero",
-    content: {
+    spec: {
       headline: "",
       bullets: [""],
       tags: [],
