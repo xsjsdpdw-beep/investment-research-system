@@ -15,6 +15,15 @@ type LegacyIndustryDraftCanvasSchema = Omit<IndustryDraftCanvasSchema, "tabs"> &
   }>;
 };
 
+export type IndustryDraftCanvasInput = IndustryDraftCanvasSchema | LegacyIndustryDraftCanvasSchema | HBMDraftDashboardData;
+
+function readLegacyField(item: Record<string, unknown> | IndustryDraftBlock, key: string) {
+  if (key in item) {
+    return item[key as keyof typeof item];
+  }
+  return undefined;
+}
+
 export function migrateCanvasCardsToBlocks(
   schema: LegacyIndustryDraftCanvasSchema | IndustryDraftCanvasSchema | null | undefined,
 ): IndustryDraftCanvasSchema | null {
@@ -26,17 +35,29 @@ export function migrateCanvasCardsToBlocks(
       id: tab.id || `tab-${tabIndex + 1}`,
       title: tab.title || "未命名栏目",
       blocks: (tab.blocks || tab.cards || []).map((item, blockIndex) => ({
-        id: item.id || `block-${blockIndex + 1}`,
-        type: item.type || "summary_hero",
-        title: item.title || "",
-        subtitle: item.subtitle || "",
-        spec: item.spec || item.content || {},
-        sources: item.sources || [],
-        footnote: item.footnote || "",
-        style_variant: item.style_variant || "dark-report",
+        id: String(readLegacyField(item, "id") || `block-${blockIndex + 1}`),
+        type: (readLegacyField(item, "type") as IndustryDraftBlock["type"]) || "summary_hero",
+        title: String(readLegacyField(item, "title") || ""),
+        subtitle: String(readLegacyField(item, "subtitle") || ""),
+        spec: (readLegacyField(item, "spec") || readLegacyField(item, "content") || {}) as Record<string, unknown>,
+        sources: Array.isArray(readLegacyField(item, "sources")) ? (readLegacyField(item, "sources") as string[]) : [],
+        footnote: String(readLegacyField(item, "footnote") || ""),
+        style_variant: String(readLegacyField(item, "style_variant") || "dark-report"),
       })),
     })),
   } as IndustryDraftCanvasSchema;
+}
+
+export function normalizeIndustryDraftCanvasInput(data: IndustryDraftCanvasInput): IndustryDraftCanvasSchema {
+  const canvas = data.kind === "hbm_draft_dashboard" ? adaptLegacyHBMDashboardToCanvas(data) : data;
+  const normalized = migrateCanvasCardsToBlocks(canvas);
+  if (normalized) return normalized;
+  return {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "",
+    tabs: [],
+  };
 }
 
 export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): IndustryDraftCanvasSchema {

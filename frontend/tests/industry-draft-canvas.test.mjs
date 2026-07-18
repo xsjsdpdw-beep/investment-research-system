@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   adaptLegacyHBMDashboardToCanvas,
@@ -7,6 +8,7 @@ import {
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
+  normalizeIndustryDraftCanvasInput,
   moveItem,
   shouldUseIndustryDraftCanvas,
 } from "../src/components/research/industry-draft-canvas.ts";
@@ -34,6 +36,20 @@ test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", ()
 
   assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
   assert.equal(result.tabs[0].blocks[0].spec.headline, "HBM 需求偏强");
+});
+
+test("normalizeIndustryDraftCanvasInput dispatches legacy HBM dashboards for the runtime", () => {
+  const result = normalizeIndustryDraftCanvasInput(legacy);
+
+  assert.equal(result.kind, "industry_draft_canvas");
+  assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
+  assert.equal(result.tabs[0].blocks[0].spec.headline, "HBM 放量");
+});
+
+test("IndustryDraftCanvas normalizes persisted schemas before reading HBM tabs", () => {
+  const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvas.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /normalizeIndustryDraftCanvasInput\(data\)/);
 });
 
 const legacy = {

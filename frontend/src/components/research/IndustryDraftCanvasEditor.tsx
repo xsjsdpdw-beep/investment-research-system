@@ -1,4 +1,4 @@
-import type { IndustryDraftCanvasCard, IndustryDraftCanvasTab } from "@/lib/api";
+import type { IndustryDraftBlock, IndustryDraftCanvasTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function EditorInput({
@@ -42,22 +42,26 @@ function EditorTextarea({
   );
 }
 
+function readSpecArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
 function SummaryHeroEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const headline = String(card.content.headline || "");
-  const bullets = Array.isArray(card.content.bullets) ? card.content.bullets.map(String) : [];
-  const tags = Array.isArray(card.content.tags) ? card.content.tags.map(String) : [];
+  const headline = String(card.spec.headline || "");
+  const bullets = readSpecArray(card.spec.bullets).map(String);
+  const tags = readSpecArray(card.spec.tags).map(String);
   return (
     <div className="space-y-3">
       <EditorInput
         value={headline}
         placeholder="核心结论"
-        onChange={(value) => onChange({ ...card, content: { ...card.content, headline: value } })}
+        onChange={(value) => onChange({ ...card, spec: { ...card.spec, headline: value } })}
       />
       <div className="space-y-2">
         {bullets.map((item, index) => (
@@ -68,7 +72,7 @@ function SummaryHeroEditor({
             onChange={(value) => {
               const next = [...bullets];
               next[index] = value;
-              onChange({ ...card, content: { ...card.content, bullets: next } });
+              onChange({ ...card, spec: { ...card.spec, bullets: next } });
             }}
           />
         ))}
@@ -76,7 +80,7 @@ function SummaryHeroEditor({
       <EditorInput
         value={tags.join(" / ")}
         placeholder="标签，使用 / 分隔"
-        onChange={(value) => onChange({ ...card, content: { ...card.content, tags: value.split("/").map((item) => item.trim()).filter(Boolean) } })}
+        onChange={(value) => onChange({ ...card, spec: { ...card.spec, tags: value.split("/").map((item) => item.trim()).filter(Boolean) } })}
       />
     </div>
   );
@@ -86,10 +90,10 @@ function MetricGridEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const items = Array.isArray(card.content.items) ? card.content.items : [];
+  const items = readSpecArray(card.spec.items);
   return (
     <div className="space-y-2">
       {items.map((item, index) => (
@@ -100,7 +104,7 @@ function MetricGridEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), label: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
           <EditorInput
@@ -109,7 +113,7 @@ function MetricGridEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
           <EditorInput
@@ -118,7 +122,7 @@ function MetricGridEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), note: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
         </div>
@@ -131,22 +135,22 @@ function RangeBandEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const segments = Array.isArray(card.content.segments) ? card.content.segments : [];
+  const segments = readSpecArray(card.spec.segments);
   return (
     <div className="space-y-3">
       <div className="grid gap-2 md:grid-cols-2">
         <EditorInput
-          value={String(card.content.current_label || "")}
+          value={String(card.spec.current_label || "")}
           placeholder="当前位置标签"
-          onChange={(value) => onChange({ ...card, content: { ...card.content, current_label: value } })}
+          onChange={(value) => onChange({ ...card, spec: { ...card.spec, current_label: value } })}
         />
         <EditorInput
-          value={String(card.content.current_value || "")}
+          value={String(card.spec.current_value || "")}
           placeholder="当前位置值"
-          onChange={(value) => onChange({ ...card, content: { ...card.content, current_value: value } })}
+          onChange={(value) => onChange({ ...card, spec: { ...card.spec, current_value: value } })}
         />
       </div>
       {segments.map((item, index) => (
@@ -157,7 +161,7 @@ function RangeBandEditor({
             onChange={(value) => {
               const next = [...segments];
               next[index] = { ...(next[index] || {}), label: value };
-              onChange({ ...card, content: { ...card.content, segments: next } });
+              onChange({ ...card, spec: { ...card.spec, segments: next } });
             }}
           />
           <EditorInput
@@ -166,7 +170,7 @@ function RangeBandEditor({
             onChange={(value) => {
               const next = [...segments];
               next[index] = { ...(next[index] || {}), weight: Number(value || 0) };
-              onChange({ ...card, content: { ...card.content, segments: next } });
+              onChange({ ...card, spec: { ...card.spec, segments: next } });
             }}
           />
           <EditorInput
@@ -175,7 +179,7 @@ function RangeBandEditor({
             onChange={(value) => {
               const next = [...segments];
               next[index] = { ...(next[index] || {}), note: value };
-              onChange({ ...card, content: { ...card.content, segments: next } });
+              onChange({ ...card, spec: { ...card.spec, segments: next } });
             }}
           />
         </div>
@@ -188,10 +192,10 @@ function ComparisonCardsEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const items = Array.isArray(card.content.items) ? card.content.items : [];
+  const items = readSpecArray(card.spec.items);
   return (
     <div className="space-y-3">
       {items.map((item, index) => (
@@ -202,7 +206,7 @@ function ComparisonCardsEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), name: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
           <EditorInput
@@ -211,7 +215,7 @@ function ComparisonCardsEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), tag: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
           <EditorTextarea
@@ -220,7 +224,7 @@ function ComparisonCardsEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), headline: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
           <EditorTextarea
@@ -229,7 +233,7 @@ function ComparisonCardsEditor({
             onChange={(value) => {
               const next = [...items];
               next[index] = { ...(next[index] || {}), detail: value };
-              onChange({ ...card, content: { ...card.content, items: next } });
+              onChange({ ...card, spec: { ...card.spec, items: next } });
             }}
           />
         </div>
@@ -242,10 +246,10 @@ function TimelineEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const steps = Array.isArray(card.content.steps) ? card.content.steps : [];
+  const steps = readSpecArray(card.spec.steps);
   return (
     <div className="space-y-2">
       {steps.map((step, index) => (
@@ -256,7 +260,7 @@ function TimelineEditor({
             onChange={(value) => {
               const next = [...steps];
               next[index] = { ...(next[index] || {}), label: value };
-              onChange({ ...card, content: { ...card.content, steps: next } });
+              onChange({ ...card, spec: { ...card.spec, steps: next } });
             }}
           />
           <EditorInput
@@ -265,7 +269,7 @@ function TimelineEditor({
             onChange={(value) => {
               const next = [...steps];
               next[index] = { ...(next[index] || {}), caption: value };
-              onChange({ ...card, content: { ...card.content, steps: next } });
+              onChange({ ...card, spec: { ...card.spec, steps: next } });
             }}
           />
           <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
@@ -275,7 +279,7 @@ function TimelineEditor({
               onChange={(event) => {
                 const next = [...steps];
                 next[index] = { ...(next[index] || {}), active: event.target.checked };
-                onChange({ ...card, content: { ...card.content, steps: next } });
+                onChange({ ...card, spec: { ...card.spec, steps: next } });
               }}
             />
             高亮
@@ -290,8 +294,8 @@ function CardContentEditor({
   card,
   onChange,
 }: {
-  card: IndustryDraftCanvasCard;
-  onChange: (card: IndustryDraftCanvasCard) => void;
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
 }) {
   if (card.type === "summary_hero") return <SummaryHeroEditor card={card} onChange={onChange} />;
   if (card.type === "metric_grid") return <MetricGridEditor card={card} onChange={onChange} />;
@@ -315,10 +319,10 @@ export function IndustryDraftCanvasEditor({
   expandedCardId: string | null;
   onSetExpandedCardId: (cardId: string | null) => void;
   onRenameTab: (title: string) => void;
-  onAddCard: (type: IndustryDraftCanvasCard["type"]) => void;
+  onAddCard: (type: IndustryDraftBlock["type"]) => void;
   onMoveCard: (index: number, delta: number) => void;
   onDeleteCard: (index: number) => void;
-  onUpdateCard: (index: number, card: IndustryDraftCanvasCard) => void;
+  onUpdateCard: (index: number, card: IndustryDraftBlock) => void;
 }) {
   return (
     <section className="space-y-4 rounded-[24px] border border-primary/20 bg-primary/5 p-4">
@@ -337,7 +341,7 @@ export function IndustryDraftCanvasEditor({
         </div>
 
         <div className="space-y-3">
-          {tab.cards.map((card, index) => {
+          {tab.blocks.map((card, index) => {
             const expanded = expandedCardId === card.id;
             return (
               <div key={card.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">

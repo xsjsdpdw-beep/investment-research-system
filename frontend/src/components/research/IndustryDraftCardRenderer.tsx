@@ -1,10 +1,14 @@
 import { cn } from "@/lib/utils";
-import type { IndustryDraftCanvasCard } from "@/lib/api";
+import type { IndustryDraftBlock } from "@/lib/api";
 
-function SummaryHeroCard({ card }: { card: IndustryDraftCanvasCard }) {
-  const headline = String(card.content.headline || "");
-  const bullets = Array.isArray(card.content.bullets) ? card.content.bullets.map(String) : [];
-  const tags = Array.isArray(card.content.tags) ? card.content.tags.map(String).filter(Boolean) : [];
+function readSpecArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function SummaryHeroCard({ card }: { card: IndustryDraftBlock }) {
+  const headline = String(card.spec.headline || "");
+  const bullets = readSpecArray(card.spec.bullets).map(String);
+  const tags = readSpecArray(card.spec.tags).map(String).filter(Boolean);
   return (
     <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,#101926,#09111d)] p-5">
       {card.title ? <p className="text-[11px] uppercase tracking-[0.18em] text-[#ffb169]">{card.title}</p> : null}
@@ -32,8 +36,8 @@ function SummaryHeroCard({ card }: { card: IndustryDraftCanvasCard }) {
   );
 }
 
-function MetricGridCard({ card }: { card: IndustryDraftCanvasCard }) {
-  const items = Array.isArray(card.content.items) ? card.content.items : [];
+function MetricGridCard({ card }: { card: IndustryDraftBlock }) {
+  const items = readSpecArray(card.spec.items);
   return (
     <section className="rounded-[24px] border border-white/10 bg-[#0b1320] p-4">
       {card.title ? <h4 className="text-sm font-semibold text-slate-100">{card.title}</h4> : null}
@@ -55,8 +59,8 @@ function MetricGridCard({ card }: { card: IndustryDraftCanvasCard }) {
   );
 }
 
-function RangeBandCard({ card }: { card: IndustryDraftCanvasCard }) {
-  const segments = Array.isArray(card.content.segments) ? card.content.segments : [];
+function RangeBandCard({ card }: { card: IndustryDraftBlock }) {
+  const segments = readSpecArray(card.spec.segments);
   const maxWeight = Math.max(
     1,
     ...segments.map((item) => Number(item?.weight || 0)).filter((value) => Number.isFinite(value)),
@@ -64,11 +68,11 @@ function RangeBandCard({ card }: { card: IndustryDraftCanvasCard }) {
   return (
     <section className="rounded-[24px] border border-white/10 bg-[#080f1c] p-4">
       {card.title ? <h4 className="text-sm font-semibold text-slate-100">{card.title}</h4> : null}
-      {(card.content.current_label || card.content.current_value) ? (
+      {(card.spec.current_label || card.spec.current_value) ? (
         <p className="mt-2 text-sm text-slate-400">
-          {String(card.content.current_label || "")}
-          {card.content.current_label ? "：" : ""}
-          <span className="font-medium text-slate-100">{String(card.content.current_value || "")}</span>
+          {String(card.spec.current_label || "")}
+          {card.spec.current_label ? "：" : ""}
+          <span className="font-medium text-slate-100">{String(card.spec.current_value || "")}</span>
         </p>
       ) : null}
       <div className="mt-4 space-y-3">
@@ -95,8 +99,8 @@ function RangeBandCard({ card }: { card: IndustryDraftCanvasCard }) {
   );
 }
 
-function ComparisonCards({ card }: { card: IndustryDraftCanvasCard }) {
-  const items = Array.isArray(card.content.items) ? card.content.items : [];
+function ComparisonCards({ card }: { card: IndustryDraftBlock }) {
+  const items = readSpecArray(card.spec.items);
   return (
     <section className="space-y-3">
       {card.title ? <h4 className="text-sm font-semibold text-slate-100">{card.title}</h4> : null}
@@ -120,8 +124,8 @@ function ComparisonCards({ card }: { card: IndustryDraftCanvasCard }) {
   );
 }
 
-function TimelineCard({ card }: { card: IndustryDraftCanvasCard }) {
-  const steps = Array.isArray(card.content.steps) ? card.content.steps : [];
+function TimelineCard({ card }: { card: IndustryDraftBlock }) {
+  const steps = readSpecArray(card.spec.steps);
   return (
     <section className="space-y-3">
       {card.title ? <h4 className="text-sm font-semibold text-slate-100">{card.title}</h4> : null}
@@ -152,7 +156,7 @@ function TimelineCard({ card }: { card: IndustryDraftCanvasCard }) {
   );
 }
 
-export function IndustryDraftCardRenderer({ card }: { card: IndustryDraftCanvasCard }) {
+export function IndustryDraftCardRenderer({ card }: { card: IndustryDraftBlock }) {
   if (card.type === "summary_hero") {
     return <SummaryHeroCard card={card} />;
   }

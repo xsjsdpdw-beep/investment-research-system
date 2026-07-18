@@ -42,3 +42,23 @@ def test_overview_record_defaults_migrates_persisted_canvas_cards_to_blocks():
     )
 
     assert record["draft_theme_schema"]["tabs"][0]["blocks"][0]["spec"]["headline"] == "HBM 需求偏强"
+
+
+def test_normalize_industry_draft_canvas_coerces_unsupported_block_and_chart_types():
+    normalized = normalize_industry_draft_canvas(
+        {
+            "kind": "industry_draft_canvas",
+            "scope": "HBM",
+            "tabs": [
+                {
+                    "blocks": [
+                        {"type": "unknown_block", "spec": {"headline": "fallback"}},
+                        {"type": "chart_spec", "spec": {"chart_type": "pie"}},
+                    ]
+                }
+            ],
+        }
+    )
+
+    assert normalized["tabs"][0]["blocks"][0]["type"] == "summary_hero"
+    assert normalized["tabs"][0]["blocks"][1]["spec"]["chart_type"] == "bar"

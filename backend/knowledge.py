@@ -66,6 +66,19 @@ VALID_STRUCTURED_RENDER_BLOCK_TYPES = {
     "chart_spec",
     "source_ref",
 }
+VALID_INDUSTRY_DRAFT_BLOCK_TYPES = {
+    "summary_hero",
+    "metric_grid",
+    "range_band",
+    "comparison_cards",
+    "timeline",
+    "flow_map",
+    "industry_chain",
+    "comparison_table",
+    "chart_spec",
+    "evidence_table",
+}
+VALID_INDUSTRY_DRAFT_CHART_TYPES = {"bar", "stacked_bar", "line", "area"}
 
 
 def _overview_source_label(source_type: str | None) -> str:
@@ -196,9 +209,17 @@ def normalize_structured_render_blocks(blocks: list[dict[str, Any]] | None) -> l
 def _normalize_industry_draft_block(raw: dict[str, Any], index: int) -> dict[str, Any]:
     content = dict(raw.get("content") or {})
     spec = dict(raw.get("spec") or content)
+    raw_type = str(raw.get("type") or "summary_hero")
+    block_type = raw_type if raw_type in VALID_INDUSTRY_DRAFT_BLOCK_TYPES else "summary_hero"
+    if block_type == "chart_spec":
+        raw_chart_type = str(spec.get("chart_type") or spec.get("type") or "bar")
+        chart_type = raw_chart_type if raw_chart_type in VALID_INDUSTRY_DRAFT_CHART_TYPES else "bar"
+        spec["chart_type"] = chart_type
+        if "type" in spec:
+            spec["type"] = chart_type
     return {
         "id": str(raw.get("id") or f"block-{index + 1}"),
-        "type": str(raw.get("type") or "summary_hero"),
+        "type": block_type,
         "title": str(raw.get("title") or ""),
         "subtitle": str(raw.get("subtitle") or ""),
         "spec": spec,

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { api, ApiError, type IndustryDraftCanvasCard, type IndustryDraftCanvasSchema } from "@/lib/api";
+import { api, ApiError, type IndustryDraftBlock, type IndustryDraftCanvasSchema } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { IndustryDraftCardRenderer } from "./IndustryDraftCardRenderer";
 import { IndustryDraftCanvasEditor } from "./IndustryDraftCanvasEditor";
-import { createCanvasCard, createEmptyCanvasTab, getIndustryDraftActiveTab, moveItem } from "./industry-draft-canvas";
+import {
+  createCanvasCard,
+  createEmptyCanvasTab,
+  getIndustryDraftActiveTab,
+  moveItem,
+  normalizeIndustryDraftCanvasInput,
+  type IndustryDraftCanvasInput,
+} from "./industry-draft-canvas";
 
 export function IndustryDraftCanvas({
   data,
@@ -14,33 +21,34 @@ export function IndustryDraftCanvas({
   scopeId = "HBM",
   initialActiveTabId,
 }: {
-  data: IndustryDraftCanvasSchema;
+  data: IndustryDraftCanvasInput;
   scopeType?: "sector" | "stock";
   scopeId?: string;
   initialActiveTabId?: string;
 }) {
+  const normalizedData = useMemo(() => normalizeIndustryDraftCanvasInput(data), [data]);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [draft, setDraft] = useState(data);
-  const [activeTabId, setActiveTabId] = useState(initialActiveTabId || data.tabs[0]?.id || "");
+  const [draft, setDraft] = useState(normalizedData);
+  const [activeTabId, setActiveTabId] = useState(initialActiveTabId || normalizedData.tabs[0]?.id || "");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
 
   useEffect(() => {
-    setDraft(data);
-    setActiveTabId((current) => current || data.tabs[0]?.id || "");
-  }, [data]);
+    setDraft(normalizedData);
+    setActiveTabId((current) => current || normalizedData.tabs[0]?.id || "");
+  }, [normalizedData]);
 
   if (!activeTab) {
     return null;
   }
 
-  function updateCurrentTab(mutator: (cards: IndustryDraftCanvasCard[]) => IndustryDraftCanvasCard[]) {
+  function updateCurrentTab(mutator: (blocks: IndustryDraftBlock[]) => IndustryDraftBlock[]) {
     setDraft((current) => ({
       ...current,
       tabs: current.tabs.map((tab) => (
         tab.id === activeTabId
-          ? { ...tab, cards: mutator(tab.cards || []) }
+          ? { ...tab, blocks: mutator(tab.blocks || []) }
           : tab
       )),
     }));
@@ -54,7 +62,7 @@ export function IndustryDraftCanvas({
         scope_id: scopeId,
         schema: draft,
       });
-      const next = (saved.draft_theme_schema as IndustryDraftCanvasSchema) || draft;
+      const next = normalizeIndustryDraftCanvasInput((saved.draft_theme_schema as IndustryDraftCanvasSchema) || draft);
       setDraft(next);
       setEditing(false);
       setExpandedCardId(null);
@@ -93,7 +101,7 @@ export function IndustryDraftCanvas({
             type="button"
             onClick={() => {
               if (editing) {
-                setDraft(data);
+                setDraft(normalizedData);
                 setEditing(false);
                 setExpandedCardId(null);
                 return;
@@ -188,7 +196,7 @@ export function IndustryDraftCanvas({
             />
           </div>
         ) : (
-          activeTab.cards.map((card) => (
+          activeTab.blocks.map((card) => (
             <IndustryDraftCardRenderer key={card.id} card={card} />
           ))
         )}

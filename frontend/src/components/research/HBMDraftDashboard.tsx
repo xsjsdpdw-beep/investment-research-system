@@ -1,7 +1,6 @@
 import type { HBMDraftDashboardData } from "@/lib/api";
 
 import { IndustryDraftCanvas } from "./IndustryDraftCanvas";
-import { adaptLegacyHBMDashboardToCanvas } from "./industry-draft-canvas";
 
 export function HBMDraftDashboard({
   data,
@@ -12,5 +11,5 @@ export function HBMDraftDashboard({
   scopeType?: "sector" | "stock";
   scopeId?: string;
 }) {
-  return <IndustryDraftCanvas data={adaptLegacyHBMDashboardToCanvas(data)} scopeType={scopeType} scopeId={scopeId} />;
+  return <IndustryDraftCanvas data={data} scopeType={scopeType} scopeId={scopeId} />;
 }
