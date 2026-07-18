@@ -1,3 +1,4 @@
+import knowledge
 from knowledge import _overview_record_defaults, normalize_industry_draft_canvas
 
 
@@ -22,7 +23,7 @@ def test_normalize_industry_draft_canvas_migrates_cards_to_blocks():
         ],
     }
 
-    normalized = normalize_industry_draft_canvas(raw)
+    normalized = normalize_industry_draft_canvas(raw, is_hbm_initial_draft=True)
 
     assert "cards" not in normalized["tabs"][0]
     assert normalized["tabs"][0]["blocks"][0]["type"] == "summary_hero"
@@ -57,8 +58,36 @@ def test_normalize_industry_draft_canvas_coerces_unsupported_block_and_chart_typ
                     ]
                 }
             ],
-        }
+        },
+        is_hbm_initial_draft=True,
     )
 
     assert normalized["tabs"][0]["blocks"][0]["type"] == "summary_hero"
     assert normalized["tabs"][0]["blocks"][1]["spec"]["chart_type"] == "bar"
+
+
+def test_overview_record_defaults_does_not_rewrite_non_hbm_canvas_schema():
+    schema = {
+        "kind": "industry_draft_canvas",
+        "scope": "光互联",
+        "tabs": [{"cards": [{"type": "unknown_block", "content": {"headline": "preserve"}}]}],
+    }
+
+    record = _overview_record_defaults("sector", "光互联", {"draft_theme_schema": schema})
+
+    assert record["draft_theme_schema"] == schema
+
+
+def test_save_draft_theme_schema_does_not_rewrite_stock_canvas_schema(monkeypatch):
+    schema = {
+        "kind": "industry_draft_canvas",
+        "scope": "000001.SZ",
+        "tabs": [{"cards": [{"type": "unknown_block", "content": {"headline": "preserve"}}]}],
+    }
+    record = {"draft_theme_schema": {}}
+    monkeypatch.setattr(knowledge, "_get_or_create_overview_record", lambda *_args: (record, [record], 0))
+    monkeypatch.setattr(knowledge, "_save_overview_workbench", lambda _items: None)
+
+    saved = knowledge.save_overview_draft_theme_schema("stock", "000001.SZ", schema)
+
+    assert saved["draft_theme_schema"] == schema

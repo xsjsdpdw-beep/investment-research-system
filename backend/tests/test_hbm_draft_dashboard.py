@@ -200,7 +200,7 @@ def test_validated_overview_workbench_uses_youdao_note_content_when_sources_miss
     result = app_module._validated_overview_workbench("sector", scope_id)
 
     assert result["draft_theme_schema"]["kind"] == "industry_draft_canvas"
-    assert result["draft_theme_schema"]["tabs"][0]["blocks"][0]["sources"][0] == "HBM 行业概览.md"
+    assert result["draft_theme_schema"]["tabs"][0]["cards"][0]["sources"][0] == "HBM 行业概览.md"
 
 
 def test_validated_overview_workbench_still_backfills_hbm_schema_when_youdao_binding_is_invalid(monkeypatch):

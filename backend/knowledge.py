@@ -229,9 +229,17 @@ def _normalize_industry_draft_block(raw: dict[str, Any], index: int) -> dict[str
     }
 
 
-def normalize_industry_draft_canvas(schema: dict[str, Any] | None) -> dict[str, Any]:
+def _is_hbm_initial_draft_scope(scope_type: str, scope_id: str) -> bool:
+    return scope_type == "sector" and scope_id == "HBM"
+
+
+def normalize_industry_draft_canvas(
+    schema: dict[str, Any] | None,
+    *,
+    is_hbm_initial_draft: bool = False,
+) -> dict[str, Any]:
     raw = deepcopy(schema or {})
-    if raw.get("kind") != "industry_draft_canvas":
+    if not is_hbm_initial_draft or raw.get("kind") != "industry_draft_canvas":
         return raw
     tabs = []
     for tab_index, tab in enumerate(raw.get("tabs") or []):
@@ -277,7 +285,10 @@ def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, 
         "editor_binding": current.get("editor_binding", {}) or {},
         "draft_structured_blocks": normalize_structured_render_blocks(current.get("draft_structured_blocks") or []),
         "deep_structured_blocks": normalize_structured_render_blocks(current.get("deep_structured_blocks") or []),
-        "draft_theme_schema": normalize_industry_draft_canvas(current.get("draft_theme_schema") or {}),
+        "draft_theme_schema": normalize_industry_draft_canvas(
+            current.get("draft_theme_schema") or {},
+            is_hbm_initial_draft=_is_hbm_initial_draft_scope(scope_type, scope_id),
+        ),
         "updated_at": current.get("updated_at") or now,
     }
 
@@ -1183,7 +1194,10 @@ def save_overview_structured_preview(scope_type: str, scope_id: str, draft_block
 
 def save_overview_draft_theme_schema(scope_type: str, scope_id: str, schema: dict[str, Any] | None) -> dict[str, Any]:
     record, items, index = _get_or_create_overview_record(scope_type, scope_id)
-    record["draft_theme_schema"] = normalize_industry_draft_canvas(schema)
+    record["draft_theme_schema"] = normalize_industry_draft_canvas(
+        schema,
+        is_hbm_initial_draft=_is_hbm_initial_draft_scope(scope_type, scope_id),
+    )
     record["updated_at"] = _now_iso()
     items[index] = record
     _save_overview_workbench(items)
