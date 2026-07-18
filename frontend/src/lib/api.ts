@@ -591,7 +591,7 @@ export interface OverviewBuildResult {
   target: string;
   sources_count: number;
   modules: SectorModule[] | StockModule[];
-  draft_theme_schema?: HBMDraftDashboardData;
+  draft_theme_schema?: HBMDraftDashboardData | IndustryDraftCanvasSchema;
 }
 
 export interface IndustryDraftBlock {
