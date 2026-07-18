@@ -401,6 +401,10 @@ def test_event_probability_cards_render_probability_and_judgment():
     assert "const EVENT_PROBABILITY_SORT_OPTIONS = [" in intel
     assert "setEventPrioritySort(option.key)" in intel
     assert "sortedEventProbabilityEvents.map((item) => (" in intel
+    assert "readJson<EventPrioritySortKey>(\"intel-event-priority-sort\", \"rank\")" in intel
+    assert "writeJson(\"intel-event-priority-sort\", eventPrioritySort)" in intel
+    assert "eventPrioritySort === \"category\" ? eventProbabilityCategoryGroups.map((group) => (" in intel
+    assert "eventProbabilityCategoryDescription(group.category)" in intel
     assert "重点事件总数" in intel
     assert "接口接入概览" in intel
     assert "eventProbabilityStatusLabel(item.status)" in intel
