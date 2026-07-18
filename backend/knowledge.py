@@ -193,6 +193,44 @@ def normalize_structured_render_blocks(blocks: list[dict[str, Any]] | None) -> l
     ]
 
 
+def normalize_industry_draft_canvas(schema: dict[str, Any] | None) -> dict[str, Any]:
+    raw = deepcopy(schema or {})
+    if raw.get("kind") != "industry_draft_canvas":
+        return raw
+    raw["version"] = str(raw.get("version") or "v1")
+    raw["scope"] = str(raw.get("scope") or "")
+    tabs: list[dict[str, Any]] = []
+    for index, tab in enumerate(raw.get("tabs") or []):
+        if not isinstance(tab, dict):
+            continue
+        cards: list[dict[str, Any]] = []
+        for card_index, card in enumerate(tab.get("cards") or []):
+            if not isinstance(card, dict):
+                continue
+            cards.append(
+                {
+                    "id": str(card.get("id") or f"card-{index}-{card_index}"),
+                    "type": str(card.get("type") or "summary_hero"),
+                    "title": str(card.get("title") or ""),
+                    "layout": str(card.get("layout") or ""),
+                    "content": deepcopy(card.get("content") or {}),
+                    "sources": [str(item) for item in (card.get("sources") or []) if str(item).strip()],
+                    "footnote": str(card.get("footnote") or ""),
+                    "style_variant": str(card.get("style_variant") or ""),
+                }
+            )
+        tabs.append(
+            {
+                "id": str(tab.get("id") or f"tab-{index}"),
+                "title": str(tab.get("title") or "未命名栏目"),
+                "cards": cards,
+            }
+        )
+    raw["tabs"] = tabs
+    raw["meta"] = deepcopy(raw.get("meta") or {})
+    return raw
+
+
 def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, Any] | None = None) -> dict[str, Any]:
     now = _now_iso()
     current = deepcopy(record or {})
@@ -1118,7 +1156,7 @@ def save_overview_structured_preview(scope_type: str, scope_id: str, draft_block
 
 def save_overview_draft_theme_schema(scope_type: str, scope_id: str, schema: dict[str, Any] | None) -> dict[str, Any]:
     record, items, index = _get_or_create_overview_record(scope_type, scope_id)
-    record["draft_theme_schema"] = deepcopy(schema or {})
+    record["draft_theme_schema"] = normalize_industry_draft_canvas(schema)
     record["updated_at"] = _now_iso()
     items[index] = record
     _save_overview_workbench(items)

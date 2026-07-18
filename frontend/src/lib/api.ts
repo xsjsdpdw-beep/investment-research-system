@@ -569,6 +569,31 @@ export interface OverviewBuildResult {
   draft_theme_schema?: HBMDraftDashboardData;
 }
 
+export interface IndustryDraftCanvasCard {
+  id: string;
+  type: "summary_hero" | "metric_grid" | "range_band" | "comparison_cards" | "timeline";
+  title?: string;
+  layout?: string;
+  content: Record<string, unknown>;
+  sources?: string[];
+  footnote?: string;
+  style_variant?: string;
+}
+
+export interface IndustryDraftCanvasTab {
+  id: string;
+  title: string;
+  cards: IndustryDraftCanvasCard[];
+}
+
+export interface IndustryDraftCanvasSchema {
+  kind: "industry_draft_canvas";
+  version: string;
+  scope: string;
+  tabs: IndustryDraftCanvasTab[];
+  meta?: Record<string, unknown>;
+}
+
 export interface HBMDraftMetric {
   label: string;
   value: string;
@@ -749,7 +774,7 @@ export interface OverviewWorkbench {
   deep_cards: OverviewDeepCard[];
   draft_structured_blocks?: StructuredRenderBlock[];
   deep_structured_blocks?: StructuredRenderBlock[];
-  draft_theme_schema?: HBMDraftDashboardData;
+  draft_theme_schema?: HBMDraftDashboardData | IndustryDraftCanvasSchema;
   candidates: OverviewCandidate[];
   versions: OverviewVersion[];
   editor_binding?: OverviewEditorBinding;
@@ -1059,6 +1084,11 @@ export const api = {
     scope_id: string;
     draft: OverviewWorkbench["draft"];
   }) => request<OverviewWorkbench>("/research/overview-workbench/draft", "POST", payload),
+  saveOverviewDraftThemeSchema: (payload: {
+    scope_type: "sector" | "stock";
+    scope_id: string;
+    schema: IndustryDraftCanvasSchema | Record<string, unknown>;
+  }) => request<OverviewWorkbench>("/research/overview-workbench/draft-theme-schema", "POST", payload),
   saveOverviewDeepCards: (payload: {
     scope_type: "sector" | "stock";
     scope_id: string;

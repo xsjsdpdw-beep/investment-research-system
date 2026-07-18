@@ -17,7 +17,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import astock
 import chat as chat_layer
@@ -222,6 +222,10 @@ class OverviewDraftIn(OverviewWorkbenchQueryIn):
     draft: dict[str, Any]
 
 
+class OverviewDraftThemeSchemaIn(OverviewWorkbenchQueryIn):
+    draft_theme_schema: dict[str, Any] = Field(default_factory=dict, alias="schema")
+
+
 class OverviewDeepCardsIn(OverviewWorkbenchQueryIn):
     cards: list[dict[str, Any]]
 
@@ -389,9 +393,29 @@ def _should_invalidate_youdao_binding(error: Exception) -> bool:
 
 def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_id: str) -> dict:
     data = knowledge.get_overview_workbench(scope_type, scope_id)
+    needs_hbm_schema = (
+        scope_type == "sector"
+        and research_hub.is_hbm_sector(scope_id)
+        and (data.get("draft_theme_schema") or {}).get("kind") != "hbm_draft_dashboard"
+    )
+
+    def hydrate_hbm_schema(sources: list[dict] | None = None) -> None:
+        nonlocal data, needs_hbm_schema
+        if not needs_hbm_schema:
+            return
+        resolved_sources = sources or research_hub._sector_sources(scope_id)
+        schema = research_hub.build_hbm_draft_dashboard(scope_id, resolved_sources)
+        saved = knowledge.save_overview_draft_theme_schema(scope_type, scope_id, schema)
+        data["draft_theme_schema"] = saved.get("draft_theme_schema") or schema
+        data["updated_at"] = saved.get("updated_at") or data.get("updated_at", "")
+        needs_hbm_schema = False
+
     binding = data.get("editor_binding") or {}
     file_id = (binding.get("file_id") or "").strip()
+    if needs_hbm_schema and (data.get("sources") or []):
+        hydrate_hbm_schema(data.get("sources") or [])
     if not file_id:
+        hydrate_hbm_schema()
         return data
     try:
         note = youdao_sync.read_note(file_id)
@@ -400,11 +424,17 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
             reset = knowledge.clear_overview_editor_binding(scope_type, scope_id, "已检测到有道主笔记失效，当前已回到未绑定状态。")
             data["editor_binding"] = reset
             data["updated_at"] = reset.get("updated_at") or data.get("updated_at", "")
+            hydrate_hbm_schema()
             return data
         raise
     binding["content"] = note["content"]
     binding["preview"] = note["content"].replace("\n", " ")[:240]
     data["editor_binding"] = binding
+    if needs_hbm_schema:
+        sources = data.get("sources") or []
+        if not sources and note["content"].strip():
+            sources = [{"label": binding.get("title") or file_id, "text": note["content"]}]
+        hydrate_hbm_schema(sources)
     should_refresh_structured = not (data.get("deep_structured_blocks") or [])
     if binding.get("provider") == "youdao" and binding.get("structured_parser_version") != research_ingest.YOUDAO_STRUCTURED_VERSION:
         should_refresh_structured = True
@@ -687,6 +717,14 @@ def research_overview_workbench(scope_type: Literal["sector", "stock"] = Query(.
 def research_overview_workbench_save_draft(payload: OverviewDraftIn):
     try:
         return {"data": knowledge.save_overview_draft(payload.scope_type, payload.scope_id, payload.draft)}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/overview-workbench/draft-theme-schema")
+def research_overview_workbench_save_draft_theme_schema(payload: OverviewDraftThemeSchemaIn):
+    try:
+        return {"data": knowledge.save_overview_draft_theme_schema(payload.scope_type, payload.scope_id, payload.draft_theme_schema)}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
