@@ -9,6 +9,8 @@ import {
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
+  buildComparisonTableRows,
+  getComparisonTableHeaders,
   normalizeComparisonTableRows,
   normalizeIndustryDraftCanvasInput,
   removeIndustryDraftBlock,
@@ -72,6 +74,23 @@ test("normalizeComparisonTableRows preserves legacy columns with array rows", ()
   const rows = normalizeComparisonTableRows([["层数", "16Hi"]], ["项目", "HBM3E"]);
 
   assert.deepEqual(rows, [{ cells: ["层数", "16Hi"], kind: "row" }]);
+});
+
+test("comparison table helpers preserve an in-row header separately from editable body rows", () => {
+  const sourceRows = [
+    { kind: "header", cells: ["项目", "HBM3E"] },
+    { kind: "row", cells: ["层数", "16Hi"] },
+  ];
+  const headers = getComparisonTableHeaders({ rows: sourceRows });
+  const bodyRows = normalizeComparisonTableRows(sourceRows, headers);
+  const savedRows = buildComparisonTableRows(["项目", "HBM4"], bodyRows);
+
+  assert.deepEqual(headers, ["项目", "HBM3E"]);
+  assert.deepEqual(bodyRows, [{ cells: ["层数", "16Hi"], kind: "row" }]);
+  assert.deepEqual(savedRows, [
+    { cells: ["项目", "HBM4"], kind: "header" },
+    { cells: ["层数", "16Hi"], kind: "row" },
+  ]);
 });
 
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {

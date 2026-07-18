@@ -158,17 +158,36 @@ function nextIndustryDraftBlockId(blocks: IndustryDraftBlock[]) {
   return `block-${index}`;
 }
 
+export function getComparisonTableHeaders(spec: Record<string, unknown>) {
+  const explicitHeaders = Array.isArray(spec.headers)
+    ? spec.headers.map(String)
+    : Array.isArray(spec.columns)
+      ? spec.columns.map(String)
+      : [];
+  if (explicitHeaders.length) return explicitHeaders;
+  const headerRow = Array.isArray(spec.rows)
+    ? spec.rows.find((row) => row && typeof row === "object" && !Array.isArray(row) && row.kind === "header" && Array.isArray(row.cells)) as Record<string, unknown> | undefined
+    : undefined;
+  return Array.isArray(headerRow?.cells) ? headerRow.cells.map(String) : [];
+}
+
 export function normalizeComparisonTableRows(value: unknown, headers: string[]) {
   if (!Array.isArray(value)) return [];
-  return value.map((row) => {
+  return value.flatMap((row) => {
     const data = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
+    if (data.kind === "header") return [];
     const cells = Array.isArray(row)
       ? row
       : Array.isArray(data.cells)
         ? data.cells
         : headers.map((header) => data[header] ?? "");
-    return { cells: cells.map(String), kind: "row" };
+    return [{ cells: cells.map(String), kind: "row" }];
   });
+}
+
+export function buildComparisonTableRows(headers: string[], bodyRows: unknown) {
+  const rows = normalizeComparisonTableRows(bodyRows, headers);
+  return headers.length ? [{ cells: headers, kind: "header" }, ...rows] : rows;
 }
 
 export function appendIndustryDraftBlock(

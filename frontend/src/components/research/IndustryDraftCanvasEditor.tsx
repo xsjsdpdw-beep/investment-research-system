@@ -1,6 +1,6 @@
 import type { IndustryDraftBlock, IndustryDraftCanvasTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { normalizeComparisonTableRows } from "./industry-draft-canvas";
+import { buildComparisonTableRows, getComparisonTableHeaders, normalizeComparisonTableRows } from "./industry-draft-canvas";
 
 function EditorInput({
   value,
@@ -298,8 +298,8 @@ function ComparisonTableEditor({
   card: IndustryDraftBlock;
   onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const headers = readSpecArray(card.spec.headers || card.spec.columns).map(String);
-  const rows = normalizeComparisonTableRows(card.spec.rows, headers);
+  const headers = getComparisonTableHeaders(card.spec);
+  const bodyRows = normalizeComparisonTableRows(card.spec.rows, headers);
   return (
     <div className="space-y-3">
       <EditorInput
@@ -307,20 +307,28 @@ function ComparisonTableEditor({
         placeholder="表头，使用 | 分隔"
         onChange={(value) => {
           const nextHeaders = value.split("|").map((item) => item.trim()).filter(Boolean);
-          onChange({ ...card, spec: { ...card.spec, headers: nextHeaders, columns: nextHeaders } });
+          onChange({
+            ...card,
+            spec: {
+              ...card.spec,
+              headers: nextHeaders,
+              columns: nextHeaders,
+              rows: buildComparisonTableRows(nextHeaders, bodyRows),
+            },
+          });
         }}
       />
       <EditorTextarea
-        value={rows.map((row) => row.cells.join(" | ")).join("\n")}
+        value={bodyRows.map((row) => row.cells.join(" | ")).join("\n")}
         placeholder="每行一条记录，单元格使用 | 分隔"
         onChange={(value) => onChange({
           ...card,
           spec: {
             ...card.spec,
             headers,
-            rows: normalizeComparisonTableRows(
-              value.split("\n").filter((line) => line.trim()).map((line) => line.split("|").map((cell) => cell.trim())),
+            rows: buildComparisonTableRows(
               headers,
+              value.split("\n").filter((line) => line.trim()).map((line) => line.split("|").map((cell) => cell.trim())),
             ),
           },
         })}
