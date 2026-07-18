@@ -115,6 +115,7 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
     children: [
       { key: "fundamental", label: "基本面" },
       { key: "liquidity", label: "流动性" },
+      { key: "event-probability", label: "事件概率" },
     ],
   },
   {
@@ -147,6 +148,7 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
 export const INTEL_TABS: SubtabConfig[] = [
   { key: "fundamental", label: "基本面", description: "宏观、行业、个股、地缘" },
   { key: "liquidity", label: "流动性", description: "复盘、利率、商品" },
+  { key: "event-probability", label: "事件概率", description: "事件观察、催化清单、数据接口" },
 ];
 
 export const FRAMEWORK_TABS: SubtabConfig[] = [

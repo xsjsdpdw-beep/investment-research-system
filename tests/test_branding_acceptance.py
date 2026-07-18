@@ -326,6 +326,17 @@ def test_vertical_left_nav_supports_drag_sort_and_is_used_by_core_pages():
     assert 'draggableStorageKey="framework-learning-object-order"' in framework
 
 
+def test_intel_event_probability_shell_is_registered():
+    workspace = read("frontend/src/lib/workspace.ts")
+    intel = read("frontend/src/pages/Intel.tsx")
+    api_types = read("frontend/src/lib/api.ts")
+
+    assert '{ key: "event-probability", label: "事件概率" }' in workspace
+    assert 'draggableStorageKey="intel-event-probability-view-order"' in intel
+    assert "const EVENT_PROBABILITY_VIEW_TABS = [" in intel
+    assert "event_probability:" in api_types
+
+
 def test_local_docs_point_to_service_lifecycle_helpers():
     readme = read("README.md")
     local_notes = read("docs/local-adoption-notes.md")

@@ -28,6 +28,12 @@ const LIQUIDITY_VIEW_TABS = [
   { key: "commodities", label: "核心大宗商品" },
 ];
 
+const EVENT_PROBABILITY_VIEW_TABS = [
+  { key: "overview", label: "总览" },
+  { key: "priority-events", label: "重点事件" },
+  { key: "sources", label: "数据接口" },
+];
+
 const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIcon }> = [
   { key: "tech", label: "全球科技头条", icon: Globe2 },
   { key: "macro", label: "宏观事件", icon: Lightbulb },
@@ -188,6 +194,7 @@ export function Intel() {
   const [active, setActive] = useState("fundamental");
   const [fundamentalView, setFundamentalView] = useState("overview");
   const [liquidityView, setLiquidityView] = useState("daily");
+  const [eventProbabilityView, setEventProbabilityView] = useState("overview");
   const [hub, setHub] = useState<ResearchHubData | null>(null);
   const [marketOverview, setMarketOverview] = useState<MarketOverview | null>(null);
   const [globalIndices, setGlobalIndices] = useState<GlobalIndex[]>([]);
@@ -323,6 +330,12 @@ export function Intel() {
   const geopoliticalGroups = hub?.fundamental.geopolitics.groups ?? [];
   const liquidityIndicators = hub?.liquidity.indicators ?? [];
   const liquidityCommodities = hub?.liquidity.commodities ?? [];
+  const eventProbability = hub?.event_probability ?? {
+    summary: { title: "事件概率体系入口", description: "当前先接结构化骨架。", updated_at: "" },
+    planned_modules: [],
+    priority_events: [],
+    source_interfaces: [],
+  };
   const defaultSources = useMemo(() => buildDefaultSources(hub), [hub]);
   const moduleTopics = useMemo(() => ({
     tech: (radarConfig?.industries ?? []).filter((item) => item.module === "tech"),
@@ -1016,7 +1029,7 @@ export function Intel() {
     <div>
       <PageHeader
         title="投研资讯"
-        subtitle="把基本面和流动性拆开管理，既能追踪最新信息，也能保留给 AI 做统一提炼。"
+        subtitle="把基本面、流动性和事件概率拆开管理，既能追踪最新信息，也能给后续 AI 研判留出独立入口。"
         actions={
           <button
             onClick={() => void load()}
@@ -1054,7 +1067,7 @@ export function Intel() {
             )}
             {fundamentalView !== "overview" && selectedFundamentalModule && renderFundamentalCard(selectedFundamentalModule.key)}
           </div>
-        ) : (
+        ) : active === "liquidity" ? (
           <div className="space-y-4">
             <SectionTabs tabs={LIQUIDITY_VIEW_TABS} active={liquidityView} onChange={setLiquidityView} draggableStorageKey="intel-liquidity-view-order" />
             {(liquidityView === "daily") && (
@@ -1130,6 +1143,64 @@ export function Intel() {
                   </GlassCard>
                 )}
               </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <SectionTabs
+              tabs={EVENT_PROBABILITY_VIEW_TABS}
+              active={eventProbabilityView}
+              onChange={setEventProbabilityView}
+              draggableStorageKey="intel-event-probability-view-order"
+            />
+            {eventProbabilityView === "overview" && (
+              <GlassCard glow>
+                <div className="mb-2 flex items-center gap-2 text-primary"><Lightbulb className="h-4 w-4" /> {eventProbability.summary.title}</div>
+                <p className="text-sm text-muted-foreground">{eventProbability.summary.description}</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {eventProbability.planned_modules.map((item) => (
+                    <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                      <p className="text-sm font-medium">{item.label}</p>
+                      <p className="mt-1 text-xs text-primary">{item.status}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            )}
+            {eventProbabilityView === "priority-events" && (
+              <GlassCard>
+                <h3 className="mb-3 font-semibold">重点事件</h3>
+                <div className="space-y-3">
+                  {eventProbability.priority_events.map((item) => (
+                    <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{item.title}</p>
+                        <span className="text-xs text-primary">{item.status}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            )}
+            {eventProbabilityView === "sources" && (
+              <GlassCard>
+                <h3 className="mb-3 font-semibold">数据接口</h3>
+                <div className="space-y-3">
+                  {eventProbability.source_interfaces.map((item) => (
+                    <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{item.label}</p>
+                        <span className="text-xs text-primary">{item.status}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.provider}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
             )}
           </div>
         )}

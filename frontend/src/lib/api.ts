@@ -329,6 +329,35 @@ export interface WatchlistData {
   updated_at: string;
 }
 
+export interface EventProbabilitySummary {
+  title: string;
+  description: string;
+  updated_at: string;
+}
+
+export interface EventProbabilityModule {
+  key: string;
+  label: string;
+  description: string;
+  status: string;
+}
+
+export interface EventProbabilityItem {
+  key: string;
+  title: string;
+  category: string;
+  status: string;
+  note: string;
+}
+
+export interface EventProbabilitySource {
+  key: string;
+  label: string;
+  provider: string;
+  status: string;
+  note: string;
+}
+
 export interface ResearchHubData {
   generated_at: string;
   fundamental: {
@@ -377,6 +406,12 @@ export interface ResearchHubData {
     daily_review: { summary: string; etf_placeholder: string };
     indicators: { key: string; label: string; insight: string }[];
     commodities: { key: string; label: string; insight: string }[];
+  };
+  event_probability: {
+    summary: EventProbabilitySummary;
+    planned_modules: EventProbabilityModule[];
+    priority_events: EventProbabilityItem[];
+    source_interfaces: EventProbabilitySource[];
   };
   framework: {
     sector_focus: KnowledgeEntry[];
