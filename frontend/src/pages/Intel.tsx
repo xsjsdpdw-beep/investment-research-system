@@ -2,6 +2,7 @@ import { type DragEvent, useEffect, useMemo, useState } from "react";
 import { type LucideIcon, ArrowUpRight, BarChart3, ChevronDown, ChevronUp, FileImage, Globe2, GripVertical, Lightbulb, Newspaper, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AskAiButton } from "@/components/ui/AskAiButton";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -20,6 +21,7 @@ const FUNDAMENTAL_VIEW_TABS = [
   { key: "industry", label: "行业动态" },
   { key: "stock", label: "个股动态" },
   { key: "geopolitics", label: "地缘政治" },
+  { key: "hiring", label: "招聘雷达" },
 ];
 
 const LIQUIDITY_VIEW_TABS = [
@@ -40,9 +42,10 @@ const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIc
   { key: "industry", label: "行业动态", icon: BarChart3 },
   { key: "stock", label: "个股动态", icon: Newspaper },
   { key: "geopolitics", label: "地缘政治", icon: Globe2 },
+  { key: "hiring", label: "招聘雷达", icon: Globe2 },
 ];
 
-type IntelKind = "tech" | "macro" | "industry" | "stock" | "geopolitics";
+type IntelKind = "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring";
 
 type ModuleSource = {
   id: string;
@@ -126,6 +129,7 @@ function moduleAccent(kind: IntelKind) {
   if (kind === "macro") return "#eab308";
   if (kind === "industry") return "#14b8a6";
   if (kind === "stock") return "#fb7185";
+  if (kind === "hiring") return "#f97316";
   return "#ef4444";
 }
 
@@ -153,6 +157,9 @@ function buildDefaultSources(hub: ResearchHubData | null): SourceRecord {
     ]),
     geopolitics: uniqueById([
       { id: "geopolitics-public-feed", label: "地缘政治公开源", provider: "public_news", note: "承接公开地缘事件、区域冲突、政策博弈等信息流。", enabled: true },
+    ]),
+    hiring: uniqueById([
+      { id: "hiring-radar-upstream", label: "Hiring-Radar 官方脚本", provider: "official_upstream", note: "优先调用本地仓库，缺失时回退到官方脚本抓取全球招聘信号。", enabled: true },
     ]),
   };
 }
@@ -183,10 +190,22 @@ function buildDigestPreview(kind: IntelKind, hub: ResearchHubData | null) {
       .map((item) => `${item.name}：${(item.highlights ?? []).slice(0, 1).join("；") || "有新动态"}`)
       .join("；");
   }
+  if (kind === "hiring") {
+    return (hub.fundamental.hiring_radar?.items ?? [])
+      .slice(0, 4)
+      .map((item) => `${item.company}：${item.title}`)
+      .join("；");
+  }
   return (hub.fundamental.geopolitics.items ?? [])
     .slice(0, 4)
     .map((item) => `${item.title}：${item.summary}`)
     .join("；");
+}
+
+function formatRadarUpdatedAt(value: string | null) {
+  if (!value) return "资讯更新时间未知";
+  const normalized = value.includes("T") ? value.replace("T", " ") : value;
+  return `资讯更新于 ${normalized.slice(0, 16)}`;
 }
 
 export function Intel() {
@@ -203,6 +222,7 @@ export function Intel() {
   const [busyKind, setBusyKind] = useState<IntelKind | "">("");
   const [overviewBusy, setOverviewBusy] = useState<"" | "digest" | "artifact">("");
   const [refreshState, setRefreshState] = useState<"" | "loading" | "success">("");
+  const [radarUpdatedAt, setRadarUpdatedAt] = useState<string | null>(null);
   const [draggingModule, setDraggingModule] = useState<IntelKind | "">("");
   const [moduleDropIndicator, setModuleDropIndicator] = useState<DropIndicator<IntelKind>>(null);
   const [stockFeedItems, setStockFeedItems] = useState<StockFeedItem[]>([]);
@@ -219,6 +239,7 @@ export function Intel() {
     industry: true,
     stock: true,
     geopolitics: false,
+    hiring: false,
   }));
   const [sourceDrafts, setSourceDrafts] = useState<SourceDraftRecord>({
     tech: { label: "", provider: "rss", note: "", topicKey: "" },
@@ -226,6 +247,7 @@ export function Intel() {
     industry: { label: "", provider: "rss", note: "", topicKey: "" },
     stock: { label: "", provider: "rss", note: "", topicKey: "" },
     geopolitics: { label: "", provider: "rss", note: "", topicKey: "" },
+    hiring: { label: "", provider: "manual", note: "", topicKey: "" },
   });
   const [topicDrafts, setTopicDrafts] = useState<TopicDraftRecord>({
     tech: "",
@@ -233,6 +255,7 @@ export function Intel() {
     industry: "",
     stock: "",
     geopolitics: "",
+    hiring: "",
   });
   const [focuses, setFocuses] = useState<FocusRecord>(() => readJson<FocusRecord>("intel-focuses", {
     industry: [],
@@ -254,11 +277,16 @@ export function Intel() {
         turnover,
         configData,
         stockFeeds,
+        radarGeneratedAt,
       } = await runIntelRefresh({
         forceRadarRefresh: !silent,
         refreshRadar: async () => {
-          await api.radarRefresh();
+          return await api.radarRefresh();
         },
+        refreshHiringRadar: async () => {
+          return await api.hiringRadarRefresh();
+        },
+        loadRadar: () => api.radar().catch(() => ({ generated_at: null, recent_days: 7, industries: [], stats: { industries: 0, total_sources: 0 } })),
         loadHub: () => api.researchHub(),
         loadMarketOverview: () => api.marketOverview().catch(() => null),
         loadGlobalIndices: () => api.globalIndices().catch(() => []),
@@ -273,6 +301,7 @@ export function Intel() {
       setGlobalIndices(globals);
       setTurnoverTop(turnover);
       setStockFeedItems(stockFeeds as StockFeedItem[]);
+      setRadarUpdatedAt(radarGeneratedAt);
       setRadarConfig(configData || hubData.fundamental.news_source_config);
       if (!silent) {
         setRefreshState("success");
@@ -328,6 +357,7 @@ export function Intel() {
   const stockTopics = hub?.fundamental.stock_topics ?? [];
   const geopoliticalItems = hub?.fundamental.geopolitics.items ?? [];
   const geopoliticalGroups = hub?.fundamental.geopolitics.groups ?? [];
+  const hiringRadar = hub?.fundamental.hiring_radar ?? { title: "招聘雷达", summary: "", updated_at: "", companies: [], source: "Hiring-Radar", items: [] };
   const liquidityIndicators = hub?.liquidity.indicators ?? [];
   const liquidityCommodities = hub?.liquidity.commodities ?? [];
   const eventProbability = hub?.event_probability ?? {
@@ -343,6 +373,7 @@ export function Intel() {
     industry: (radarConfig?.industries ?? []).filter((item) => item.module === "industry"),
     stock: (radarConfig?.industries ?? []).filter((item) => item.module === "stock"),
     geopolitics: (radarConfig?.industries ?? []).filter((item) => item.module === "geopolitics"),
+    hiring: [],
   }), [radarConfig]);
   const availableIndustryNames = useMemo(() => industryDynamics.map((item) => item.name), [industryDynamics]);
   const availableStockNames = useMemo(() => (
@@ -350,6 +381,24 @@ export function Intel() {
       ? stockFeedItems.map((item) => `${item.name} (${item.ticker})`)
       : stockDynamics.map((item) => `${item.name} (${item.ticker})`)
   ), [stockDynamics, stockFeedItems]);
+  const liquidityDailyAiContext = useMemo(() => {
+    const summary = hub?.liquidity.daily_review.summary || "今日复盘摘要待更新";
+    const etf = hub?.liquidity.daily_review.etf_placeholder || "国家队 ETF 线索待更新";
+    const globals = globalIndices.length
+      ? globalIndices.map((item) => `${item.name} ${item.price ?? "—"}（${item.change_pct == null ? "—" : `${item.change_pct > 0 ? "+" : ""}${item.change_pct}%`}）`).join("；")
+      : "暂无全球市场数据";
+    const breadth = `A股涨跌家数：${marketOverview?.sentiment.up ?? "—"} / ${marketOverview?.sentiment.down ?? "—"}`;
+    const sectors = marketOverview?.sectors?.slice(0, 3).map((item) => `${item.name}${item.pct > 0 ? "+" : ""}${item.pct}%`).join("；") || "暂无行业资金流数据";
+    const turnover = turnoverTop?.stocks?.slice(0, 8).map((item) => `${item.name}(${item.code})`).join("；") || "暂无成交额榜单";
+    return [
+      `今日复盘摘要：${summary}`,
+      `全球市场：${globals}`,
+      breadth,
+      `行业资金流：${sectors}`,
+      `国家队ETF：${etf}`,
+      `Top20成交额样本：${turnover}`,
+    ].join("\n");
+  }, [globalIndices, hub?.liquidity.daily_review.etf_placeholder, hub?.liquidity.daily_review.summary, marketOverview?.sectors, marketOverview?.sentiment.down, marketOverview?.sentiment.up, turnoverTop?.stocks]);
 
   useEffect(() => {
     if (availableIndustryNames.length === 0) return;
@@ -448,7 +497,7 @@ export function Intel() {
         next[item.key] = await api.generateIntelDigest(item.key);
       }
       setIntelDigests((prev) => ({ ...prev, ...next }));
-      toast.success("五类基本面要点已一键提炼");
+      toast.success("六类基本面要点已一键提炼");
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "总览提炼失败");
     } finally {
@@ -462,7 +511,7 @@ export function Intel() {
       for (const item of FUNDAMENTAL_MODULES) {
         await api.generateIntelImageArtifact(item.key);
       }
-      toast.success("五类基本面图片请求已生成");
+      toast.success("六类基本面图片请求已生成");
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "总览图片请求生成失败");
     } finally {
@@ -476,6 +525,7 @@ export function Intel() {
   };
 
   const addSource = async (kind: IntelKind) => {
+    if (kind === "hiring") return;
     if (!radarConfig) return;
     const draft = sourceDrafts[kind];
     if (!draft.label.trim()) {
@@ -517,6 +567,7 @@ export function Intel() {
   };
 
   const addTopic = (kind: IntelKind) => {
+    if (kind === "hiring") return;
     if (!radarConfig) return;
     const value = topicDrafts[kind].trim();
     if (!value) {
@@ -610,6 +661,15 @@ export function Intel() {
         enabled: true,
       }));
     }
+    if (kind === "hiring") {
+      return (hiringRadar.companies ?? []).map((company, index) => ({
+        id: `runtime-hiring-${index}`,
+        label: company,
+        provider: hiringRadar.source || "Hiring-Radar",
+        note: "当前招聘雷达跟踪的公司池",
+        enabled: true,
+      }));
+    }
     const grouped = Array.from(new Set(geopoliticalItems.map((item) => item.source).filter((item): item is string => Boolean(item))));
     return grouped.map((source, index) => ({
       id: `runtime-geopolitics-${index}`,
@@ -621,6 +681,7 @@ export function Intel() {
   };
 
   const buildConfiguredSources = (kind: IntelKind): ModuleSource[] => {
+    if (kind === "hiring") return [];
     const topicMap = new Map(moduleTopics[kind].map((item) => [item.key, item.name]));
     return (radarConfig?.sources ?? [])
       .filter((item) => topicMap.has(item.hint))
@@ -815,6 +876,17 @@ export function Intel() {
         </div>
       );
     }
+    if (kind === "hiring") {
+      return renderNewsFrontPage(hiringRadar.title || "招聘雷达", (hiringRadar.items ?? []).map((item) => ({
+        id: `${item.company}-${item.url || item.title}-${item.time}`,
+        time: item.time,
+        title: `${item.company} · ${item.title}`,
+        subtitle: item.summary || item.location,
+        source: item.source || hiringRadar.source,
+        topic: item.location,
+        url: item.url,
+      })));
+    }
     return (
       <div className="space-y-3">
         {geopoliticalGroups.length > 0 && (
@@ -839,6 +911,36 @@ export function Intel() {
 
   const renderSourcePanel = (kind: IntelKind) => {
     const sources = uniqueById([...buildRuntimeSources(kind), ...buildConfiguredSources(kind), ...defaultSources[kind]]);
+    if (kind === "hiring") {
+      return (
+        <div className="rounded-xl border border-border/40 bg-black/10">
+          <button
+            onClick={() => setSourcePanels((prev) => ({ ...prev, [kind]: !prev[kind] }))}
+            className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left"
+          >
+            <div>
+              <p className="text-sm font-medium">信息源接口</p>
+              <p className="mt-1 text-xs text-muted-foreground">当前版本直接复用 Hiring-Radar，先不在页面内维护主题和 RSS。</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {sources.length} 个
+              {sourcePanels[kind] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </button>
+          {sourcePanels[kind] && (
+            <div className="space-y-2 border-t border-border/30 px-3 py-3">
+              {sources.map((item) => (
+                <div key={item.id} className="rounded-lg border border-border/30 bg-muted/20 px-3 py-3 text-sm">
+                  <p className="font-medium">{item.label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.provider}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="rounded-xl border border-border/40 bg-black/10">
         <button
@@ -1031,14 +1133,17 @@ export function Intel() {
         title="投研资讯"
         subtitle="把基本面、流动性和事件概率拆开管理，既能追踪最新信息，也能给后续 AI 研判留出独立入口。"
         actions={
-          <button
-            onClick={() => void load()}
-            disabled={refreshState === "loading"}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            <RefreshCw className={cn("h-4 w-4", refreshState === "loading" && "animate-spin", refreshState === "success" && "text-primary")} />
-            {refreshState === "loading" ? "刷新中..." : refreshState === "success" ? "刚刚更新" : "刷新"}
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">{formatRadarUpdatedAt(radarUpdatedAt)}</span>
+            <button
+              onClick={() => void load()}
+              disabled={refreshState === "loading"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshState === "loading" && "animate-spin", refreshState === "success" && "text-primary")} />
+              {refreshState === "loading" ? "刷新中..." : refreshState === "success" ? "刚刚更新" : "刷新"}
+            </button>
+          </div>
         }
       />
       <div className="space-y-4">
@@ -1049,10 +1154,10 @@ export function Intel() {
               <>
                 <GlassCard glow>
                   <div className="mb-2 flex items-center gap-2 text-primary"><Lightbulb className="h-4 w-4" /> 要点总览</div>
-                  <p className="text-sm text-muted-foreground">这一页保留五类基本面的统一要点入口，可以一键提炼后面 5 个模块的要点，并统一生成图片请求。</p>
+                  <p className="text-sm text-muted-foreground">这一页保留六类基本面的统一要点入口，可以一键提炼后面 6 个模块的要点，并统一生成图片请求。</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button onClick={() => void generateOverviewDigests()} disabled={overviewBusy !== ""} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-primary disabled:opacity-60">
-                      <Sparkles className="h-4 w-4" /> {overviewBusy === "digest" ? "提炼中..." : "一键提炼 5 类要点"}
+                      <Sparkles className="h-4 w-4" /> {overviewBusy === "digest" ? "提炼中..." : "一键提炼 6 类要点"}
                     </button>
                     <button onClick={() => void generateOverviewArtifacts()} disabled={overviewBusy !== ""} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-60">
                       <FileImage className="h-4 w-4" /> {overviewBusy === "artifact" ? "生成中..." : "一键生成图片请求"}
@@ -1072,7 +1177,14 @@ export function Intel() {
             <SectionTabs tabs={LIQUIDITY_VIEW_TABS} active={liquidityView} onChange={setLiquidityView} draggableStorageKey="intel-liquidity-view-order" />
             {(liquidityView === "daily") && (
               <GlassCard>
-                <h3 className="mb-3 font-semibold">每日复盘</h3>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">每日复盘</h3>
+                  <AskAiButton
+                    context={liquidityDailyAiContext}
+                    label="问 AI"
+                    suggestions={["今天市场情绪怎么样", "资金主要流向了哪些方向", "今天复盘最值得关注的信号是什么"]}
+                  />
+                </div>
                 <p className="mb-4 text-sm text-muted-foreground">{hub?.liquidity.daily_review.summary || "今日复盘摘要加载后会显示在这里。"}</p>
                 <div className="grid gap-3 md:grid-cols-5">
                   {globalIndices.map((item) => (
@@ -1176,9 +1288,13 @@ export function Intel() {
                     <div key={item.key} className="rounded-xl border border-border/40 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="font-medium">{item.title}</p>
-                        <span className="text-xs text-primary">{item.status}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.probability_label}</span>
+                          <span className="text-xs text-primary">{item.status}</span>
+                        </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
+                      <p className="mt-2 text-sm">{item.judgment}</p>
                       <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
                     </div>
                   ))}

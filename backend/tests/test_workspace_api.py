@@ -177,15 +177,35 @@ def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_cl
         "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
         "indicators": [],
     })
+    workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械催化跟踪",
+        "type": "sector_profile",
+        "content": "下周重点看挖机销量、出口订单和政策催化验证，若数据延续改善，行业预期有继续上修空间。",
+        "related_sectors": ["工程机械"],
+    })
+    workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械周度催化",
+        "type": "weekly_review",
+        "content": "工程机械板块接下来重点跟踪销量验证、政策窗口和龙头公司财报催化。",
+        "related_sectors": ["工程机械"],
+        "related_stocks": ["000425.SZ"],
+    })
 
     hub = workspace_client.get("/api/research/hub")
     assert hub.status_code == 200
 
     events = hub.json()["data"]["event_probability"]["priority_events"]
     assert any(item["category"] == "宏观窗口" for item in events)
+    assert any(item["category"] == "行业催化" for item in events)
     catalyst = next(item for item in events if item["category"] == "个股催化")
     assert "徐工机械" in catalyst["title"]
     assert "公告" in catalyst["note"] or "新闻" in catalyst["note"]
+    industry = next(item for item in events if item["category"] == "行业催化")
+    assert "工程机械" in industry["title"]
+    assert industry["judgment"]
+    assert industry["probability_label"]
+    assert all(item["judgment"] for item in events)
+    assert all(item["probability_label"] for item in events)
 
 
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):

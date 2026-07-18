@@ -187,6 +187,22 @@ def test_daily_review_exposes_quick_links_to_core_workflows():
     assert "框架沉淀" in workspace
 
 
+def test_intel_daily_review_exposes_ask_ai_entry():
+    intel = read("frontend/src/pages/Intel.tsx")
+
+    assert '{(liquidityView === "daily") && (' in intel
+    assert '<AskAiButton' in intel
+    assert 'label="问 AI"' in intel
+
+
+def test_ask_ai_panel_shows_current_model_hint():
+    ask_ai = read("frontend/src/components/ui/AskAiButton.tsx")
+
+    assert "loadLlm" in ask_ai
+    assert "当前模型" in ask_ai
+    assert 'className="ml-2 text-[11px] text-muted-foreground"' in ask_ai
+
+
 def test_local_startup_helpers_exist_and_point_to_workspace_commands():
     backend_helper = read("scripts/dev-backend.sh")
     frontend_helper = read("scripts/dev-frontend.sh")
@@ -343,6 +359,16 @@ def test_workspace_intel_children_include_event_probability():
 
     assert '{ key: "event-probability", label: "事件概率" }' in workspace
     assert '{ key: "event-probability", label: "事件概率", description: "事件观察、催化清单、数据接口" }' in workspace
+
+
+def test_event_probability_cards_render_probability_and_judgment():
+    intel = read("frontend/src/pages/Intel.tsx")
+    api_types = read("frontend/src/lib/api.ts")
+
+    assert "probability_label: string;" in api_types
+    assert "judgment: string;" in api_types
+    assert "item.probability_label" in intel
+    assert "item.judgment" in intel
 
 
 def test_local_docs_point_to_service_lifecycle_helpers():

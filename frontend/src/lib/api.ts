@@ -355,6 +355,8 @@ export interface EventProbabilityItem {
   category: string;
   status: string;
   note: string;
+  probability_label: string;
+  judgment: string;
 }
 
 export interface EventProbabilitySource {
@@ -579,6 +581,18 @@ export interface HBMDraftPanel {
   tone?: string;
 }
 
+export interface HBMGenerationStep {
+  label: string;
+  caption: string;
+  active?: boolean;
+}
+
+export interface HBMCostStackItem {
+  label: string;
+  weight: number;
+  note?: string;
+}
+
 export interface HBMDraftTab {
   key: "overview" | "generation" | "cost_bottleneck" | "leaders" | "cycle_meter";
   title: string;
@@ -588,6 +602,8 @@ export interface HBMDraftTab {
   panels: HBMDraftPanel[];
   sources?: string[];
   empty_state?: string;
+  generation_steps?: HBMGenerationStep[];
+  cost_stack?: HBMCostStackItem[];
 }
 
 export interface HBMDraftDashboardData {

@@ -755,11 +755,30 @@ def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
             {"title": "周期信号", "items": [point.get("text", "") for point in points[:3]]},
         ]
 
+    def generation_steps(points: list[dict]) -> list[dict]:
+        text = " ".join(point.get("text", "") for point in points).lower()
+        return [
+            {"label": "HBM2E", "caption": "成熟导入", "active": "hbm2e" in text},
+            {"label": "HBM3", "caption": "向高带宽过渡", "active": "hbm3" in text or "hbm3e" in text},
+            {"label": "HBM3E", "caption": "当前主升级代际", "active": "hbm3e" in text},
+            {"label": "Next", "caption": "16hi / 更高带宽", "active": "16hi" in text or "更高带宽" in text or "下一代" in text},
+        ]
+
+    def cost_stack(points: list[dict]) -> list[dict]:
+        text = " ".join(point.get("text", "") for point in points)
+        stack = [
+            {"label": "先进封装", "weight": 34 if "封装" in text else 28, "note": "封装与堆叠能力"},
+            {"label": "设备", "weight": 26 if "设备" in text else 22, "note": "扩产设备与交付节奏"},
+            {"label": "良率", "weight": 22 if "良率" in text else 18, "note": "量产良率决定成本斜率"},
+            {"label": "材料", "weight": 18 if "材料" in text else 14, "note": "材料与基板约束"},
+        ]
+        return stack
+
     tabs = []
     for index, (key, title) in enumerate(HBM_DRAFT_TABS):
         points = pick_points(key, index * 2)
         summary = [point.get("text", "") for point in points[:3] if point.get("text")]
-        tabs.append({
+        tab = {
             "key": key,
             "title": title,
             "headline": summary[0] if summary else "",
@@ -768,7 +787,12 @@ def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
             "panels": panels_for_tab(key, points),
             "sources": source_labels,
             "empty_state": "资料不足，等待更多 HBM 资料进入当前栏目。",
-        })
+        }
+        if key == "generation":
+            tab["generation_steps"] = generation_steps(points)
+        if key == "cost_bottleneck":
+            tab["cost_stack"] = cost_stack(points)
+        tabs.append(tab)
     return {
         "kind": "hbm_draft_dashboard",
         "tabs": tabs,
@@ -942,6 +966,25 @@ def _event_probability_status(event_day: str | None) -> str:
     return "planned"
 
 
+def _event_probability_assessment(category: str, status: str, text: str) -> tuple[str, str]:
+    text = str(text or "")
+    if category == "宏观窗口":
+        if status == "active":
+            return "高", "事件已进入近端交易窗口，市场预期最容易在这段时间被重新定价。"
+        if status == "watching":
+            return "中高", "事件进入重点观察区间，建议持续跟踪官方日历和预期差。"
+        return "中", "事件仍在远期窗口，先保留观察位，等待时间逼近后再提高权重。"
+    if category == "行业催化":
+        if any(keyword in text for keyword in ("政策", "窗口", "催化", "验证", "销量", "订单")):
+            return "中高", "行业层面已出现可验证催化线索，后续重点看数据和政策是否兑现。"
+        return "中", "行业催化线索已出现，但还需要更多公开数据确认其持续性。"
+    if category == "个股催化":
+        if any(keyword in text for keyword in ("公告", "财报", "订单", "电话会")):
+            return "中高", "公司层面已有公开催化信号，适合继续跟踪后续公告和基本面验证。"
+        return "中", "公司层面已有边际变化线索，但仍需要更多公开验证。"
+    return "中", "先保留观察位，等待更多公开信息确认。"
+
+
 def _macro_priority_events(limit: int = 4) -> list[dict]:
     events = []
     for item in knowledge.list_calendar_events(view="upcoming"):
@@ -953,12 +996,17 @@ def _macro_priority_events(limit: int = 4) -> list[dict]:
         event_day = item.get("date", "")
         source = item.get("source", "公开事件日历")
         notes = item.get("notes", "").strip()
+        status = _event_probability_status(event_day)
+        note = f"{event_day} · {source}" + (f" · {notes}" if notes else "")
+        probability_label, judgment = _event_probability_assessment("宏观窗口", status, note)
         events.append({
             "key": item.get("id") or f"macro-{_safe_slug(title)}-{event_day}",
             "title": title,
             "category": "宏观窗口",
-            "status": _event_probability_status(event_day),
-            "note": f"{event_day} · {source}" + (f" · {notes}" if notes else ""),
+            "status": status,
+            "note": note,
+            "probability_label": probability_label,
+            "judgment": judgment,
         })
         if len(events) >= limit:
             break
@@ -973,20 +1021,69 @@ def _stock_catalyst_priority_events(stock_watch_feed: list[dict], limit: int = 4
             continue
         label = item.get("name") or item.get("ticker", "")
         group = item.get("group", "未分组")
+        note = f"{group} · {'；'.join(highlights[:2])}"
+        probability_label, judgment = _event_probability_assessment("个股催化", "active", note)
         events.append({
             "key": f"stock-catalyst-{_safe_slug(item.get('ticker', label))}",
             "title": f"{label} 催化跟踪",
             "category": "个股催化",
             "status": "active",
-            "note": f"{group} · {'；'.join(highlights[:2])}",
+            "note": note,
+            "probability_label": probability_label,
+            "judgment": judgment,
         })
         if len(events) >= limit:
             break
     return events
 
 
-def _event_probability_priority_events(stock_watch_feed: list[dict]) -> list[dict]:
+def _industry_catalyst_priority_events(stock_watch_feed: list[dict], sector_entries: list[dict], weekly_reviews: list[dict], limit: int = 3) -> list[dict]:
+    groups = []
+    seen = set()
+    for item in stock_watch_feed:
+        group = str(item.get("group", "")).strip()
+        if group and group not in seen:
+            seen.add(group)
+            groups.append(group)
+    events = []
+    for group in groups:
+        sources = []
+        for entry in [*sector_entries, *weekly_reviews]:
+            if group not in (entry.get("related_sectors") or []):
+                continue
+            full_entry = knowledge.get_entry(entry.get("id", "")) if entry.get("id") else None
+            sources.append({
+                "label": entry.get("title", group),
+                "text": (full_entry or {}).get("content") or entry.get("content", "") or entry.get("content_preview", ""),
+                "context": group,
+            })
+        points = _ranked_research_points(
+            sources,
+            ("催化", "验证", "订单", "销量", "财报", "电话会", "政策", "窗口"),
+            limit=2,
+            context=group,
+        )
+        if not points:
+            continue
+        note = f"{group} · {'；'.join(point['text'] for point in points[:2])}"
+        probability_label, judgment = _event_probability_assessment("行业催化", "watching", note)
+        events.append({
+            "key": f"industry-catalyst-{_safe_slug(group)}",
+            "title": f"{group} 行业催化跟踪",
+            "category": "行业催化",
+            "status": "watching",
+            "note": note,
+            "probability_label": probability_label,
+            "judgment": judgment,
+        })
+        if len(events) >= limit:
+            break
+    return events
+
+
+def _event_probability_priority_events(stock_watch_feed: list[dict], sector_entries: list[dict], weekly_reviews: list[dict]) -> list[dict]:
     rows = _macro_priority_events()
+    rows.extend(_industry_catalyst_priority_events(stock_watch_feed, sector_entries, weekly_reviews))
     rows.extend(_stock_catalyst_priority_events(stock_watch_feed))
     return rows[:8]
 
@@ -1034,7 +1131,7 @@ def get_research_hub() -> dict:
                 },
             ],
             "priority_events": [
-                * _event_probability_priority_events(stock_watch_feed),
+                * _event_probability_priority_events(stock_watch_feed, sector_entries, weekly_reviews),
             ],
             "source_interfaces": [
                 {
