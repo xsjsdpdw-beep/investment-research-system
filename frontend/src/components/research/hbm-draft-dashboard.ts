@@ -52,7 +52,7 @@ export function mapLegacyHbmDashboardToCanvas(data: LegacyHbmDashboardData): Ind
 
       return adaptLegacyHBMDashboardToCanvas({
         ...data,
-        tabs: [tab as HBMDraftTab],
+        tabs: [{ ...tab, title: tab.title || tab.label } as HBMDraftTab],
       }).tabs[0];
     }),
     meta: { generated_at: data.generated_at || "", source_mode: "auto" },

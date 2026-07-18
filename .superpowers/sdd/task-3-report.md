@@ -41,3 +41,10 @@
 - Added coverage proving an unsupported section chart type (`pie`) is coerced to `bar`.
 - Replaced the block-router source scan with a behavioral test that bundles the TSX module through the installed Vite esbuild dependency and invokes `getIndustryDraftBlockComponent()` directly.
 - Follow-up verification passed: 15 covering tests, TypeScript project check, and `git diff --check`.
+
+## Third Review Follow-up
+
+- Replaced the per-block DOM wrapper in `IndustryDraftCanvas` with a keyed React `Fragment`, preserving block layout and selector behavior.
+- Preserved `label` for classic legacy HBM tabs by supplying `title: tab.title || tab.label` to the single-tab classic adapter fallback.
+- Extended mixed-payload coverage with a classic label-only tab and added a canvas regression check that rejects the extra DOM wrapper.
+- Follow-up verification passed: 26 covering tests, TypeScript project check, and `git diff --check`.

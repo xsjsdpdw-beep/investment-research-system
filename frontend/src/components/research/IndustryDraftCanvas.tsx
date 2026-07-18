@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { api, ApiError, type IndustryDraftBlock, type IndustryDraftCanvasSchema } from "@/lib/api";
@@ -197,7 +197,7 @@ export function IndustryDraftCanvas({
           </div>
         ) : (
           activeTab.blocks.map((block) => (
-            <div key={block.id}>{renderIndustryDraftBlock(block)}</div>
+            <Fragment key={block.id}>{renderIndustryDraftBlock(block)}</Fragment>
           ))
         )}
       </div>

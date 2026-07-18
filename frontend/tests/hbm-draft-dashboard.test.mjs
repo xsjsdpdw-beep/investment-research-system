@@ -78,7 +78,7 @@ test("mapLegacyHbmDashboardToCanvas preserves classic tabs in mixed legacy paylo
       },
       {
         key: "generation",
-        title: "技术代际",
+        label: "技术代际",
         headline: "HBM3E 持续迭代",
         summary: ["验证范围扩大"],
         metrics: [{ label: "主线", value: "HBM3E" }],
@@ -88,6 +88,7 @@ test("mapLegacyHbmDashboardToCanvas preserves classic tabs in mixed legacy paylo
   });
 
   assert.equal(result.tabs[0].blocks[0].spec.headline, "结构化总览");
+  assert.equal(result.tabs[1].title, "技术代际");
   assert.equal(result.tabs[1].blocks[0].spec.headline, "HBM3E 持续迭代");
   assert.equal(result.tabs[1].blocks[1].type, "metric_grid");
 });
