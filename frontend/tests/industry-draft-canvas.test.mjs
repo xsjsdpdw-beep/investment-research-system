@@ -9,6 +9,7 @@ import {
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
+  normalizeComparisonTableRows,
   normalizeIndustryDraftCanvasInput,
   removeIndustryDraftBlock,
   moveItem,
@@ -65,6 +66,12 @@ test("block helpers update and remove only the selected block", () => {
 
   assert.equal(updated.tabs[0].blocks[0].title, "行业总览");
   assert.equal(removed.tabs[0].blocks.length, 0);
+});
+
+test("normalizeComparisonTableRows preserves legacy columns with array rows", () => {
+  const rows = normalizeComparisonTableRows([["层数", "16Hi"]], ["项目", "HBM3E"]);
+
+  assert.deepEqual(rows, [{ cells: ["层数", "16Hi"], kind: "row" }]);
 });
 
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
@@ -151,6 +158,7 @@ test("IndustryDraftCanvasEditor routes comparison tables and charts to field edi
   assert.match(source, /function ChartSpecEditor/);
   assert.match(source, /card\.type === "comparison_table"/);
   assert.match(source, /card\.type === "chart_spec"/);
+  assert.match(source, /normalizeComparisonTableRows\(card\.spec\.rows, headers\)/);
   assert.match(source, /\["bar", "stacked_bar", "line", "area"\]/);
 });
 

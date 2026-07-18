@@ -1,5 +1,6 @@
 import type { IndustryDraftBlock, IndustryDraftCanvasTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { normalizeComparisonTableRows } from "./industry-draft-canvas";
 
 function EditorInput({
   value,
@@ -298,10 +299,7 @@ function ComparisonTableEditor({
   onChange: (card: IndustryDraftBlock) => void;
 }) {
   const headers = readSpecArray(card.spec.headers || card.spec.columns).map(String);
-  const rows = readSpecArray(card.spec.rows).map((row) => {
-    if (Array.isArray(row?.cells)) return row.cells.map(String);
-    return headers.map((header) => String(row?.[header] ?? ""));
-  });
+  const rows = normalizeComparisonTableRows(card.spec.rows, headers);
   return (
     <div className="space-y-3">
       <EditorInput
@@ -313,16 +311,16 @@ function ComparisonTableEditor({
         }}
       />
       <EditorTextarea
-        value={rows.map((row) => row.join(" | ")).join("\n")}
+        value={rows.map((row) => row.cells.join(" | ")).join("\n")}
         placeholder="每行一条记录，单元格使用 | 分隔"
         onChange={(value) => onChange({
           ...card,
           spec: {
             ...card.spec,
-            rows: value.split("\n").filter((line) => line.trim()).map((line) => ({
-              cells: line.split("|").map((cell) => cell.trim()),
-              kind: "row",
-            })),
+            rows: normalizeComparisonTableRows(
+              value.split("\n").filter((line) => line.trim()).map((line) => line.split("|").map((cell) => cell.trim())),
+              headers,
+            ),
           },
         })}
       />

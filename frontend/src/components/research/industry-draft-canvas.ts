@@ -158,6 +158,19 @@ function nextIndustryDraftBlockId(blocks: IndustryDraftBlock[]) {
   return `block-${index}`;
 }
 
+export function normalizeComparisonTableRows(value: unknown, headers: string[]) {
+  if (!Array.isArray(value)) return [];
+  return value.map((row) => {
+    const data = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
+    const cells = Array.isArray(row)
+      ? row
+      : Array.isArray(data.cells)
+        ? data.cells
+        : headers.map((header) => data[header] ?? "");
+    return { cells: cells.map(String), kind: "row" };
+  });
+}
+
 export function appendIndustryDraftBlock(
   canvas: IndustryDraftCanvasSchema,
   tabId: string,
