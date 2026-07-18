@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 import os
 from pathlib import Path
 import re
+from typing import Any
 
 import astock
 import data_adapters
@@ -937,8 +938,225 @@ def map_legacy_hbm_dashboard_to_canvas(schema: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _hbm_sentences(text: str) -> list[str]:
+    return [item.strip() for item in re.split(r"[。！？；;\n]+", text) if item.strip()]
+
+
+def _hbm_labeled_items(text: str, heading: str, separator: str) -> list[dict[str, str]]:
+    match = re.search(rf"{heading}\s*[:：]\s*([^。！？；;\n]+)", text, re.IGNORECASE)
+    if not match:
+        return []
+    return [
+        {"label": item.strip()}
+        for item in re.split(separator, match.group(1))
+        if item.strip()
+    ]
+
+
+def _extract_hbm_metrics(text: str) -> list[dict[str, str]]:
+    metrics = []
+    seen = set()
+    for sentence in _hbm_sentences(text):
+        if not any(token in sentence for token in ("指标", "容量", "层数", "带宽", "位宽", "ASP", "%", "GB", "Hi")):
+            continue
+        for item in re.split(r"[，,、]", sentence):
+            match = re.search(
+                r"(?:关键指标\s*[:：]\s*)?(?P<label>[A-Za-z\u4e00-\u9fff]+)\s*(?P<value>\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)*(?:GB|TB|Hi|hi|%|Gbps|Gb/s|x)?)",
+                item,
+            )
+            if not match:
+                continue
+            label = match.group("label").strip()
+            value = re.sub(r"\s+", "", match.group("value"))
+            if label and value and label not in seen:
+                metrics.append({"label": label, "value": value})
+                seen.add(label)
+    return metrics
+
+
+def _extract_hbm_comparisons(text: str) -> list[dict[str, str]]:
+    names = []
+    for name in re.findall(r"\bHBM\d(?:E)?\b", text, re.IGNORECASE):
+        normalized = name.upper()
+        if normalized not in names:
+            names.append(normalized)
+    return [
+        {"name": name, "value": "当前主流" if index == len(names) - 1 else "上一代"}
+        for index, name in enumerate(names)
+    ]
+
+
+def _extract_hbm_series(metrics: list[dict[str, str]]) -> list[dict[str, Any]]:
+    points = []
+    for metric in metrics:
+        match = re.search(r"\d+(?:\.\d+)?", metric.get("value", ""))
+        if match:
+            points.append({"label": metric["label"], "value": float(match.group())})
+    return [{"name": "关键指标", "points": points}] if len(points) >= 2 else []
+
+
+def _extract_hbm_rows(text: str) -> list[dict[str, Any]]:
+    rows = []
+    for line in text.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 2 and all(cells):
+            rows.append({"cells": cells, "kind": "header" if not rows else "row"})
+    return rows
+
+
+def _extract_hbm_keyword_sentences(text: str, keywords: tuple[str, ...]) -> list[dict[str, str]]:
+    return [{"text": sentence} for sentence in _hbm_sentences(text) if any(keyword in sentence for keyword in keywords)]
+
+
+def extract_hbm_expression_units(sources: list[dict[str, Any]]) -> dict[str, Any]:
+    text = "\n".join(str(item.get("text") or "") for item in sources if isinstance(item, dict))
+    metrics = _extract_hbm_metrics(text)
+    return {
+        "claims": [{"text": sentence} for sentence in _hbm_sentences(text)[:8]],
+        "metrics": metrics,
+        "comparisons": _extract_hbm_comparisons(text),
+        "steps": _hbm_labeled_items(text, "工艺流程", r"\s*(?:->|→|—|－)\s*"),
+        "nodes": _hbm_labeled_items(text, "产业链", r"\s*[、，,]\s*"),
+        "series": _extract_hbm_series(metrics),
+        "rows": _extract_hbm_rows(text),
+        "drivers": _extract_hbm_keyword_sentences(text, ("需求", "供给", "扩产", "价格", "带宽", "AI")),
+        "risks": _extract_hbm_keyword_sentences(text, ("风险", "卡口", "良率", "库存", "约束")),
+        "milestones": _extract_hbm_keyword_sentences(text, ("HBM2", "HBM3", "HBM4", "代际", "验证", "导入")),
+        "sources": [str(item.get("label") or "") for item in sources if isinstance(item, dict) and item.get("label")],
+    }
+
+
+def _hbm_block(block_id: str, block_type: str, title: str, spec: dict[str, Any], sources: list[str]) -> dict[str, Any]:
+    return {
+        "id": block_id,
+        "type": block_type,
+        "title": title,
+        "spec": spec,
+        "sources": sources,
+        "style_variant": "dark-report",
+    }
+
+
+def make_summary_hero_block(claims: list[dict], metrics: list[dict], sources: list[str]) -> dict[str, Any]:
+    return _hbm_block(
+        "overview-hero", "summary_hero", "HBM 总览",
+        {
+            "headline": str((claims or [{}])[0].get("text") or "HBM 资料待补充"),
+            "bullets": [str(item.get("text") or "") for item in claims[:3] if item.get("text")],
+            "tags": [str(item.get("value") or "") for item in metrics[:3] if item.get("value")],
+        },
+        sources,
+    )
+
+
+def _hbm_metric_weight(metric: dict) -> float:
+    match = re.search(r"\d+(?:\.\d+)?", str(metric.get("value") or ""))
+    return float(match.group()) if match else 1
+
+
+def make_range_band_block(metrics: list[dict], sources: list[str]) -> dict[str, Any]:
+    segments = [
+        {
+            "label": str(metric.get("label") or ""),
+            "weight": _hbm_metric_weight(metric),
+            "note": str(metric.get("value") or ""),
+        }
+        for metric in metrics
+    ]
+    return _hbm_block(
+        "overview-range", "range_band", "关键指标区间",
+        {"segments": segments, "current_label": "核心指标", "current_value": str((metrics or [{}])[0].get("value") or "跟踪中")},
+        sources,
+    )
+
+
+def make_flow_map_block(steps: list[dict], sources: list[str]) -> dict[str, Any]:
+    return _hbm_block("overview-flow", "flow_map", "工艺流程", {"steps": steps}, sources)
+
+
+def make_industry_chain_block(nodes: list[dict], sources: list[str]) -> dict[str, Any]:
+    return _hbm_block("overview-chain", "industry_chain", "产业链", {"nodes": nodes}, sources)
+
+
+def make_chart_spec_block(series: list[dict], sources: list[str]) -> dict[str, Any]:
+    return _hbm_block("overview-chart", "chart_spec", "指标趋势", {"chart_type": "bar", "series": series}, sources)
+
+
+def build_hbm_infographic_tabs(sector: str, extracted: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = [str(item) for item in extracted.get("sources", []) if str(item).strip()]
+    claims = extracted.get("claims") or []
+    metrics = extracted.get("metrics") or []
+    comparisons = extracted.get("comparisons") or []
+    steps = extracted.get("steps") or []
+    nodes = extracted.get("nodes") or []
+    series = extracted.get("series") or []
+    rows = extracted.get("rows") or []
+    milestones = extracted.get("milestones") or []
+    drivers = extracted.get("drivers") or []
+    risks = extracted.get("risks") or []
+    return [
+        {
+            "id": "tab-overview", "title": "总览", "blocks": [
+                make_summary_hero_block(claims, metrics, sources),
+                make_range_band_block(metrics, sources),
+                make_flow_map_block(steps, sources),
+                make_industry_chain_block(nodes, sources),
+                make_chart_spec_block(series, sources),
+            ],
+        },
+        {
+            "id": "tab-generation", "title": "技术代际", "blocks": [
+                _hbm_block(
+                    "generation-timeline", "timeline", "代际演进",
+                    {"steps": [{"label": item.get("text", ""), "caption": "", "active": True} for item in milestones]},
+                    sources,
+                ),
+                _hbm_block(
+                    "generation-comparison", "comparison_cards", "代际对比",
+                    {"items": [{"name": item.get("name", ""), "headline": item.get("value", "")} for item in comparisons]},
+                    sources,
+                ),
+                _hbm_block("generation-table", "comparison_table", "规格对照", {"rows": rows}, sources),
+            ],
+        },
+        {
+            "id": "tab-cost-bottleneck", "title": "成本与卡口", "blocks": [
+                _hbm_block("cost-metrics", "metric_grid", "核心约束", {"items": metrics}, sources),
+                _hbm_block("cost-evidence", "evidence_table", "卡口证据", {"rows": risks}, sources),
+            ],
+        },
+        {
+            "id": "tab-leaders", "title": "产业龙头", "blocks": [
+                _hbm_block(
+                    "leaders-comparison", "comparison_cards", "主要厂商",
+                    {"items": [{"name": item.get("name", ""), "headline": item.get("value", "")} for item in comparisons]},
+                    sources,
+                ),
+                _hbm_block("leaders-chain", "industry_chain", "产业链位置", {"nodes": nodes}, sources),
+            ],
+        },
+        {
+            "id": "tab-cycle-meter", "title": "周期温度计", "blocks": [
+                _hbm_block(
+                    "cycle-hero", "summary_hero", "景气驱动",
+                    {"bullets": [item.get("text", "") for item in drivers]},
+                    sources,
+                ),
+                _hbm_block("cycle-chart", "chart_spec", "跟踪指标", {"chart_type": "line", "series": series}, sources),
+            ],
+        },
+    ]
+
+
 def build_hbm_draft_canvas(sector: str, sources: list[dict]) -> dict[str, Any]:
-    return map_legacy_hbm_dashboard_to_canvas(build_hbm_draft_dashboard(sector, sources))
+    extracted = extract_hbm_expression_units(sources)
+    return {
+        "kind": "industry_draft_canvas",
+        "version": "v2",
+        "scope": sector,
+        "tabs": build_hbm_infographic_tabs(sector, extracted),
+        "meta": {"generated_at": _utc_now_iso(), "source_mode": "auto"},
+    }
 
 
 def build_sector_overview_modules(sector: str) -> dict:
@@ -1154,10 +1372,37 @@ def _event_probability_rank_reason(category: str, status: str, probability_label
     return f"因处于{status_label}、概率判断为{probability_label}，且属于{category}，所以优先级靠前。"
 
 
+def _event_probability_verification_status(category: str, status: str, text: str) -> str:
+    text = str(text or "")
+    if any(keyword in text for keyword in ("公告", "财报", "订单", "销量", "政策")):
+        return "验证中"
+    if status == "planned":
+        return "待验证"
+    if category == "个股催化" and status == "active":
+        return "验证中"
+    return "待验证"
+
+
+def _event_probability_follow_up(category: str, status: str, text: str) -> str:
+    text = str(text or "")
+    if category == "宏观窗口":
+        return "跟踪官方日历、政策发布和市场预期差是否继续收敛。"
+    if category == "行业催化":
+        if any(keyword in text for keyword in ("销量", "订单")):
+            return "优先验证销量、订单和行业景气数据是否继续兑现。"
+        return "优先验证政策催化和产业链反馈是否出现增量确认。"
+    if category == "个股催化":
+        if "公告" in text:
+            return "继续跟踪后续公告、电话会和经营数据是否强化当前催化。"
+        return "继续跟踪新闻线索能否落到公告、订单或财报验证。"
+    return "继续补充公开验证线索。"
+
+
 def _decorate_event_probability_item(item: dict) -> dict:
     category = str(item.get("category", ""))
     status = str(item.get("status", ""))
     probability_label = str(item.get("probability_label", ""))
+    note = str(item.get("note", ""))
     rank_score = _event_probability_rank_score(
         category,
         status,
@@ -1169,6 +1414,8 @@ def _decorate_event_probability_item(item: dict) -> dict:
         "rank_score": rank_score,
         "rank_breakdown": _event_probability_rank_breakdown(category, status, probability_label),
         "rank_reason": _event_probability_rank_reason(category, status, probability_label),
+        "verification_status": _event_probability_verification_status(category, status, note),
+        "follow_up": _event_probability_follow_up(category, status, note),
     }
 
 

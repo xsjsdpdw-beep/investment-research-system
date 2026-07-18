@@ -1,6 +1,13 @@
 import app as app_module
 import knowledge
-from research_hub import build_hbm_draft_canvas, build_hbm_draft_dashboard, build_sector_overview_modules, is_hbm_sector
+from research_hub import (
+    build_hbm_draft_canvas,
+    build_hbm_draft_dashboard,
+    build_hbm_infographic_tabs,
+    build_sector_overview_modules,
+    extract_hbm_expression_units,
+    is_hbm_sector,
+)
 
 
 def test_is_hbm_sector_matches_hbm_only():
@@ -52,7 +59,49 @@ def test_build_hbm_draft_canvas_returns_editable_tabs_and_cards():
 
     assert schema["kind"] == "industry_draft_canvas"
     assert schema["tabs"][0]["title"] == "总览"
-    assert schema["tabs"][0]["cards"][0]["type"] == "summary_hero"
+    assert schema["tabs"][0]["blocks"][0]["type"] == "summary_hero"
+
+
+def test_extract_hbm_expression_units_collects_steps_nodes_metrics_and_series():
+    extracted = extract_hbm_expression_units(
+        [
+            {
+                "label": "HBM 行业概览.md",
+                "text": (
+                    "工艺流程：Base Die -> TSV -> Hybrid Bonding -> 堆叠封装。"
+                    "产业链：上游材料、GPU、封测、HBM 原厂、服务器。"
+                    "关键指标：单颗容量 24GB，层数 12/16/24Hi，ASP 持续上行。"
+                ),
+            }
+        ]
+    )
+
+    assert extracted["steps"][0]["label"] == "Base Die"
+    assert extracted["nodes"][0]["label"] == "上游材料"
+    assert extracted["metrics"][0]["label"] == "单颗容量"
+
+
+def test_build_hbm_infographic_tabs_outputs_flow_chain_range_and_chart_blocks():
+    tabs = build_hbm_infographic_tabs(
+        "HBM",
+        {
+            "claims": [{"text": "HBM 供需维持紧平衡"}],
+            "metrics": [{"label": "层数", "value": "12-24Hi"}],
+            "comparisons": [{"name": "HBM2E", "value": "上一代"}, {"name": "HBM3E", "value": "当前主流"}],
+            "steps": [{"label": "TSV"}, {"label": "Hybrid Bonding"}],
+            "nodes": [{"label": "GPU"}, {"label": "HBM 原厂"}, {"label": "服务器"}],
+            "series": [{"name": "位宽", "points": [{"label": "HBM2E", "value": 1}, {"label": "HBM3E", "value": 2}]}],
+            "rows": [{"cells": ["环节", "代表"], "kind": "header"}, {"cells": ["封测", "日月光"]}],
+            "drivers": [],
+            "risks": [],
+            "milestones": [],
+        },
+    )
+
+    overview = tabs[0]["blocks"]
+    assert any(block["type"] == "flow_map" for block in overview)
+    assert any(block["type"] == "industry_chain" for block in overview)
+    assert any(block["type"] == "chart_spec" for block in overview)
 
 
 def test_build_hbm_draft_dashboard_populates_tab_specific_content():
@@ -200,7 +249,7 @@ def test_validated_overview_workbench_uses_youdao_note_content_when_sources_miss
     result = app_module._validated_overview_workbench("sector", scope_id)
 
     assert result["draft_theme_schema"]["kind"] == "industry_draft_canvas"
-    assert result["draft_theme_schema"]["tabs"][0]["cards"][0]["sources"][0] == "HBM 行业概览.md"
+    assert result["draft_theme_schema"]["tabs"][0]["blocks"][0]["sources"][0] == "HBM 行业概览.md"
 
 
 def test_validated_overview_workbench_still_backfills_hbm_schema_when_youdao_binding_is_invalid(monkeypatch):
