@@ -30,6 +30,29 @@ test("appendIndustryDraftBlock adds a new editable block to the selected tab", (
   assert.equal(next.tabs[0].blocks[0].type, "comparison_table");
 });
 
+test("appendIndustryDraftBlock does not reuse a removed block ID", () => {
+  const canvas = {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "HBM",
+    tabs: [{
+      id: "tab-overview",
+      title: "总览",
+      blocks: [
+        { id: "block-1", type: "summary_hero", spec: {} },
+        { id: "block-2", type: "summary_hero", spec: {} },
+        { id: "block-3", type: "summary_hero", spec: {} },
+      ],
+    }],
+  };
+
+  const afterDelete = removeIndustryDraftBlock(canvas, "tab-overview", "block-2");
+  const afterAppend = appendIndustryDraftBlock(afterDelete, "tab-overview", "comparison_table");
+
+  assert.equal(afterAppend.tabs[0].blocks.at(-1)?.id, "block-4");
+  assert.equal(new Set(afterAppend.tabs[0].blocks.map((block) => block.id)).size, 3);
+});
+
 test("block helpers update and remove only the selected block", () => {
   const canvas = {
     kind: "industry_draft_canvas",
@@ -119,6 +142,16 @@ test("IndustryDraftCanvas limits editing to the HBM initial-draft context", () =
 
   assert.match(source, /const canEdit = isHbmInitialDraft/);
   assert.match(source, /\{canEdit \? \(/);
+});
+
+test("IndustryDraftCanvasEditor routes comparison tables and charts to field editors", () => {
+  const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvasEditor.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /function ComparisonTableEditor/);
+  assert.match(source, /function ChartSpecEditor/);
+  assert.match(source, /card\.type === "comparison_table"/);
+  assert.match(source, /card\.type === "chart_spec"/);
+  assert.match(source, /\["bar", "stacked_bar", "line", "area"\]/);
 });
 
 const legacy = {

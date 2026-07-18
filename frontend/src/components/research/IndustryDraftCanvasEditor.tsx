@@ -290,6 +290,101 @@ function TimelineEditor({
   );
 }
 
+function ComparisonTableEditor({
+  card,
+  onChange,
+}: {
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
+}) {
+  const headers = readSpecArray(card.spec.headers || card.spec.columns).map(String);
+  const rows = readSpecArray(card.spec.rows).map((row) => {
+    if (Array.isArray(row?.cells)) return row.cells.map(String);
+    return headers.map((header) => String(row?.[header] ?? ""));
+  });
+  return (
+    <div className="space-y-3">
+      <EditorInput
+        value={headers.join(" | ")}
+        placeholder="表头，使用 | 分隔"
+        onChange={(value) => {
+          const nextHeaders = value.split("|").map((item) => item.trim()).filter(Boolean);
+          onChange({ ...card, spec: { ...card.spec, headers: nextHeaders, columns: nextHeaders } });
+        }}
+      />
+      <EditorTextarea
+        value={rows.map((row) => row.join(" | ")).join("\n")}
+        placeholder="每行一条记录，单元格使用 | 分隔"
+        onChange={(value) => onChange({
+          ...card,
+          spec: {
+            ...card.spec,
+            rows: value.split("\n").filter((line) => line.trim()).map((line) => ({
+              cells: line.split("|").map((cell) => cell.trim()),
+              kind: "row",
+            })),
+          },
+        })}
+      />
+    </div>
+  );
+}
+
+const CHART_TYPES = ["bar", "stacked_bar", "line", "area"] as const;
+
+function chartSeriesLines(series: unknown) {
+  return readSpecArray(series).flatMap((item) => {
+    if (Array.isArray(item?.points)) {
+      return item.points.map((point: Record<string, unknown>) => `${String(item.name || "系列")} | ${String(point.name || point.label || "指标")} | ${String(point.value ?? point.y ?? "")}`);
+    }
+    return `${String(item?.name || "指标")} | ${String(item?.value ?? item?.y ?? "")}`;
+  }).join("\n");
+}
+
+function parseChartSeries(value: string) {
+  const grouped = new Map<string, Array<{ name: string; value: number }>>();
+  const direct: Array<{ name: string; value: number }> = [];
+  value.split("\n").forEach((line) => {
+    const parts = line.split("|").map((part) => part.trim());
+    if (parts.length >= 3 && parts[0] && parts[1]) {
+      const points = grouped.get(parts[0]) || [];
+      points.push({ name: parts[1], value: Number(parts[2]) || 0 });
+      grouped.set(parts[0], points);
+    } else if (parts.length >= 2 && parts[0]) {
+      direct.push({ name: parts[0], value: Number(parts[1]) || 0 });
+    }
+  });
+  return [...direct, ...[...grouped.entries()].map(([name, points]) => ({ name, points }))];
+}
+
+function ChartSpecEditor({
+  card,
+  onChange,
+}: {
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
+}) {
+  const chartType = CHART_TYPES.includes(card.spec.chart_type as typeof CHART_TYPES[number])
+    ? card.spec.chart_type as typeof CHART_TYPES[number]
+    : "bar";
+  return (
+    <div className="space-y-3">
+      <select
+        value={chartType}
+        onChange={(event) => onChange({ ...card, spec: { ...card.spec, chart_type: event.target.value } })}
+        className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary/50"
+      >
+        {CHART_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+      </select>
+      <EditorTextarea
+        value={chartSeriesLines(card.spec.series)}
+        placeholder="柱状图：名称 | 数值；趋势图：系列 | 名称 | 数值"
+        onChange={(value) => onChange({ ...card, spec: { ...card.spec, series: parseChartSeries(value) } })}
+      />
+    </div>
+  );
+}
+
 function CardContentEditor({
   card,
   onChange,
@@ -302,6 +397,8 @@ function CardContentEditor({
   if (card.type === "range_band") return <RangeBandEditor card={card} onChange={onChange} />;
   if (card.type === "comparison_cards") return <ComparisonCardsEditor card={card} onChange={onChange} />;
   if (card.type === "timeline") return <TimelineEditor card={card} onChange={onChange} />;
+  if (card.type === "comparison_table") return <ComparisonTableEditor card={card} onChange={onChange} />;
+  if (card.type === "chart_spec") return <ChartSpecEditor card={card} onChange={onChange} />;
   return null;
 }
 

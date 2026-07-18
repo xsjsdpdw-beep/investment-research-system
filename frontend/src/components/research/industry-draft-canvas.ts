@@ -151,6 +151,13 @@ function createEmptyIndustryDraftBlock(id: string, type: IndustryDraftBlock["typ
   };
 }
 
+function nextIndustryDraftBlockId(blocks: IndustryDraftBlock[]) {
+  const ids = new Set(blocks.map((block) => block.id));
+  let index = blocks.length + 1;
+  while (ids.has(`block-${index}`)) index += 1;
+  return `block-${index}`;
+}
+
 export function appendIndustryDraftBlock(
   canvas: IndustryDraftCanvasSchema,
   tabId: string,
@@ -160,7 +167,7 @@ export function appendIndustryDraftBlock(
     ...canvas,
     tabs: canvas.tabs.map((tab) => (
       tab.id === tabId
-        ? { ...tab, blocks: [...tab.blocks, createEmptyIndustryDraftBlock(`block-${tab.blocks.length + 1}`, type)] }
+        ? { ...tab, blocks: [...tab.blocks, createEmptyIndustryDraftBlock(nextIndustryDraftBlockId(tab.blocks), type)] }
         : tab
     )),
   };
