@@ -1598,7 +1598,38 @@ export function Intel() {
                       当前还没有可展示的重点事件，等宏观日历、行业条目或关注列表催化进入事件流后会自动出现在这里。
                     </div>
                   )}
-                  {sortedEventProbabilityEvents.map((item) => (
+                  {eventPrioritySort === "category" ? eventProbabilityCategoryGroups.map((group) => (
+                    <div key={group.category} className="space-y-3">
+                      <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
+                        <p className="text-sm font-medium">{group.category}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{eventProbabilityCategoryDescription(group.category)}</p>
+                      </div>
+                      {group.items.map((item) => (
+                        <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium">{item.title}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">优先级 #{item.rank_order ?? "—"} · {item.trigger_window}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground">评分 {item.rank_score}</span>
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.probability_label}</span>
+                              <span className="text-xs text-primary">{eventProbabilityStatusLabel(item.status)}</span>
+                            </div>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
+                          <p className="mt-2 text-sm text-muted-foreground">{item.rank_reason}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                          </div>
+                          <p className="mt-2 text-sm">{item.judgment}</p>
+                          <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )) : sortedEventProbabilityEvents.map((item) => (
                     <div key={item.key} className="rounded-xl border border-border/40 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
