@@ -123,6 +123,16 @@ test("non-HBM blocks keep the compatibility renderer", async () => {
   assert.match(html, /指标/);
 });
 
+test("HBM blocks outside initial-draft context keep the compatibility renderer", async () => {
+  const { renderIndustryDraftBlock } = await loadModule("../src/components/research/IndustryDraftCardRenderer.tsx");
+  const html = renderToStaticMarkup(renderIndustryDraftBlock({
+    id: "hbm-deep-chart", type: "chart_spec", title: "HBM 深度图表", spec: { chart_type: "bar", series: [{ name: "指标", value: 12 }] },
+  }));
+
+  assert.doesNotMatch(html, /data-chart-type/);
+  assert.match(html, /指标/);
+});
+
 test("ChartSpecBlock keeps multi-series line groups separate", async () => {
   const ChartSpecBlock = await loadComponent("../src/components/research/industry-draft-blocks/ChartSpecBlock.tsx", "ChartSpecBlock");
   const html = renderToStaticMarkup(ChartSpecBlock({ block: {

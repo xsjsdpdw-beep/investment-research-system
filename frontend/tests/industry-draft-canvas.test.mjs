@@ -72,11 +72,15 @@ test("IndustryDraftCanvas normalizes persisted schemas before reading HBM tabs",
   assert.match(source, /normalizeIndustryDraftCanvasInput\(data\)/);
 });
 
-test("IndustryDraftCanvas renders blocks without an extra DOM wrapper and scopes polish to HBM", () => {
+test("IndustryDraftCanvas requires explicit initial-draft context for HBM polish", () => {
   const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvas.tsx", import.meta.url), "utf8");
+  const frameworkSource = readFileSync(new URL("../src/pages/Framework.tsx", import.meta.url), "utf8");
 
+  assert.match(source, /isInitialDraftCanvas = false/);
+  assert.match(source, /const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && scopeId === "HBM"/);
   assert.match(source, /<Fragment key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/Fragment>/);
   assert.doesNotMatch(source, /<div key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/div>/);
+  assert.match(frameworkSource, /<IndustryDraftCanvas data=\{sectorDraftSchema\} scopeType="sector" scopeId=\{selectedSector \|\| "HBM"\} isInitialDraftCanvas \/>/);
 });
 
 const legacy = {

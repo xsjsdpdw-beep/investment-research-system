@@ -20,11 +20,13 @@ export function IndustryDraftCanvas({
   scopeType = "sector",
   scopeId = "HBM",
   initialActiveTabId,
+  isInitialDraftCanvas = false,
 }: {
   data: IndustryDraftCanvasInput;
   scopeType?: "sector" | "stock";
   scopeId?: string;
   initialActiveTabId?: string;
+  isInitialDraftCanvas?: boolean;
 }) {
   const normalizedData = useMemo(() => normalizeIndustryDraftCanvasInput(data), [data]);
   const [editing, setEditing] = useState(false);
@@ -33,7 +35,7 @@ export function IndustryDraftCanvas({
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || normalizedData.tabs[0]?.id || "");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
-  const isHbmInitialDraft = scopeType === "sector" && scopeId === "HBM";
+  const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && scopeId === "HBM";
 
   useEffect(() => {
     setDraft(normalizedData);
