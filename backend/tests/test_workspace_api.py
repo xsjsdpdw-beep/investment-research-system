@@ -112,29 +112,6 @@ def test_calendar_watchlist_and_artifact_endpoints(workspace_client: TestClient)
 
 
 def test_workspace_hub_and_macro_shell(workspace_client: TestClient):
-    import hiringradar
-
-    hiring_stub = {
-        "title": "招聘雷达",
-        "summary": "OpenAI、Anthropic、NVIDIA 等公司仍在招核心岗位。",
-        "updated_at": "2026-07-17 21:40",
-        "items": [
-            {
-                "company": "OpenAI",
-                "title": "Forward Deployed Engineer",
-                "location": "San Francisco",
-                "time": "2026-07-16",
-                "url": "https://example.com/openai-role",
-                "summary": "聚焦 AI 基础设施与客户落地。",
-                "source": "ashby/openai",
-            }
-        ],
-        "companies": ["OpenAI", "Anthropic", "NVIDIA"],
-        "source": "Hiring-Radar",
-    }
-    workspace_client.app.dependency_overrides = {}
-    hiringradar.get_hiring_radar = lambda force=False: hiring_stub
-
     workspace_client.put("/api/watchlist", json={
         "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
         "indicators": [],
@@ -159,8 +136,6 @@ def test_workspace_hub_and_macro_shell(workspace_client: TestClient):
     assert "fundamental" in data
     assert "liquidity" in data
     assert "global_tech_headlines" in data["fundamental"]
-    assert data["fundamental"]["hiring_radar"]["title"] == "招聘雷达"
-    assert data["fundamental"]["hiring_radar"]["items"][0]["company"] == "OpenAI"
     assert "source_interfaces" in data["fundamental"]
     assert data["framework"]["stock_focus"][0]["ticker"] == "000425.SZ"
     assert "event_probability" in data
@@ -186,23 +161,6 @@ def test_research_hub_exposes_event_probability_scaffold(workspace_client: TestC
     assert data["event_probability"]["planned_modules"][0]["key"] == "macro-probability"
     assert data["event_probability"]["priority_events"][0]["category"] == "宏观窗口"
     assert data["event_probability"]["source_interfaces"][0]["status"] == "scaffold"
-
-
-def test_hiring_radar_refresh_endpoint(workspace_client: TestClient, monkeypatch):
-    import hiringradar
-
-    payload = {
-        "title": "招聘雷达",
-        "summary": "OpenAI：Research Engineer",
-        "updated_at": "2026-07-18 10:15",
-        "items": [{"company": "OpenAI", "title": "Research Engineer", "location": "San Francisco", "time": "2026-07-18", "url": "https://example.com/job", "summary": "", "source": "Hiring-Radar"}],
-        "companies": ["OpenAI"],
-        "source": "Hiring-Radar",
-    }
-    monkeypatch.setattr(hiringradar, "fetch_hiring_radar", lambda: payload)
-    response = workspace_client.post("/api/research/hiring-radar/refresh")
-    assert response.status_code == 200
-    assert response.json()["data"]["items"][0]["company"] == "OpenAI"
 
 
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):

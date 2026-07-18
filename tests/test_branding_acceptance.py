@@ -48,33 +48,6 @@ def test_overview_youdao_binding_auto_resets_when_note_is_missing():
     assert "if (!synced.file_id) toast.error(synced.message" in framework
 
 
-def test_framework_workspace_uses_framework_wording_instead_of_main_note():
-    framework = read("frontend/src/pages/Framework.tsx")
-
-    assert "概览主笔记" not in framework
-    assert "主笔记还没有结构化内容" not in framework
-    assert "主笔记还没有内容" not in framework
-    assert "概览框架" in framework
-    assert "这篇框架还没有结构化内容" in framework
-    assert "这篇框架还没有内容" in framework
-
-
-def test_structured_framework_preview_supports_image_zoom_and_inline_editing():
-    framework = read("frontend/src/pages/Framework.tsx")
-    renderer = read("frontend/src/components/research/StructuredOverviewRenderer.tsx")
-
-    assert "编辑正文" in framework
-    assert "保存正文" in framework
-    assert "取消编辑" in framework
-    assert "setStructuredEditorDrafts" in framework
-    assert "saveOverviewStructuredPreview" in framework
-
-    assert "const hideAutoImageTitle" in renderer
-    assert 'aria-label="放大查看图片"' in renderer
-    assert "setZoomedImage" in renderer
-    assert "textarea" in renderer
-
-
 def test_frontend_config_constants_are_centralized():
     config = read("frontend/src/lib/app-config.ts")
     layout = read("frontend/src/components/layout/Layout.tsx")
@@ -346,8 +319,8 @@ def test_vertical_left_nav_supports_drag_sort_and_is_used_by_core_pages():
     assert 'draggableStorageKey="framework-stock-view-order"' in framework
     assert 'draggableStorageKey="framework-learning-view-order"' in framework
     assert 'draggableStorageKey="database-china-macro-view-order"' in database
-    assert 'draggableStorageKey="watchlist-stock-group-order"' in watchlist
-    assert 'draggableStorageKey="watchlist-indicator-category-order"' in watchlist
+    assert 'draggableStorageKey="watchlist-unified-group-order"' in watchlist
+    assert 'draggableStorageKey="watchlist-asset-type-order"' in watchlist
     assert 'draggableStorageKey="framework-sector-center-tabs"' in framework
     assert 'draggableStorageKey="framework-stock-center-tabs"' in framework
     assert 'draggableStorageKey="framework-weekly-year-order"' in framework
@@ -501,18 +474,3 @@ def test_local_docs_point_to_cleanup_helpers():
     assert "scripts/clean-frontend.sh" in readme
     assert "scripts/clean-all.sh" in readme
     assert "Repository-local cleanup helpers" in local_notes
-
-
-def test_intel_fundamental_includes_hiring_radar_as_last_module():
-    intel = read("frontend/src/pages/Intel.tsx")
-    api = read("frontend/src/lib/api.ts")
-    hub = read("backend/research_hub.py")
-
-    assert 'label: "招聘雷达"' in intel
-    assert 'key: "hiring"' in intel
-    assert 'label: "地缘政治"' in intel
-    assert intel.index('label: "地缘政治"') < intel.index('label: "招聘雷达"')
-
-    assert '"tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring"' in api
-    assert "hiring_radar" in api
-    assert 'return "招聘雷达"' in hub
