@@ -160,7 +160,8 @@ def test_research_hub_exposes_event_probability_scaffold(workspace_client: TestC
     assert data["event_probability"]["summary"]["title"] == "事件概率体系入口"
     assert data["event_probability"]["planned_modules"][0]["key"] == "macro-probability"
     assert data["event_probability"]["priority_events"][0]["category"] == "宏观窗口"
-    assert data["event_probability"]["source_interfaces"][0]["status"] == "scaffold"
+    assert data["event_probability"]["source_interfaces"][0]["key"] == "macro-calendar-live"
+    assert data["event_probability"]["source_interfaces"][0]["status"] == "active"
 
 
 def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_client: TestClient, monkeypatch):
@@ -206,6 +207,41 @@ def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_cl
     assert industry["probability_label"]
     assert all(item["judgment"] for item in events)
     assert all(item["probability_label"] for item in events)
+
+
+def test_research_hub_event_probability_summary_and_sources_reflect_live_mix(workspace_client: TestClient, monkeypatch):
+    import astock
+
+    monkeypatch.setattr(astock, "announcements", lambda code: [
+        {"date": "2026-07-17", "title": "关于海外订单增长的公告", "type": "公告", "url": "https://example.com/a1"},
+    ])
+    monkeypatch.setattr(astock, "stock_news", lambda code, limit=20: [
+        {"新闻标题": "徐工机械出口订单继续增长", "发布时间": "2026-07-17 09:30", "新闻链接": "https://example.com/n1"},
+    ])
+
+    workspace_client.put("/api/watchlist", json={
+        "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
+        "indicators": [],
+    })
+    workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械催化跟踪",
+        "type": "sector_profile",
+        "content": "下周重点看挖机销量、出口订单和政策催化验证，若数据延续改善，行业预期有继续上修空间。",
+        "related_sectors": ["工程机械"],
+    })
+
+    hub = workspace_client.get("/api/research/hub")
+    assert hub.status_code == 200
+
+    event_probability = hub.json()["data"]["event_probability"]
+    assert "宏观窗口" in event_probability["summary"]["description"]
+    assert "行业催化" in event_probability["summary"]["description"]
+    assert "个股催化" in event_probability["summary"]["description"]
+
+    sources = event_probability["source_interfaces"]
+    assert any(item["key"] == "macro-calendar-live" and item["status"] == "active" for item in sources)
+    assert any(item["key"] == "industry-catalyst-knowledge" and item["status"] == "active" for item in sources)
+    assert any(item["key"] == "stock-catalyst-watchlist" and item["status"] == "active" for item in sources)
 
 
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):

@@ -1135,6 +1135,72 @@ def _event_probability_priority_events(stock_watch_feed: list[dict], sector_entr
     return rows[:8]
 
 
+def _event_probability_summary(priority_events: list[dict]) -> dict:
+    macro_count = sum(1 for item in priority_events if item.get("category") == "宏观窗口")
+    industry_count = sum(1 for item in priority_events if item.get("category") == "行业催化")
+    stock_count = sum(1 for item in priority_events if item.get("category") == "个股催化")
+    description = (
+        f"当前已接入混合事件流：宏观窗口 {macro_count} 条、行业催化 {industry_count} 条、"
+        f"个股催化 {stock_count} 条。后续在此基础上继续补主观概率与情景判断。"
+    )
+    return {
+        "title": "事件概率体系入口",
+        "description": description,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _event_probability_modules(priority_events: list[dict]) -> list[dict]:
+    categories = {item.get("category") for item in priority_events}
+    return [
+        {
+            "key": "macro-probability",
+            "label": "宏观事件概率",
+            "description": "承接政策窗口、会议节点和跨市场宏观事件的跟踪框架。",
+            "status": "active" if "宏观窗口" in categories else "planned",
+        },
+        {
+            "key": "industry-catalyst",
+            "label": "行业催化事件",
+            "description": "承接关键行业催化、供需拐点和政策催化的观察模板。",
+            "status": "active" if "行业催化" in categories else "planned",
+        },
+        {
+            "key": "scenario-dashboard",
+            "label": "情景判断面板",
+            "description": "承接后续自建情景树、主观概率和跟踪结论的可视化入口。",
+            "status": "watching" if priority_events else "planned",
+        },
+    ]
+
+
+def _event_probability_sources(priority_events: list[dict], sector_entries: list[dict], stock_watch_feed: list[dict]) -> list[dict]:
+    categories = {item.get("category") for item in priority_events}
+    return [
+        {
+            "key": "macro-calendar-live",
+            "label": "公开宏观事件日历",
+            "provider": "calendar_auto_feed",
+            "status": "active" if "宏观窗口" in categories else "planned",
+            "note": "直接复用当前投资日历里的自动宏观窗口事件。",
+        },
+        {
+            "key": "industry-catalyst-knowledge",
+            "label": "行业催化知识条目",
+            "provider": "knowledge_sector_entries",
+            "status": "active" if sector_entries else "planned",
+            "note": "复用行业卡片与周度复盘里的催化、验证、政策与销量线索。",
+        },
+        {
+            "key": "stock-catalyst-watchlist",
+            "label": "关注列表个股催化",
+            "provider": "watchlist_news_and_filings",
+            "status": "active" if stock_watch_feed else "planned",
+            "note": "复用关注列表个股的公告与新闻高亮，形成公司层面的催化跟踪。",
+        },
+    ]
+
+
 def get_research_hub() -> dict:
     radar = newsradar.get_radar(force=False)
     cfg = newsradar.load_sources_config()
@@ -1149,60 +1215,14 @@ def get_research_hub() -> dict:
     stock_watch_feed = _watchlist_stock_feed(watch)
     sector_entries = knowledge.list_entries(kind="sector_profile")
     weekly_reviews = knowledge.list_entries(kind="weekly_review")
+    priority_events = _event_probability_priority_events(stock_watch_feed, sector_entries, weekly_reviews)
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "event_probability": {
-            "summary": {
-                "title": "事件概率体系入口",
-                "description": "当前先接结构化骨架，后续承接真实事件概率源、自建情景判断与重点催化跟踪。",
-                "updated_at": datetime.now().isoformat(timespec="seconds"),
-            },
-            "planned_modules": [
-                {
-                    "key": "macro-probability",
-                    "label": "宏观事件概率",
-                    "description": "承接政策窗口、会议节点和跨市场宏观事件的跟踪框架。",
-                    "status": "planned",
-                },
-                {
-                    "key": "industry-catalyst",
-                    "label": "行业催化事件",
-                    "description": "承接关键行业催化、供需拐点和政策催化的观察模板。",
-                    "status": "planned",
-                },
-                {
-                    "key": "scenario-dashboard",
-                    "label": "情景判断面板",
-                    "description": "承接后续自建情景树、主观概率和跟踪结论的可视化入口。",
-                    "status": "planned",
-                },
-            ],
-            "priority_events": [
-                * _event_probability_priority_events(stock_watch_feed, sector_entries, weekly_reviews),
-            ],
-            "source_interfaces": [
-                {
-                    "key": "research-hub-scaffold",
-                    "label": "Research Hub 骨架接口",
-                    "provider": "local_scaffold",
-                    "status": "scaffold",
-                    "note": "当前仅返回页面骨架和占位数据，未接真实概率源。",
-                },
-                {
-                    "key": "public-event-calendar",
-                    "label": "公开事件日历占位",
-                    "provider": "public_calendar_placeholder",
-                    "status": "planned",
-                    "note": "后续可承接公开宏观日历、会议日历和政策窗口源。",
-                },
-                {
-                    "key": "scenario-probability-model",
-                    "label": "自建情景概率模块",
-                    "provider": "internal_placeholder",
-                    "status": "planned",
-                    "note": "后续承接主观情景树、概率标注和复盘留痕。",
-                },
-            ],
+            "summary": _event_probability_summary(priority_events),
+            "planned_modules": _event_probability_modules(priority_events),
+            "priority_events": priority_events,
+            "source_interfaces": _event_probability_sources(priority_events, sector_entries, stock_watch_feed),
         },
         "fundamental": {
             "source_interfaces": {
