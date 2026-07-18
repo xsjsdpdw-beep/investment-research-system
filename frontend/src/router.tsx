@@ -3,6 +3,8 @@ import { Layout } from "@/components/layout/Layout";
 import { Calendar } from "@/pages/Calendar";
 import { Intel } from "@/pages/Intel";
 import { Framework } from "@/pages/Framework";
+import { Sectors } from "@/pages/Sectors";
+import { SectorDetail } from "@/pages/SectorDetail";
 import { Watchlist } from "@/pages/Watchlist";
 import { Notes } from "@/pages/Notes";
 import { Database } from "@/pages/Database";
@@ -20,8 +22,8 @@ export const router = createBrowserRouter([
       { path: "/portfolio", element: <Portfolio /> },
       { path: "/stock-data", element: <Navigate to="/database?sub=stock-data" replace /> },
       { path: "/my-reports", element: <Navigate to="/framework" replace /> },
-      { path: "/sectors", element: <Navigate to="/framework" replace /> },
-      { path: "/sectors/:key", element: <Navigate to="/framework" replace /> },
+      { path: "/sectors", element: <Sectors /> },
+      { path: "/sectors/:key", element: <SectorDetail /> },
       { path: "/intel", element: <Intel /> },
       { path: "/watchlist", element: <Watchlist /> },
       { path: "/memos", element: <Notes /> },

@@ -1,6 +1,7 @@
 import {
   CalendarRange,
   Database,
+  LayoutGrid,
   LayoutTemplate,
   NotebookPen,
   Radar,
@@ -118,6 +119,12 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
       { key: "liquidity", label: "流动性" },
       { key: "event-probability", label: "事件概率" },
     ],
+  },
+  {
+    to: "/sectors",
+    label: "板块中心",
+    icon: LayoutGrid,
+    description: "Simon 原版板块骨架与热门赛道",
   },
   {
     to: "/framework",
