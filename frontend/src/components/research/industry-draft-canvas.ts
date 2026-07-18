@@ -99,6 +99,89 @@ export function getIndustryDraftActiveTab(
   return found || data.tabs[0] || null;
 }
 
+function uniqueId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createEmptyCanvasTab(): IndustryDraftCanvasTab {
+  return {
+    id: uniqueId("tab"),
+    title: "未命名栏目",
+    cards: [],
+  };
+}
+
+export function createCanvasCard(type: IndustryDraftCanvasCard["type"]): IndustryDraftCanvasCard {
+  if (type === "metric_grid") {
+    return {
+      id: uniqueId("card"),
+      type,
+      title: "关键指标",
+      layout: "grid",
+      content: {
+        items: [{ label: "指标", value: "—", note: "" }],
+      },
+    };
+  }
+  if (type === "range_band") {
+    return {
+      id: uniqueId("card"),
+      type,
+      title: "区间带",
+      layout: "band",
+      content: {
+        current_label: "当前位置",
+        current_value: "—",
+        segments: [{ label: "区间", weight: 50, note: "" }],
+      },
+    };
+  }
+  if (type === "comparison_cards") {
+    return {
+      id: uniqueId("card"),
+      type,
+      title: "对比卡",
+      layout: "comparison",
+      content: {
+        items: [{ name: "对象", headline: "", detail: "", tag: "" }],
+      },
+    };
+  }
+  if (type === "timeline") {
+    return {
+      id: uniqueId("card"),
+      type,
+      title: "时间线",
+      layout: "timeline",
+      content: {
+        steps: [{ label: "阶段", caption: "", active: false }],
+      },
+    };
+  }
+  return {
+    id: uniqueId("card"),
+    type: "summary_hero",
+    title: "速览卡",
+    layout: "hero",
+    content: {
+      headline: "",
+      bullets: [""],
+      tags: [],
+    },
+  };
+}
+
+export function moveItem<T>(items: T[], index: number, delta: number): T[] {
+  const nextIndex = index + delta;
+  if (index < 0 || index >= items.length || nextIndex < 0 || nextIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [item] = next.splice(index, 1);
+  next.splice(nextIndex, 0, item);
+  return next;
+}
+
 export function shouldUseIndustryDraftCanvas(
   selectedSector: string,
   workbench?: Pick<OverviewWorkbench, "draft_theme_schema"> | null,

@@ -5991,9 +5991,9 @@ export function Framework() {
                     sectorWorkbench?.draft.summary || "这里承接自动提取研报后的第一版框架。后续即便有新研报进入，也只会更新初稿，不会覆盖你的深度版本。",
                   )}
                   {shouldUseIndustryDraftCanvas(selectedSector || "", sectorWorkbench)
-                    ? <IndustryDraftCanvas data={sectorWorkbench.draft_theme_schema} />
+                    ? <IndustryDraftCanvas data={sectorWorkbench.draft_theme_schema} scopeType="sector" scopeId={selectedSector || "HBM"} />
                     : shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
-                    ? <HBMDraftDashboard data={sectorWorkbench.draft_theme_schema} />
+                    ? <HBMDraftDashboard data={sectorWorkbench.draft_theme_schema} scopeType="sector" scopeId={selectedSector || "HBM"} />
                     : (sectorWorkbench?.draft_structured_blocks || []).length > 0
                     ? renderStructuredOverviewShell(sectorWorkbench?.draft_structured_blocks || [], {
                         scope: "sector",

@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   adaptLegacyHBMDashboardToCanvas,
+  createCanvasCard,
+  createEmptyCanvasTab,
   getIndustryDraftActiveTab,
+  moveItem,
   shouldUseIndustryDraftCanvas,
 } from "../src/components/research/industry-draft-canvas.ts";
 
@@ -43,4 +46,22 @@ test("shouldUseIndustryDraftCanvas is HBM-only and requires matching schema", ()
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: canvas }), true);
   assert.equal(shouldUseIndustryDraftCanvas("光互联", { draft_theme_schema: canvas }), false);
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: null }), false);
+});
+
+test("createEmptyCanvasTab returns editable tab shell", () => {
+  const tab = createEmptyCanvasTab();
+  assert.equal(tab.title, "未命名栏目");
+  assert.deepEqual(tab.cards, []);
+});
+
+test("createCanvasCard creates metric grid with editable items array", () => {
+  const card = createCanvasCard("metric_grid");
+  assert.equal(card.type, "metric_grid");
+  assert.ok(Array.isArray(card.content.items));
+});
+
+test("moveItem reorders arrays by button-style deltas", () => {
+  const moved = moveItem(["a", "b", "c"], 1, 1);
+  assert.deepEqual(moved, ["a", "c", "b"]);
+  assert.deepEqual(moveItem(["a", "b"], 0, -1), ["a", "b"]);
 });
