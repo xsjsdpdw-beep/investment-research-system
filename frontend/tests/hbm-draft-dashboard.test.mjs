@@ -12,6 +12,7 @@ import {
   getHBMDraftTabTheme,
   getHBMDraftTabSummary,
   HBM_DRAFT_TAB_ORDER,
+  mapLegacyHbmDashboardToCanvas,
   shouldUseHBMDraftDashboard,
 } from "../src/components/research/hbm-draft-dashboard.ts";
 
@@ -25,6 +26,28 @@ const data = {
     { key: "cycle_meter", title: "周期温度计", headline: "", summary: ["温度高位"], metrics: [], panels: [], sources: [], empty_state: "" },
   ],
 };
+
+test("mapLegacyHbmDashboardToCanvas upgrades old HBM tabs into block-first tabs", () => {
+  const result = mapLegacyHbmDashboardToCanvas({
+    kind: "hbm_draft_dashboard",
+    tabs: [
+      {
+        key: "overview",
+        label: "总览",
+        sections: [
+          {
+            type: "hero",
+            title: "景气总览",
+            bullets: ["HBM 维持高景气"],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.kind, "industry_draft_canvas");
+  assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
+});
 
 test("HBM tab order stays fixed", () => {
   assert.deepEqual(

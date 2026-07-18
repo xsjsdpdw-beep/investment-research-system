@@ -95,7 +95,7 @@ export function normalizeIndustryDraftCanvasInput(data: IndustryDraftCanvasInput
 export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): IndustryDraftCanvasSchema {
   return {
     kind: "industry_draft_canvas",
-    version: "v1",
+    version: "v2",
     scope: "HBM",
     tabs: (data.tabs || []).map((tab, index) => {
       const blocks: IndustryDraftBlock[] = [
@@ -112,62 +112,16 @@ export function adaptLegacyHBMDashboardToCanvas(data: HBMDraftDashboardData): In
         },
       ];
 
-      if (tab.metrics?.length) {
-        blocks.push({
-          id: `${tab.key}-metrics`,
-          type: "metric_grid",
-          title: "关键指标",
-          spec: {
-            items: tab.metrics.map((metric) => ({
-              label: metric.label,
-              value: metric.value,
-              note: metric.tone || "",
-            })),
-          },
-        });
-      }
+      if (tab.metrics?.length) blocks.push({ id: `${tab.key}-metrics`, type: "metric_grid", title: "关键指标", spec: { items: tab.metrics.map((metric) => ({ label: metric.label, value: metric.value, note: metric.tone || "" })) } });
+      if (tab.generation_steps?.length) blocks.push({ id: `${tab.key}-timeline`, type: "timeline", title: "技术代际", spec: { steps: tab.generation_steps } });
+      if (tab.cost_stack?.length) blocks.push({ id: `${tab.key}-band`, type: "range_band", title: "成本与卡口", spec: { current_label: "核心约束", current_value: tab.metrics?.[0]?.value || "", segments: tab.cost_stack } });
+      if (tab.chain_nodes?.length) blocks.push({ id: `${tab.key}-chain`, type: "industry_chain", title: "产业链", spec: { nodes: tab.chain_nodes } });
+      if (tab.leader_cards?.length) blocks.push({ id: `${tab.key}-comparison`, type: "comparison_cards", title: "龙头对比", spec: { items: tab.leader_cards } });
+      if (tab.panels?.length) blocks.push({ id: `${tab.key}-evidence`, type: "evidence_table", title: "补充信息", spec: { items: tab.panels } });
 
-      if (tab.generation_steps?.length) {
-        blocks.push({
-          id: `${tab.key}-timeline`,
-          type: "timeline",
-          title: "技术代际",
-          spec: { steps: tab.generation_steps },
-        });
-      }
-
-      if (tab.cost_stack?.length) {
-        blocks.push({
-          id: `${tab.key}-band`,
-          type: "range_band",
-          title: "成本与卡口",
-          spec: {
-            current_label: "核心约束",
-            current_value: tab.metrics?.[0]?.value || "",
-            segments: tab.cost_stack,
-          },
-        });
-      }
-
-      if (tab.leader_cards?.length) {
-        blocks.push({
-          id: `${tab.key}-comparison`,
-          type: "comparison_cards",
-          title: "龙头对比",
-          spec: { items: tab.leader_cards },
-        });
-      }
-
-      return {
-        id: `tab-${tab.key || index}`,
-        title: tab.title || "未命名栏目",
-        blocks,
-      };
+      return { id: `tab-${tab.key || index}`, title: tab.title || "未命名栏目", blocks };
     }),
-    meta: {
-      generated_at: data.generated_at || "",
-      source_mode: "auto",
-    },
+    meta: { generated_at: data.generated_at || "", source_mode: "auto" },
   };
 }
 

@@ -1,4 +1,60 @@
-import type { HBMDraftDashboardData, HBMDraftTab, OverviewWorkbench } from "@/lib/api";
+import type { HBMDraftDashboardData, HBMDraftTab, IndustryDraftBlock, IndustryDraftCanvasSchema, OverviewWorkbench } from "@/lib/api";
+import { adaptLegacyHBMDashboardToCanvas } from "./industry-draft-canvas.ts";
+
+type LegacyHbmSection = Record<string, unknown>;
+type LegacyHbmTab = Partial<HBMDraftTab> & { label?: string; sections?: LegacyHbmSection[] };
+type LegacyHbmDashboardData = Omit<HBMDraftDashboardData, "tabs"> & { tabs?: LegacyHbmTab[] };
+
+function mapLegacySectionToBlock(section: LegacyHbmSection, blockIndex: number): IndustryDraftBlock {
+  const typeMap: Record<string, IndustryDraftBlock["type"]> = {
+    hero: "summary_hero",
+    summary_hero: "summary_hero",
+    metric_grid: "metric_grid",
+    range_band: "range_band",
+    comparison_cards: "comparison_cards",
+    timeline: "timeline",
+    flow_map: "flow_map",
+    industry_chain: "industry_chain",
+    comparison_table: "comparison_table",
+    chart_spec: "chart_spec",
+    evidence_table: "evidence_table",
+  };
+  const type = typeMap[String(section.type || "")] || "summary_hero";
+  const rawSpec = section.spec && typeof section.spec === "object" && !Array.isArray(section.spec)
+    ? section.spec as Record<string, unknown>
+    : {};
+  return {
+    id: String(section.id || `block-${blockIndex + 1}`),
+    type,
+    title: String(section.title || ""),
+    spec: {
+      ...rawSpec,
+      ...(type === "summary_hero" ? {
+        headline: rawSpec.headline || section.headline || section.title || "",
+        bullets: rawSpec.bullets || section.bullets || section.summary || [],
+      } : {}),
+    },
+    sources: Array.isArray(section.sources) ? section.sources.map(String) : [],
+  };
+}
+
+export function mapLegacyHbmDashboardToCanvas(data: LegacyHbmDashboardData): IndustryDraftCanvasSchema {
+  if (!(data.tabs || []).some((tab) => tab.sections?.length)) {
+    return adaptLegacyHBMDashboardToCanvas(data as HBMDraftDashboardData);
+  }
+  return {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "HBM",
+    tabs: (data.tabs || []).map((tab, tabIndex) => {
+      const sections = tab.sections || [];
+      const blocks: IndustryDraftBlock[] = sections.map(mapLegacySectionToBlock);
+
+      return { id: `tab-${tab.key || tabIndex + 1}`, title: tab.title || tab.label || "未命名栏目", blocks };
+    }),
+    meta: { generated_at: data.generated_at || "", source_mode: "auto" },
+  };
+}
 
 export const HBM_DRAFT_TAB_ORDER: HBMDraftTab["key"][] = [
   "overview",

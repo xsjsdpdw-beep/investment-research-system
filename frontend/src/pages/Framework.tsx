@@ -11,10 +11,9 @@ import { SectionTabs } from "@/components/ui/SectionTabs";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { StructuredOverviewRenderer } from "@/components/research/StructuredOverviewRenderer";
 import { StructuredOverviewSidebar } from "@/components/research/StructuredOverviewSidebar";
-import { HBMDraftDashboard } from "@/components/research/HBMDraftDashboard";
 import { IndustryDraftCanvas } from "@/components/research/IndustryDraftCanvas";
-import { shouldUseIndustryDraftCanvas } from "@/components/research/industry-draft-canvas";
-import { shouldUseHBMDraftDashboard } from "@/components/research/hbm-draft-dashboard";
+import { migrateCanvasCardsToBlocks, shouldUseIndustryDraftCanvas } from "@/components/research/industry-draft-canvas";
+import { mapLegacyHbmDashboardToCanvas, shouldUseHBMDraftDashboard } from "@/components/research/hbm-draft-dashboard";
 import { api, ApiError, type KnowledgeEntry, type OverviewCandidate, type OverviewContentBlock, type OverviewDeepCard, type OverviewEditorBinding, type OverviewWorkbench, type SectorIndicator, type SectorModule, type SectorTreeNode, type StockCenterData, type StockModule, type StructuredRenderBlock, type WatchIndicator, type WatchStock, type YoudaoNoteCandidate } from "@/lib/api";
 import { FRAMEWORK_TABS } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -3010,6 +3009,11 @@ export function Framework() {
         : weeklyEntries;
   const selectedSectorIndicators = selectedSector ? sectorIndicators.filter((item) => item.sector === selectedSector) : sectorIndicators;
   const selectedSectorModules = selectedSector ? sectorModules.filter((item) => item.sector === selectedSector) : [];
+  const sectorDraftSchema = shouldUseIndustryDraftCanvas(selectedSector || "", sectorWorkbench)
+    ? migrateCanvasCardsToBlocks(sectorWorkbench.draft_theme_schema)
+    : shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
+      ? mapLegacyHbmDashboardToCanvas(sectorWorkbench.draft_theme_schema)
+      : null;
   const orderedSectorTree = useMemo(
     () => sortByStoredOrder(sectorTree, (item) => item.id, sectorNavOrder, (item, index) => item.sort_order * 1000 + index),
     [sectorTree, sectorNavOrder],
@@ -5990,10 +5994,8 @@ export function Framework() {
                   {renderOverviewHintBar(
                     sectorWorkbench?.draft.summary || "这里承接自动提取研报后的第一版框架。后续即便有新研报进入，也只会更新初稿，不会覆盖你的深度版本。",
                   )}
-                  {shouldUseIndustryDraftCanvas(selectedSector || "", sectorWorkbench)
-                    ? <IndustryDraftCanvas data={sectorWorkbench.draft_theme_schema} scopeType="sector" scopeId={selectedSector || "HBM"} />
-                    : shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
-                    ? <HBMDraftDashboard data={sectorWorkbench.draft_theme_schema} scopeType="sector" scopeId={selectedSector || "HBM"} />
+                  {sectorDraftSchema
+                    ? <IndustryDraftCanvas data={sectorDraftSchema} scopeType="sector" scopeId={selectedSector || "HBM"} />
                     : (sectorWorkbench?.draft_structured_blocks || []).length > 0
                     ? renderStructuredOverviewShell(sectorWorkbench?.draft_structured_blocks || [], {
                         scope: "sector",

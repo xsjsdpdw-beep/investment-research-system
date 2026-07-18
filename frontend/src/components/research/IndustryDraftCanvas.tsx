@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api, ApiError, type IndustryDraftBlock, type IndustryDraftCanvasSchema } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { IndustryDraftCardRenderer } from "./IndustryDraftCardRenderer";
+import { renderIndustryDraftBlock } from "./IndustryDraftCardRenderer";
 import { IndustryDraftCanvasEditor } from "./IndustryDraftCanvasEditor";
 import {
   createCanvasCard,
@@ -196,8 +196,8 @@ export function IndustryDraftCanvas({
             />
           </div>
         ) : (
-          activeTab.blocks.map((card) => (
-            <IndustryDraftCardRenderer key={card.id} card={card} />
+          activeTab.blocks.map((block) => (
+            <div key={block.id}>{renderIndustryDraftBlock(block)}</div>
           ))
         )}
       </div>

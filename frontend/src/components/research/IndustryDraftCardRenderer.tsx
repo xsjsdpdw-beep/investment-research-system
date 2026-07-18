@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { IndustryDraftBlock } from "@/lib/api";
+import type { ReactNode } from "react";
 
 function readSpecArray(value: unknown) {
   return Array.isArray(value) ? value : [];
@@ -194,24 +195,43 @@ function TimelineCard({ card }: { card: IndustryDraftBlock }) {
   );
 }
 
+const INDUSTRY_DRAFT_BLOCK_COMPONENTS: Record<IndustryDraftBlock["type"], string> = {
+  summary_hero: "SummaryHeroBlock",
+  metric_grid: "MetricGridBlock",
+  range_band: "RangeBandBlock",
+  comparison_cards: "ComparisonCardsBlock",
+  timeline: "TimelineBlock",
+  flow_map: "FlowMapBlock",
+  industry_chain: "IndustryChainBlock",
+  comparison_table: "ComparisonTableBlock",
+  chart_spec: "ChartSpecBlock",
+  evidence_table: "EvidenceTableBlock",
+};
+
+export function getIndustryDraftBlockComponent(type: string) {
+  return INDUSTRY_DRAFT_BLOCK_COMPONENTS[type as IndustryDraftBlock["type"]] || "GenericDraftBlock";
+}
+
+export function renderIndustryDraftBlock(block: IndustryDraftBlock): ReactNode {
+  switch (getIndustryDraftBlockComponent(block.type)) {
+    case "SummaryHeroBlock":
+      return <SummaryHeroCard card={block} />;
+    case "MetricGridBlock":
+      return <MetricGridCard card={block} />;
+    case "RangeBandBlock":
+      return <RangeBandCard card={block} />;
+    case "ComparisonCardsBlock":
+      return <ComparisonCards card={block} />;
+    case "TimelineBlock":
+      return <TimelineCard card={block} />;
+    default:
+      if (TASK_2_COMPATIBILITY_BLOCK_TYPES.has(block.type)) {
+        return <CompatibilityBlockCard card={block} />;
+      }
+      return <CompatibilityBlockCard card={block} />;
+  }
+}
+
 export function IndustryDraftCardRenderer({ card }: { card: IndustryDraftBlock }) {
-  if (card.type === "summary_hero") {
-    return <SummaryHeroCard card={card} />;
-  }
-  if (card.type === "metric_grid") {
-    return <MetricGridCard card={card} />;
-  }
-  if (card.type === "range_band") {
-    return <RangeBandCard card={card} />;
-  }
-  if (card.type === "comparison_cards") {
-    return <ComparisonCards card={card} />;
-  }
-  if (card.type === "timeline") {
-    return <TimelineCard card={card} />;
-  }
-  if (TASK_2_COMPATIBILITY_BLOCK_TYPES.has(card.type)) {
-    return <CompatibilityBlockCard card={card} />;
-  }
-  return null;
+  return renderIndustryDraftBlock(card);
 }
