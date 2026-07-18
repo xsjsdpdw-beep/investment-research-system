@@ -830,6 +830,79 @@ def get_research_hub() -> dict:
     weekly_reviews = knowledge.list_entries(kind="weekly_review")
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "event_probability": {
+            "summary": {
+                "title": "事件概率体系入口",
+                "description": "当前先接结构化骨架，后续承接真实事件概率源、自建情景判断与重点催化跟踪。",
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            "planned_modules": [
+                {
+                    "key": "macro-probability",
+                    "label": "宏观事件概率",
+                    "description": "承接政策窗口、会议节点和跨市场宏观事件的跟踪框架。",
+                    "status": "planned",
+                },
+                {
+                    "key": "industry-catalyst",
+                    "label": "行业催化事件",
+                    "description": "承接关键行业催化、供需拐点和政策催化的观察模板。",
+                    "status": "planned",
+                },
+                {
+                    "key": "scenario-dashboard",
+                    "label": "情景判断面板",
+                    "description": "承接后续自建情景树、主观概率和跟踪结论的可视化入口。",
+                    "status": "planned",
+                },
+            ],
+            "priority_events": [
+                {
+                    "key": "fed-window",
+                    "title": "美联储重要议息窗口",
+                    "category": "宏观窗口",
+                    "status": "watching",
+                    "note": "当前仅保留观察位，后续再接真实事件节奏与概率判断。",
+                },
+                {
+                    "key": "china-policy-window",
+                    "title": "国内重要政策与发布窗口",
+                    "category": "政策窗口",
+                    "status": "watching",
+                    "note": "用于承接政策会议、发布会和重点制度调整的后续事件库。",
+                },
+                {
+                    "key": "sector-catalyst-template",
+                    "title": "行业催化模板观察位",
+                    "category": "行业催化",
+                    "status": "planned",
+                    "note": "用于后续接入重点行业催化、景气验证和供需转折跟踪。",
+                },
+            ],
+            "source_interfaces": [
+                {
+                    "key": "research-hub-scaffold",
+                    "label": "Research Hub 骨架接口",
+                    "provider": "local_scaffold",
+                    "status": "scaffold",
+                    "note": "当前仅返回页面骨架和占位数据，未接真实概率源。",
+                },
+                {
+                    "key": "public-event-calendar",
+                    "label": "公开事件日历占位",
+                    "provider": "public_calendar_placeholder",
+                    "status": "planned",
+                    "note": "后续可承接公开宏观日历、会议日历和政策窗口源。",
+                },
+                {
+                    "key": "scenario-probability-model",
+                    "label": "自建情景概率模块",
+                    "provider": "internal_placeholder",
+                    "status": "planned",
+                    "note": "后续承接主观情景树、概率标注和复盘留痕。",
+                },
+            ],
+        },
         "fundamental": {
             "source_interfaces": {
                 "industry_expert_notes": provider_status["industry_expert_notes"],

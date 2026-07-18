@@ -147,6 +147,18 @@ def test_workspace_hub_and_macro_shell(workspace_client: TestClient):
     assert overview["trend"]["series"][0]["name"]
 
 
+def test_research_hub_exposes_event_probability_scaffold(workspace_client: TestClient):
+    hub = workspace_client.get("/api/research/hub")
+    assert hub.status_code == 200
+
+    data = hub.json()["data"]
+    assert "event_probability" in data
+    assert data["event_probability"]["summary"]["title"] == "事件概率体系入口"
+    assert data["event_probability"]["planned_modules"][0]["key"] == "macro-probability"
+    assert data["event_probability"]["priority_events"][0]["category"] == "宏观窗口"
+    assert data["event_probability"]["source_interfaces"][0]["status"] == "scaffold"
+
+
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):
     import astock
 
