@@ -79,7 +79,6 @@ export function IndustryDraftCanvas({
       const next = normalizeIndustryDraftCanvasInput((saved.draft_theme_schema as IndustryDraftCanvasSchema) || draft);
       setDraft(next);
       setSavedBaseline(next);
-      lastSyncedSourceKey.current = getIndustryDraftCanvasSourceKey(next);
       setEditing(false);
       setExpandedCardId(null);
       toast.success("初稿画布已保存");
