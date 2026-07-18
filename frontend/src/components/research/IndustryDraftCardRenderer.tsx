@@ -1,6 +1,11 @@
 import { cn } from "@/lib/utils";
 import type { IndustryDraftBlock } from "@/lib/api";
 import type { ReactNode } from "react";
+import { ChartSpecBlock } from "./industry-draft-blocks/ChartSpecBlock";
+import { ComparisonTableBlock } from "./industry-draft-blocks/ComparisonTableBlock";
+import { FlowMapBlock } from "./industry-draft-blocks/FlowMapBlock";
+import { IndustryChainBlock } from "./industry-draft-blocks/IndustryChainBlock";
+import { RangeBandBlock } from "./industry-draft-blocks/RangeBandBlock";
 
 function readSpecArray(value: unknown) {
   return Array.isArray(value) ? value : [];
@@ -98,46 +103,6 @@ function MetricGridCard({ card }: { card: IndustryDraftBlock }) {
   );
 }
 
-function RangeBandCard({ card }: { card: IndustryDraftBlock }) {
-  const segments = readSpecArray(card.spec.segments);
-  const maxWeight = Math.max(
-    1,
-    ...segments.map((item) => Number(item?.weight || 0)).filter((value) => Number.isFinite(value)),
-  );
-  return (
-    <section className="rounded-[24px] border border-white/10 bg-[#080f1c] p-4">
-      {card.title ? <h4 className="text-sm font-semibold text-slate-100">{card.title}</h4> : null}
-      {(card.spec.current_label || card.spec.current_value) ? (
-        <p className="mt-2 text-sm text-slate-400">
-          {String(card.spec.current_label || "")}
-          {card.spec.current_label ? "：" : ""}
-          <span className="font-medium text-slate-100">{String(card.spec.current_value || "")}</span>
-        </p>
-      ) : null}
-      <div className="mt-4 space-y-3">
-        {segments.map((item, index) => {
-          const label = String(item?.label || "");
-          const weight = Number(item?.weight || 0);
-          const note = String(item?.note || "");
-          const width = `${Math.max(24, Math.round((weight / maxWeight) * 100))}%`;
-          return (
-            <div key={`${label}-${index}`} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-slate-200">{label}</span>
-                <span className="text-slate-400">{weight}</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-white/[0.06]">
-                <div className="h-2.5 rounded-full bg-[linear-gradient(90deg,#f97316,#facc15)]" style={{ width }} />
-              </div>
-              {note ? <p className="text-xs leading-5 text-slate-500">{note}</p> : null}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function ComparisonCards({ card }: { card: IndustryDraftBlock }) {
   const items = readSpecArray(card.spec.items);
   return (
@@ -219,11 +184,19 @@ export function renderIndustryDraftBlock(block: IndustryDraftBlock): ReactNode {
     case "MetricGridBlock":
       return <MetricGridCard card={block} />;
     case "RangeBandBlock":
-      return <RangeBandCard card={block} />;
+      return <RangeBandBlock block={block} />;
     case "ComparisonCardsBlock":
       return <ComparisonCards card={block} />;
     case "TimelineBlock":
       return <TimelineCard card={block} />;
+    case "FlowMapBlock":
+      return <FlowMapBlock block={block} />;
+    case "IndustryChainBlock":
+      return <IndustryChainBlock block={block} />;
+    case "ComparisonTableBlock":
+      return <ComparisonTableBlock block={block} />;
+    case "ChartSpecBlock":
+      return <ChartSpecBlock block={block} />;
     default:
       if (TASK_2_COMPATIBILITY_BLOCK_TYPES.has(block.type)) {
         return <CompatibilityBlockCard card={block} />;
