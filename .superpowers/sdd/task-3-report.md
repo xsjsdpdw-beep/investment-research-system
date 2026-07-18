@@ -34,3 +34,10 @@
 - Tabs without `sections` now use the existing classic HBM adapter semantics on a single-tab payload, preserving hero, metrics, timelines, ranges, chains, comparisons, and evidence blocks.
 - Added a regression test with one section-based tab and one classic tab; both retain their expected block content.
 - Follow-up verification passed: 14 tests, TypeScript project check, and `git diff --check`.
+
+## Second Review Follow-up
+
+- Normalized the completed legacy HBM canvas with `migrateCanvasCardsToBlocks()` so section-based `chart_spec` blocks use the same first-phase chart-type allowlist as every other runtime block.
+- Added coverage proving an unsupported section chart type (`pie`) is coerced to `bar`.
+- Replaced the block-router source scan with a behavioral test that bundles the TSX module through the installed Vite esbuild dependency and invokes `getIndustryDraftBlockComponent()` directly.
+- Follow-up verification passed: 15 covering tests, TypeScript project check, and `git diff --check`.

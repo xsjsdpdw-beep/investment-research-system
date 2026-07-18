@@ -49,6 +49,24 @@ test("mapLegacyHbmDashboardToCanvas upgrades old HBM tabs into block-first tabs"
   assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
 });
 
+test("mapLegacyHbmDashboardToCanvas clamps unsupported section chart types", () => {
+  const result = mapLegacyHbmDashboardToCanvas({
+    kind: "hbm_draft_dashboard",
+    tabs: [{
+      key: "overview",
+      label: "总览",
+      sections: [{
+        type: "chart_spec",
+        title: "供需趋势",
+        spec: { chart_type: "pie", series: [] },
+      }],
+    }],
+  });
+
+  assert.equal(result.tabs[0].blocks[0].type, "chart_spec");
+  assert.equal(result.tabs[0].blocks[0].spec.chart_type, "bar");
+});
+
 test("mapLegacyHbmDashboardToCanvas preserves classic tabs in mixed legacy payloads", () => {
   const result = mapLegacyHbmDashboardToCanvas({
     kind: "hbm_draft_dashboard",

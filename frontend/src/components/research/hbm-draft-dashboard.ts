@@ -1,5 +1,5 @@
 import type { HBMDraftDashboardData, HBMDraftTab, IndustryDraftBlock, IndustryDraftCanvasSchema, OverviewWorkbench } from "@/lib/api";
-import { adaptLegacyHBMDashboardToCanvas } from "./industry-draft-canvas.ts";
+import { adaptLegacyHBMDashboardToCanvas, migrateCanvasCardsToBlocks } from "./industry-draft-canvas.ts";
 
 type LegacyHbmSection = Record<string, unknown>;
 type LegacyHbmTab = Partial<HBMDraftTab> & { label?: string; sections?: LegacyHbmSection[] };
@@ -39,7 +39,7 @@ function mapLegacySectionToBlock(section: LegacyHbmSection, blockIndex: number):
 }
 
 export function mapLegacyHbmDashboardToCanvas(data: LegacyHbmDashboardData): IndustryDraftCanvasSchema {
-  return {
+  const canvas: IndustryDraftCanvasSchema = {
     kind: "industry_draft_canvas",
     version: "v2",
     scope: "HBM",
@@ -57,6 +57,7 @@ export function mapLegacyHbmDashboardToCanvas(data: LegacyHbmDashboardData): Ind
     }),
     meta: { generated_at: data.generated_at || "", source_mode: "auto" },
   };
+  return migrateCanvasCardsToBlocks(canvas) || canvas;
 }
 
 export const HBM_DRAFT_TAB_ORDER: HBMDraftTab["key"][] = [
