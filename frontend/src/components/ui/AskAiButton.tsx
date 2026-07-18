@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle, Bot, Square } from "lucide-react";
+import { getModelById } from "@/lib/ai-models";
 import { cn } from "@/lib/utils";
-import { chatStream, hasLlm, type ChatMsg } from "@/lib/llm";
+import { chatStream, hasLlm, loadLlm, type ChatMsg } from "@/lib/llm";
 import { ApiError } from "@/lib/api";
 import {
   cancelTradingAgentsRun,
@@ -61,6 +62,10 @@ export function AskAiButton({
   const [taskId, setTaskId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const currentLlm = !isTradingAgents && open ? loadLlm() : null;
+  const currentModelHint = currentLlm
+    ? `${getModelById(currentLlm.model)?.name || currentLlm.model} · ${currentLlm.provider.startsWith("cli-") ? "订阅接入" : "API 接入"}`
+    : "";
 
   useEffect(() => {
     if (!open) return;
@@ -176,14 +181,21 @@ export function AskAiButton({
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={close} />
           <aside className="glass relative m-3 flex w-full max-w-md flex-col rounded-2xl">
-            <div className="flex items-center justify-between border-b border-border/60 p-4">
-              <span className="flex items-center gap-2 font-semibold text-glow">
-                <Sparkles className="h-4 w-4 text-primary" />
-                {isTradingAgents ? "TradingAgents 深度分析" : "问 AI · 本页上下文"}
-              </span>
-              <button onClick={close} className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
+            <div className="border-b border-border/60 p-4">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 font-semibold text-glow">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  {isTradingAgents ? "TradingAgents 深度分析" : "问 AI · 本页上下文"}
+                  {!isTradingAgents && currentModelHint && (
+                    <span className="ml-2 text-[11px] text-muted-foreground/55">
+                      当前模型：<b className="font-medium text-muted-foreground/80">{currentModelHint}</b>
+                    </span>
+                  )}
+                </span>
+                <button onClick={close} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {!configured ? (

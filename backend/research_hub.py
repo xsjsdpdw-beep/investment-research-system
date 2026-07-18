@@ -1126,6 +1126,52 @@ def _event_probability_assessment(category: str, status: str, text: str) -> tupl
     return "中", "先保留观察位，等待更多公开信息确认。"
 
 
+def _event_probability_trigger_window(status: str) -> str:
+    if status == "active":
+        return "近端窗口"
+    if status == "watching":
+        return "观察窗口"
+    return "远期窗口"
+
+
+def _event_probability_rank_score(category: str, status: str, probability_label: str) -> int:
+    score = {"active": 90, "watching": 60, "planned": 30}.get(status, 30)
+    score += {"高": 10, "中高": 7, "中": 4}.get(probability_label, 0)
+    score += {"个股催化": 3, "行业催化": 2, "宏观窗口": 1}.get(category, 0)
+    return score
+
+
+def _event_probability_rank_breakdown(category: str, status: str, probability_label: str) -> dict:
+    return {
+        "status_score": {"active": 90, "watching": 60, "planned": 30}.get(status, 30),
+        "probability_score": {"高": 10, "中高": 7, "中": 4}.get(probability_label, 0),
+        "category_score": {"个股催化": 3, "行业催化": 2, "宏观窗口": 1}.get(category, 0),
+    }
+
+
+def _event_probability_rank_reason(category: str, status: str, probability_label: str) -> str:
+    status_label = _event_probability_trigger_window(status)
+    return f"因处于{status_label}、概率判断为{probability_label}，且属于{category}，所以优先级靠前。"
+
+
+def _decorate_event_probability_item(item: dict) -> dict:
+    category = str(item.get("category", ""))
+    status = str(item.get("status", ""))
+    probability_label = str(item.get("probability_label", ""))
+    rank_score = _event_probability_rank_score(
+        category,
+        status,
+        probability_label,
+    )
+    return {
+        **item,
+        "trigger_window": _event_probability_trigger_window(status),
+        "rank_score": rank_score,
+        "rank_breakdown": _event_probability_rank_breakdown(category, status, probability_label),
+        "rank_reason": _event_probability_rank_reason(category, status, probability_label),
+    }
+
+
 def _macro_priority_events(limit: int = 4) -> list[dict]:
     events = []
     for item in knowledge.list_calendar_events(view="upcoming"):
@@ -1140,7 +1186,7 @@ def _macro_priority_events(limit: int = 4) -> list[dict]:
         status = _event_probability_status(event_day)
         note = f"{event_day} · {source}" + (f" · {notes}" if notes else "")
         probability_label, judgment = _event_probability_assessment("宏观窗口", status, note)
-        events.append({
+        events.append(_decorate_event_probability_item({
             "key": item.get("id") or f"macro-{_safe_slug(title)}-{event_day}",
             "title": title,
             "category": "宏观窗口",
@@ -1148,7 +1194,7 @@ def _macro_priority_events(limit: int = 4) -> list[dict]:
             "note": note,
             "probability_label": probability_label,
             "judgment": judgment,
-        })
+        }))
         if len(events) >= limit:
             break
     return events
@@ -1164,7 +1210,7 @@ def _stock_catalyst_priority_events(stock_watch_feed: list[dict], limit: int = 4
         group = item.get("group", "未分组")
         note = f"{group} · {'；'.join(highlights[:2])}"
         probability_label, judgment = _event_probability_assessment("个股催化", "active", note)
-        events.append({
+        events.append(_decorate_event_probability_item({
             "key": f"stock-catalyst-{_safe_slug(item.get('ticker', label))}",
             "title": f"{label} 催化跟踪",
             "category": "个股催化",
@@ -1172,7 +1218,7 @@ def _stock_catalyst_priority_events(stock_watch_feed: list[dict], limit: int = 4
             "note": note,
             "probability_label": probability_label,
             "judgment": judgment,
-        })
+        }))
         if len(events) >= limit:
             break
     return events
@@ -1208,7 +1254,7 @@ def _industry_catalyst_priority_events(stock_watch_feed: list[dict], sector_entr
             continue
         note = f"{group} · {'；'.join(point['text'] for point in points[:2])}"
         probability_label, judgment = _event_probability_assessment("行业催化", "watching", note)
-        events.append({
+        events.append(_decorate_event_probability_item({
             "key": f"industry-catalyst-{_safe_slug(group)}",
             "title": f"{group} 行业催化跟踪",
             "category": "行业催化",
@@ -1216,7 +1262,7 @@ def _industry_catalyst_priority_events(stock_watch_feed: list[dict], sector_entr
             "note": note,
             "probability_label": probability_label,
             "judgment": judgment,
-        })
+        }))
         if len(events) >= limit:
             break
     return events
@@ -1226,6 +1272,9 @@ def _event_probability_priority_events(stock_watch_feed: list[dict], sector_entr
     rows = _macro_priority_events()
     rows.extend(_industry_catalyst_priority_events(stock_watch_feed, sector_entries, weekly_reviews))
     rows.extend(_stock_catalyst_priority_events(stock_watch_feed))
+    rows = sorted(rows, key=lambda item: (-int(item.get("rank_score", 0)), str(item.get("title", ""))))
+    for index, item in enumerate(rows, start=1):
+        item["rank_order"] = index
     return rows[:8]
 
 
@@ -1241,6 +1290,37 @@ def _event_probability_summary(priority_events: list[dict]) -> dict:
         "title": "事件概率体系入口",
         "description": description,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _event_probability_scenario_snapshot(priority_events: list[dict]) -> dict:
+    active_events = [item for item in priority_events if item.get("status") == "active"]
+    watching_events = [item for item in priority_events if item.get("status") == "watching"]
+    macro_event = next((item for item in priority_events if item.get("category") == "宏观窗口"), None)
+    stock_event = next((item for item in priority_events if item.get("category") == "个股催化"), None)
+    industry_event = next((item for item in priority_events if item.get("category") == "行业催化"), None)
+    base_signal = "、".join(item["category"] for item in priority_events[:3]) if priority_events else "暂无重点事件"
+    return {
+        "base_case": {
+            "label": "基准情景",
+            "summary": f"当前以 {base_signal} 的并行跟踪为主，先观察公开事件是否按预期推进。",
+        },
+        "upside_case": {
+            "label": "上行情景",
+            "summary": (
+                f"若 {stock_event['title']} 或 {industry_event['title'] if industry_event else '行业催化'} 继续得到订单、销量或政策验证，"
+                "市场预期有继续上修空间。"
+            ) if stock_event else "若个股和行业催化继续被验证，可逐步上修相关判断。",
+        },
+        "downside_case": {
+            "label": "下行情景",
+            "summary": (
+                f"若 {macro_event['title']} 临近前预期差走弱，或观察中的 {len(watching_events)} 条事件迟迟未兑现，"
+                "需要降低对短期催化的权重。"
+            ) if macro_event else "若关键事件迟迟未兑现，需要降低对短期催化的权重。",
+        },
+        "active_count": len(active_events),
+        "watching_count": len(watching_events),
     }
 
 
@@ -1323,6 +1403,7 @@ def get_research_hub() -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "event_probability": {
             "summary": _event_probability_summary(priority_events),
+            "scenario_snapshot": _event_probability_scenario_snapshot(priority_events),
             "planned_modules": _event_probability_modules(priority_events),
             "priority_events": priority_events,
             "source_interfaces": _event_probability_sources(priority_events, sector_entries, stock_watch_feed),

@@ -34,7 +34,6 @@ def test_backend_runtime_identity_uses_local_product_name():
     assert '"service": "investment-research-api"' in app_py
     assert "你是 投研体系 里的投研助理" in chat_py
 
-
 def test_overview_youdao_binding_auto_resets_when_note_is_missing():
     app_py = read("backend/app.py")
     knowledge_py = read("backend/knowledge.py")
@@ -138,6 +137,9 @@ def test_tradingagents_deep_analysis_is_wired_through_settings_stock_page_and_ru
     assert "开始深度分析" in ask_ai
 
     assert 'const KEY = "vr-tradingagents"' in tradingagents
+    assert "loadLlm" in tradingagents
+    assert "resolveTradingAgentsConfig" in tradingagents
+    assert "isCliProvider" in tradingagents
     assert 'fetch("/api/tradingagents/run"' in tradingagents
     assert 'fetch(`/api/tradingagents/stream/${taskId}`' in tradingagents
     assert 'fetch(`/api/tradingagents/cancel/${taskId}`' in tradingagents
@@ -197,12 +199,26 @@ def test_intel_daily_review_exposes_ask_ai_entry():
     assert 'label="问 AI"' in intel
 
 
+def test_intel_digest_uses_default_llm_and_shows_current_model_hint():
+    intel = read("frontend/src/pages/Intel.tsx")
+
+    assert 'import { chat } from "@/lib/llm"' in intel
+    assert "<CurrentModelHint" in intel
+    assert "await chat(" in intel
+
+
 def test_ask_ai_panel_shows_current_model_hint():
     ask_ai = read("frontend/src/components/ui/AskAiButton.tsx")
 
     assert "loadLlm" in ask_ai
     assert "当前模型" in ask_ai
-    assert 'className="ml-2 text-[11px] text-muted-foreground"' in ask_ai
+    assert 'className="ml-2 text-[11px] text-muted-foreground/55"' in ask_ai
+
+
+def test_daily_review_shows_current_model_hint_near_ai_actions():
+    review = read("frontend/src/pages/DailyReview.tsx")
+
+    assert "<CurrentModelHint" in review
 
 
 def test_local_startup_helpers_exist_and_point_to_workspace_commands():
@@ -369,8 +385,31 @@ def test_event_probability_cards_render_probability_and_judgment():
 
     assert "probability_label: string;" in api_types
     assert "judgment: string;" in api_types
+    assert "trigger_window: string;" in api_types
+    assert "rank_score: number;" in api_types
+    assert "rank_breakdown:" in api_types
+    assert "rank_reason: string;" in api_types
+    assert "coverage_count: number;" in api_types
+    assert "latest_signal: string;" in api_types
+    assert "scenario_snapshot: EventProbabilityScenarioSnapshot;" in api_types
     assert "item.probability_label" in intel
     assert "item.judgment" in intel
+    assert "优先级 #{item.rank_order ?? \"—\"} · {item.trigger_window}" in intel
+    assert "评分 {item.rank_score}" in intel
+    assert "item.rank_reason" in intel
+    assert "状态分 {item.rank_breakdown.status_score}" in intel
+    assert "const EVENT_PROBABILITY_SORT_OPTIONS = [" in intel
+    assert "setEventPrioritySort(option.key)" in intel
+    assert "sortedEventProbabilityEvents.map((item) => (" in intel
+    assert "重点事件总数" in intel
+    assert "接口接入概览" in intel
+    assert "eventProbabilityStatusLabel(item.status)" in intel
+    assert "eventProbabilitySourceCoverage(item.key)" in intel
+    assert "已覆盖 {item.coverage_count} 条" in intel
+    assert "最新信号：" in intel
+    assert "eventProbability.scenario_snapshot.base_case" in intel
+    assert "活跃事件 {eventProbability.scenario_snapshot.active_count}" in intel
+    assert "观察事件 {eventProbability.scenario_snapshot.watching_count}" in intel
 
 
 def test_local_docs_point_to_service_lifecycle_helpers():

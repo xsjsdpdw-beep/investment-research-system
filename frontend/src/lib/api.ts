@@ -357,6 +357,15 @@ export interface EventProbabilityItem {
   note: string;
   probability_label: string;
   judgment: string;
+  trigger_window: string;
+  rank_score: number;
+  rank_order?: number;
+  rank_breakdown: {
+    status_score: number;
+    probability_score: number;
+    category_score: number;
+  };
+  rank_reason: string;
 }
 
 export interface EventProbabilitySource {
@@ -365,6 +374,21 @@ export interface EventProbabilitySource {
   provider: string;
   status: string;
   note: string;
+  coverage_count: number;
+  latest_signal: string;
+}
+
+export interface EventProbabilityScenarioCase {
+  label: string;
+  summary: string;
+}
+
+export interface EventProbabilityScenarioSnapshot {
+  base_case: EventProbabilityScenarioCase;
+  upside_case: EventProbabilityScenarioCase;
+  downside_case: EventProbabilityScenarioCase;
+  active_count: number;
+  watching_count: number;
 }
 
 export interface ResearchHubData {
@@ -437,6 +461,7 @@ export interface ResearchHubData {
   };
   event_probability: {
     summary: EventProbabilitySummary;
+    scenario_snapshot: EventProbabilityScenarioSnapshot;
     planned_modules: EventProbabilityModule[];
     priority_events: EventProbabilityItem[];
     source_interfaces: EventProbabilitySource[];

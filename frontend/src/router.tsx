@@ -6,6 +6,7 @@ import { Framework } from "@/pages/Framework";
 import { Watchlist } from "@/pages/Watchlist";
 import { Notes } from "@/pages/Notes";
 import { Database } from "@/pages/Database";
+import { Template } from "@/pages/Template";
 import { Settings } from "@/pages/Settings";
 import { Portfolio } from "@/pages/Portfolio";
 
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: "/notes", element: <Navigate to="/memos" replace /> },
       { path: "/framework", element: <Framework /> },
       { path: "/database", element: <Database /> },
+      { path: "/templates", element: <Template /> },
       { path: "/settings", element: <Settings /> },
     ],
   },

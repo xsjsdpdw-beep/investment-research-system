@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Literal
 
 import youdao_sync
+
+YOUDAO_STRUCTURED_VERSION = "native-note-v2"
 
 
 def _first_heading_or_default(content: str, fallback: str) -> str:
@@ -107,12 +112,218 @@ def normalize_youdao_note_markdown(raw: str, title: str) -> str:
             continue
         if re.match(r"^[-*•]\s+", line):
             flush_paragraph()
-            blocks.append(f"- {re.sub(r'^[-*•]\s+', '', line).strip()}")
+            bullet_text = re.sub(r"^[-*•]\s+", "", line).strip()
+            blocks.append(f"- {bullet_text}")
             continue
         paragraph_buffer.append(line)
 
     flush_paragraph()
     return "\n\n".join(blocks).strip() or original
+
+
+def _youdao_data_roots() -> list[Path]:
+    override = os.environ.get("VR_YOUDAO_DATA_DIR", "").strip()
+    if override:
+        return [Path(override)]
+    base = Path.home() / "Library" / "Application Support" / "ynote-desktop"
+    if not base.exists():
+        return []
+    return [path / "ynote-data" for path in base.iterdir() if (path / "ynote-data").exists()]
+
+
+def _youdao_local_note_file(file_id: str) -> Path | None:
+    normalized = (file_id or "").strip()
+    if not normalized:
+        return None
+    for root in _youdao_data_roots():
+        direct = root / "file" / "2" / normalized
+        if direct.exists():
+            return direct
+        for candidate in (root / "file").glob(f"*/{normalized}"):
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _youdao_resource_path(resource_id: str) -> Path | None:
+    normalized = (resource_id or "").strip()
+    if not normalized:
+        return None
+    shard = normalized[-1]
+    for root in _youdao_data_roots():
+        candidate = root / "resource" / shard / normalized
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _image_data_url(path: Path) -> str:
+    suffix = path.suffix.lower()
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".bmp": "image/bmp",
+    }.get(suffix, "")
+    payload = path.read_bytes()
+    if not mime:
+        sample = payload[:16]
+        if sample.startswith(b"\x89PNG\r\n\x1a\n"):
+            mime = "image/png"
+        elif sample.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+        elif sample.startswith(b"RIFF") and b"WEBP" in sample:
+            mime = "image/webp"
+        else:
+            mime = "application/octet-stream"
+    return f"data:{mime};base64,{base64.b64encode(payload).decode('ascii')}"
+
+
+def _youdao_text_from_tokens(tokens: Any) -> str:
+    parts: list[str] = []
+    for token in tokens or []:
+        if isinstance(token, dict) and "8" in token:
+            parts.append(str(token.get("8") or ""))
+    return "".join(parts).replace("\r", "\n")
+
+
+def _youdao_block_text(block: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for child in block.get("5") or []:
+        if isinstance(child, dict):
+            parts.append(_youdao_text_from_tokens(child.get("7") or []))
+    return "".join(parts)
+
+
+def _youdao_heading_level(block: dict[str, Any]) -> int:
+    raw = str(((block.get("4") or {}).get("l") or "")).strip().lower()
+    match = re.fullmatch(r"h([1-6])", raw)
+    if not match:
+        return 1
+    return int(match.group(1))
+
+
+def _youdao_image_block(block: dict[str, Any], index: int) -> dict[str, Any] | None:
+    meta = block.get("4") or {}
+    url = str(meta.get("u") or "")
+    match = re.search(r"(WEBRESOURCE[0-9a-fA-F]+)", url)
+    if not match:
+        return None
+    resource_id = match.group(1)
+    resource_path = _youdao_resource_path(resource_id)
+    if not (resource_path and resource_path.exists()):
+        return None
+    image_block = _blank_block(index, "image", title=f"图片{index}")
+    image_block["image"] = {
+        "url": _image_data_url(resource_path),
+        "caption": "",
+        "resource_id": resource_id,
+    }
+    return image_block
+
+
+def _collect_youdao_local_image_blocks(file_id: str) -> list[dict[str, Any]]:
+    note_file = _youdao_local_note_file(file_id)
+    if not note_file:
+        return []
+    try:
+        document = json.loads(note_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    image_blocks: list[dict[str, Any]] = []
+    for node in document.get("5") or []:
+        if not isinstance(node, dict) or node.get("6") != "im":
+            continue
+        block = _youdao_image_block(node, len(image_blocks) + 1)
+        if block:
+            image_blocks.append(block)
+    return image_blocks
+
+
+def _youdao_note_document_to_blocks(document: dict[str, Any], fallback_title: str) -> list[dict[str, Any]]:
+    root = _blank_block(0, "section", title=(fallback_title or "").strip() or "有道笔记")
+    root["children"] = []
+    stack: list[tuple[int, dict[str, Any]]] = [(0, root)]
+    block_index = 1
+    nodes = list(document.get("5") or [])
+
+    def parent_for(level: int) -> dict[str, Any]:
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        return stack[-1][1] if stack else root
+
+    index = 0
+    while index < len(nodes):
+        node = nodes[index]
+        if not isinstance(node, dict):
+            index += 1
+            continue
+        kind = str(node.get("6") or "")
+
+        if kind == "h":
+            text = _youdao_block_text(node).strip()
+            if text:
+                level = _youdao_heading_level(node)
+                section = _blank_block(block_index, "section", title=text)
+                block_index += 1
+                parent = parent_for(level)
+                parent["children"].append(section)
+                stack.append((level, section))
+            index += 1
+            continue
+
+        if kind == "im":
+            image_block = _youdao_image_block(node, block_index)
+            if image_block:
+                stack[-1][1]["children"].append(image_block)
+                block_index += 1
+            index += 1
+            continue
+
+        if kind == "l":
+            items: list[str] = []
+            list_key = str(((node.get("4") or {}).get("li") or "")).strip()
+            while index < len(nodes):
+                current = nodes[index]
+                if not isinstance(current, dict) or current.get("6") != "l":
+                    break
+                current_key = str(((current.get("4") or {}).get("li") or "")).strip()
+                if list_key and current_key and current_key != list_key:
+                    break
+                item_text = _youdao_block_text(current).strip()
+                if item_text:
+                    items.append(item_text)
+                index += 1
+            if items:
+                list_block = _blank_block(block_index, "bullet_list")
+                list_block["items"] = items
+                stack[-1][1]["children"].append(list_block)
+                block_index += 1
+            continue
+
+        text = _youdao_block_text(node).strip()
+        if text:
+            paragraph = _blank_block(block_index, "paragraph", content=text)
+            stack[-1][1]["children"].append(paragraph)
+            block_index += 1
+        index += 1
+
+    return [root]
+
+
+def _merge_youdao_local_images(blocks: list[dict[str, Any]], file_id: str) -> list[dict[str, Any]]:
+    image_blocks = _collect_youdao_local_image_blocks(file_id)
+    if not image_blocks:
+        return blocks
+    root = deepcopy(blocks[0]) if blocks else _blank_block(0, "section", title="有道笔记")
+    root.setdefault("children", [])
+    image_section = _blank_block(len(root["children"]) + 1, "section", title="图片资料")
+    image_section["children"] = image_blocks
+    root["children"].append(image_section)
+    return [root]
 
 
 def youdao_note_content_to_blocks(content: str, title: str) -> list[dict[str, Any]]:
@@ -553,7 +764,15 @@ def extract_youdao_note_to_blocks(file_id: str, title: str | None = None) -> tup
     if not content:
         raise ValueError("这篇有道笔记还没有可导入内容")
     resolved_title = (title or "").strip() or _first_heading_or_default(content, "有道笔记")
-    return content, youdao_note_content_to_blocks(content, resolved_title)
+    note_file = _youdao_local_note_file(file_id)
+    if note_file:
+        try:
+            document = json.loads(note_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            document = None
+        if isinstance(document, dict) and (document.get("5") or []):
+            return content, _youdao_note_document_to_blocks(document, resolved_title)
+    return content, _merge_youdao_local_images(youdao_note_content_to_blocks(content, resolved_title), file_id)
 
 
 def extract_youdao_note_image_to_blocks(image_path: str, title: str) -> list[dict[str, Any]]:

@@ -1,4 +1,6 @@
 import { ApiError, authHeaders } from "./api";
+import { isCliProvider } from "./ai-models";
+import { loadLlm } from "./llm";
 
 export interface TradingAgentsConfig {
   enabled: boolean;
@@ -52,6 +54,23 @@ export function loadTradingAgentsConfig(): TradingAgentsConfig | null {
   }
 }
 
+export function resolveTradingAgentsConfig(): TradingAgentsConfig | null {
+  const explicit = loadTradingAgentsConfig();
+  if (explicit) return explicit;
+
+  const llm = loadLlm();
+  if (!llm || isCliProvider(llm.provider)) return null;
+
+  return {
+    enabled: true,
+    provider: llm.provider,
+    baseURL: llm.baseURL,
+    apiKey: llm.apiKey,
+    deepModel: llm.model,
+    quickModel: llm.model,
+  };
+}
+
 export function saveTradingAgentsConfig(cfg: TradingAgentsConfig) {
   localStorage.setItem(KEY, JSON.stringify(cfg));
 }
@@ -61,12 +80,12 @@ export function clearTradingAgentsConfig() {
 }
 
 export function hasTradingAgentsConfig(): boolean {
-  return loadTradingAgentsConfig() !== null;
+  return resolveTradingAgentsConfig() !== null;
 }
 
 export async function startTradingAgentsRun(input: TradingAgentsRunInput): Promise<{ taskId: string }> {
-  const cfg = loadTradingAgentsConfig();
-  if (!cfg) throw new ApiError("尚未配置 TradingAgents 深度分析，请先去「接入 AI」页面填写", 400);
+  const cfg = resolveTradingAgentsConfig();
+  if (!cfg) throw new ApiError("尚未配置 TradingAgents 深度分析。请先填写独立 API 配置，或先在上方完成默认 API 接入。", 400);
 
   let resp: Response;
   try {

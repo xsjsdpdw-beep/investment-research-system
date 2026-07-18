@@ -205,6 +205,13 @@ def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_cl
     assert "工程机械" in industry["title"]
     assert industry["judgment"]
     assert industry["probability_label"]
+    assert all(item["trigger_window"] for item in events)
+    assert all(item["rank_score"] >= 1 for item in events)
+    assert all(item["rank_reason"] for item in events)
+    assert all(item["rank_breakdown"]["status_score"] >= 30 for item in events)
+    assert all(item["rank_breakdown"]["probability_score"] >= 4 for item in events)
+    assert events == sorted(events, key=lambda item: (-item["rank_score"], item["title"]))
+    assert [item["rank_order"] for item in events] == list(range(1, len(events) + 1))
     assert all(item["judgment"] for item in events)
     assert all(item["probability_label"] for item in events)
 
@@ -237,11 +244,19 @@ def test_research_hub_event_probability_summary_and_sources_reflect_live_mix(wor
     assert "宏观窗口" in event_probability["summary"]["description"]
     assert "行业催化" in event_probability["summary"]["description"]
     assert "个股催化" in event_probability["summary"]["description"]
+    assert event_probability["scenario_snapshot"]["base_case"]["label"] == "基准情景"
+    assert event_probability["scenario_snapshot"]["upside_case"]["summary"]
+    assert event_probability["scenario_snapshot"]["downside_case"]["summary"]
+    assert event_probability["scenario_snapshot"]["active_count"] >= 1
+    assert event_probability["scenario_snapshot"]["watching_count"] >= 1
 
     sources = event_probability["source_interfaces"]
     assert any(item["key"] == "macro-calendar-live" and item["status"] == "active" for item in sources)
     assert any(item["key"] == "industry-catalyst-knowledge" and item["status"] == "active" for item in sources)
     assert any(item["key"] == "stock-catalyst-watchlist" and item["status"] == "active" for item in sources)
+    assert any(item["key"] == "macro-calendar-live" and item["coverage_count"] >= 1 for item in sources)
+    assert any(item["key"] == "industry-catalyst-knowledge" and item["latest_signal"] for item in sources)
+    assert any(item["key"] == "stock-catalyst-watchlist" and item["latest_signal"] for item in sources)
 
 
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):

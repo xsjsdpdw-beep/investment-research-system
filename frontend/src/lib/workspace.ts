@@ -1,6 +1,7 @@
 import {
   CalendarRange,
   Database,
+  LayoutTemplate,
   NotebookPen,
   Radar,
   Settings,
@@ -141,6 +142,16 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
       { key: "registry", label: "模块注册骨架" },
     ],
   },
+  {
+    to: "/templates",
+    label: "模板",
+    icon: LayoutTemplate,
+    description: "沉淀可复用的关键数据库与演示模板",
+    children: [
+      { key: "key-database", label: "关键数据库" },
+      { key: "ppt", label: "PPT模板" },
+    ],
+  },
   { to: "/portfolio", label: "我的持仓", icon: Wallet, description: "本地维护持仓与盈亏跟踪" },
   { to: "/settings", label: "接入 AI", icon: Settings, description: "配置你自己的模型与访问密钥" },
 ];
@@ -162,4 +173,9 @@ export const DATABASE_TABS: SubtabConfig[] = [
   { key: "stock-data", label: "个股数据" },
   { key: "china-macro", label: "中国宏观数据库" },
   { key: "registry", label: "模块注册骨架" },
+];
+
+export const TEMPLATE_TABS: SubtabConfig[] = [
+  { key: "key-database", label: "关键数据库", description: "固化单票高频跟踪数据库的结构与字段" },
+  { key: "ppt", label: "PPT模板", description: "固化汇报页版式，后续按个股或主题一键生成" },
 ];

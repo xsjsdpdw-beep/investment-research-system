@@ -1,4 +1,4 @@
-import type { Announcement, GlobalIndex, MarketOverview, NewsItem, NewsRadarConfig, ResearchHubData, TurnoverTop } from "@/lib/api";
+import type { Announcement, GlobalIndex, MarketOverview, NewsItem, NewsRadarConfig, RadarData, ResearchHubData, TurnoverTop } from "@/lib/api";
 
 type WatchlistStock = {
   code: string;
@@ -29,11 +29,15 @@ export type IntelRefreshResult = {
   turnover: TurnoverTop | null;
   configData: NewsRadarConfig | null;
   stockFeeds: IntelStockFeedItem[];
+  radarGeneratedAt: string | null;
+  refreshError: string | null;
 };
 
 export async function runIntelRefresh({
   forceRadarRefresh,
   refreshRadar,
+  refreshHiringRadar,
+  loadRadar,
   loadHub,
   loadMarketOverview,
   loadGlobalIndices,
@@ -44,7 +48,9 @@ export async function runIntelRefresh({
   loadNews,
 }: {
   forceRadarRefresh: boolean;
-  refreshRadar: () => Promise<unknown>;
+  refreshRadar: () => Promise<RadarData>;
+  refreshHiringRadar?: () => Promise<unknown>;
+  loadRadar: () => Promise<RadarData>;
   loadHub: () => Promise<ResearchHubData>;
   loadMarketOverview: () => Promise<MarketOverview | null>;
   loadGlobalIndices: () => Promise<GlobalIndex[]>;
@@ -54,8 +60,20 @@ export async function runIntelRefresh({
   loadAnnouncements: (code: string) => Promise<Announcement[]>;
   loadNews: (code: string) => Promise<NewsItem[]>;
 }): Promise<IntelRefreshResult> {
+  let radarGeneratedAt: string | null = null;
+  let refreshError: string | null = null;
   if (forceRadarRefresh) {
-    await refreshRadar();
+    try {
+      radarGeneratedAt = (await refreshRadar()).generated_at;
+      if (refreshHiringRadar) {
+        await refreshHiringRadar();
+      }
+    } catch (error) {
+      refreshError = error instanceof Error ? error.message : String(error);
+      radarGeneratedAt = (await loadRadar()).generated_at;
+    }
+  } else {
+    radarGeneratedAt = (await loadRadar()).generated_at;
   }
 
   const [hubData, overview, globals, turnover, watchlistData, configData] = await Promise.all([
@@ -94,5 +112,7 @@ export async function runIntelRefresh({
     turnover,
     configData,
     stockFeeds,
+    radarGeneratedAt,
+    refreshError,
   };
 }

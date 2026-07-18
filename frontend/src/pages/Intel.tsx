@@ -1,16 +1,20 @@
-import { type DragEvent, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { type LucideIcon, ArrowUpRight, BarChart3, ChevronDown, ChevronUp, FileImage, Globe2, GripVertical, Lightbulb, Newspaper, Plus, RefreshCw, Sparkles, X } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AskAiButton } from "@/components/ui/AskAiButton";
+import { CurrentModelHint } from "@/components/ui/CurrentModelHint";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { SectionTabs } from "@/components/ui/SectionTabs";
 import { api, ApiError, type Announcement, type GlobalIndex, type IntelDigestResult, type MarketOverview, type NewsItem, type NewsRadarConfig, type ResearchHubData, type TurnoverTop } from "@/lib/api";
+import { formatIntelAutoRefreshNotice } from "@/lib/intel-auto-refresh-notice";
+import { buildIntelContentSignature } from "@/lib/intel-content-signature";
 import { type DropIndicator, type DropPosition, getDropPosition, reorderWithDropPosition } from "@/lib/drag-sort";
 import { runIntelRefresh } from "@/lib/intel-refresh";
+import { chat } from "@/lib/llm";
 import { cn } from "@/lib/utils";
 import { INTEL_TABS } from "@/lib/workspace";
 
@@ -36,6 +40,13 @@ const EVENT_PROBABILITY_VIEW_TABS = [
   { key: "sources", label: "数据接口" },
 ];
 
+const EVENT_PROBABILITY_SORT_OPTIONS = [
+  { key: "rank", label: "综合优先级" },
+  { key: "window", label: "近端窗口" },
+  { key: "probability", label: "概率强度" },
+  { key: "category", label: "按类别看" },
+] as const;
+
 const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIcon }> = [
   { key: "tech", label: "全球科技头条", icon: Globe2 },
   { key: "macro", label: "宏观事件", icon: Lightbulb },
@@ -46,6 +57,7 @@ const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIc
 ];
 
 type IntelKind = "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring";
+type EventPrioritySortKey = (typeof EVENT_PROBABILITY_SORT_OPTIONS)[number]["key"];
 
 type ModuleSource = {
   id: string;
@@ -133,6 +145,33 @@ function moduleAccent(kind: IntelKind) {
   return "#ef4444";
 }
 
+function eventProbabilityStatusLabel(status: string) {
+  if (status === "active") return "已接入";
+  if (status === "watching") return "观察中";
+  return "待补充";
+}
+
+function eventProbabilitySourceCoverage(key: string) {
+  if (key === "macro-calendar-live") return "覆盖宏观窗口";
+  if (key === "industry-catalyst-knowledge") return "覆盖行业催化";
+  if (key === "stock-catalyst-watchlist") return "覆盖个股催化";
+  return "覆盖范围待补充";
+}
+
+function eventProbabilityCategoryRank(category: string) {
+  if (category === "宏观窗口") return 0;
+  if (category === "行业催化") return 1;
+  if (category === "个股催化") return 2;
+  return 9;
+}
+
+function eventProbabilityCategoryDescription(category: string) {
+  if (category === "宏观窗口") return "先看政策、会议和跨市场宏观事件。";
+  if (category === "行业催化") return "集中看景气验证、政策催化和产业变化。";
+  if (category === "个股催化") return "最后落到个股公告、订单和电话会信号。";
+  return "按当前类别分组展示。";
+}
+
 function buildDefaultSources(hub: ResearchHubData | null): SourceRecord {
   const industryProvider = hub?.fundamental.source_interfaces.industry_expert_notes.active_provider || "investment_news";
   const stockProvider = hub?.fundamental.source_interfaces.stock_expert_notes.active_provider || "watchlist_news";
@@ -208,12 +247,72 @@ function formatRadarUpdatedAt(value: string | null) {
   return `资讯更新于 ${normalized.slice(0, 16)}`;
 }
 
+function buildIntelDigestContext(kind: IntelKind, hub: ResearchHubData | null) {
+  if (!hub) return "暂无投研资讯数据，请先刷新页面。";
+  if (kind === "tech") {
+    return (hub.fundamental.global_tech_headlines ?? [])
+      .slice(0, 8)
+      .map((item) => `${item.industry_name || "科技"}：${item.summary || item.title || "暂无摘要"}`)
+      .join("\n") || "暂无全球科技头条。";
+  }
+  if (kind === "macro") {
+    return (hub.fundamental.macro_events ?? [])
+      .flatMap((group) => (group.items ?? []).slice(0, 2).map((item) => `${item.source || "公开源"}：${item.zh || item.title || "暂无摘要"}`))
+      .join("\n") || "暂无宏观事件。";
+  }
+  if (kind === "industry") {
+    return (hub.fundamental.industry_dynamics ?? [])
+      .slice(0, 6)
+      .map((item) => {
+        const first = item.items?.[0] || {};
+        return `${item.name}：${first.zh || first.title || "暂无摘要"}`;
+      })
+      .join("\n") || "暂无行业动态。";
+  }
+  if (kind === "stock") {
+    const stockLines = (hub.fundamental.stock_dynamics ?? [])
+      .slice(0, 8)
+      .map((item) => `${item.name}(${item.ticker})：${(item.highlights ?? []).join("；") || "暂无摘要"}`);
+    const topicLines = (hub.fundamental.stock_topics ?? [])
+      .slice(0, 4)
+      .map((item) => {
+        const first = item.items?.[0] || {};
+        return `${item.name}：${first.zh || first.title || "暂无摘要"}`;
+      });
+    return [...stockLines, ...topicLines].join("\n") || "暂无个股动态。";
+  }
+  if (kind === "hiring") {
+    return (hub.fundamental.hiring_radar?.items ?? [])
+      .slice(0, 8)
+      .map((item) => `${item.company || "未知公司"}：${item.title || "未命名岗位"}（${item.location || "未知地点"}）`)
+      .join("\n") || "暂无招聘信号。";
+  }
+  return (hub.fundamental.geopolitics.items ?? [])
+    .slice(0, 8)
+    .map((item) => `${item.industry_name || item.title || "事件"}：${item.summary || item.title || "暂无摘要"}`)
+    .join("\n") || "暂无地缘政治事件。";
+}
+
+function buildIntelDigestPrompt(kind: IntelKind) {
+  const label = FUNDAMENTAL_MODULES.find((item) => item.key === kind)?.label || "投研资讯";
+  return [
+    `以下是「${label}」模块的最新资讯摘要，请提炼成一段适合投研工作台展示的中文要点。`,
+    "要求：",
+    "1. 只基于给定内容提炼，不编造事实。",
+    "2. 先给一句总判断，再给 3-5 条高信息密度要点。",
+    "3. 重点写变化、催化、风险，不写空话。",
+    "4. 不给投资建议，不预测涨跌。",
+  ].join("\n");
+}
+
 export function Intel() {
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [active, setActive] = useState("fundamental");
   const [fundamentalView, setFundamentalView] = useState("overview");
   const [liquidityView, setLiquidityView] = useState("daily");
   const [eventProbabilityView, setEventProbabilityView] = useState("overview");
+  const [eventPrioritySort, setEventPrioritySort] = useState<EventPrioritySortKey>(() => readJson<EventPrioritySortKey>("intel-event-priority-sort", "rank"));
   const [hub, setHub] = useState<ResearchHubData | null>(null);
   const [marketOverview, setMarketOverview] = useState<MarketOverview | null>(null);
   const [globalIndices, setGlobalIndices] = useState<GlobalIndex[]>([]);
@@ -223,6 +322,9 @@ export function Intel() {
   const [overviewBusy, setOverviewBusy] = useState<"" | "digest" | "artifact">("");
   const [refreshState, setRefreshState] = useState<"" | "loading" | "success">("");
   const [radarUpdatedAt, setRadarUpdatedAt] = useState<string | null>(null);
+  const [contentSignature, setContentSignature] = useState("");
+  const [autoRefreshNotice, setAutoRefreshNotice] = useState("");
+  const [refreshFallbackMessage, setRefreshFallbackMessage] = useState("");
   const [draggingModule, setDraggingModule] = useState<IntelKind | "">("");
   const [moduleDropIndicator, setModuleDropIndicator] = useState<DropIndicator<IntelKind>>(null);
   const [stockFeedItems, setStockFeedItems] = useState<StockFeedItem[]>([]);
@@ -265,9 +367,13 @@ export function Intel() {
     industry: "",
     stock: "",
   });
+  const autoRefreshInFlightRef = useRef(false);
+  const autoRefreshNoticeTimerRef = useRef<number | null>(null);
 
-  const load = async (options?: { silent?: boolean }) => {
+  const load = async (options?: { silent?: boolean; suppressErrorToast?: boolean; forceRefresh?: boolean }) => {
     const silent = options?.silent ?? false;
+    const suppressErrorToast = options?.suppressErrorToast ?? silent;
+    const forceRefresh = options?.forceRefresh ?? !silent;
     if (!silent) setRefreshState("loading");
     try {
       const {
@@ -278,8 +384,9 @@ export function Intel() {
         configData,
         stockFeeds,
         radarGeneratedAt,
+        refreshError,
       } = await runIntelRefresh({
-        forceRadarRefresh: !silent,
+        forceRadarRefresh: forceRefresh,
         refreshRadar: async () => {
           return await api.radarRefresh();
         },
@@ -302,7 +409,12 @@ export function Intel() {
       setTurnoverTop(turnover);
       setStockFeedItems(stockFeeds as StockFeedItem[]);
       setRadarUpdatedAt(radarGeneratedAt);
+      setContentSignature(buildIntelContentSignature(hubData));
       setRadarConfig(configData || hubData.fundamental.news_source_config);
+      setRefreshFallbackMessage(refreshError ? `强制刷新失败，当前展示的是最近一次缓存内容。${refreshError}` : "");
+      if (!silent && refreshError) {
+        toast.error(`强制刷新失败，已回退到缓存内容：${refreshError}`);
+      }
       if (!silent) {
         setRefreshState("success");
         window.setTimeout(() => {
@@ -311,7 +423,9 @@ export function Intel() {
       }
     } catch (error) {
       if (!silent) setRefreshState("");
-      toast.error(error instanceof ApiError ? error.message : "投研资讯加载失败");
+      if (!suppressErrorToast) {
+        toast.error(error instanceof ApiError ? error.message : "投研资讯加载失败");
+      }
     } finally {
       if (!silent) {
         setRefreshState((current) => current === "loading" ? "" : current);
@@ -320,7 +434,58 @@ export function Intel() {
   };
 
   useEffect(() => {
-    void load({ silent: true });
+    void load({ silent: true, suppressErrorToast: true, forceRefresh: false });
+  }, []);
+
+  useEffect(() => {
+    if (location.pathname !== "/intel" || !hub) return;
+
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        if (cancelled || refreshState === "loading" || autoRefreshInFlightRef.current) return;
+
+        autoRefreshInFlightRef.current = true;
+        try {
+          const radar = await api.radar();
+          if (cancelled || !radar.generated_at || radar.generated_at === radarUpdatedAt) return;
+
+          const latestHub = await api.researchHub();
+          if (cancelled) return;
+
+          const nextSignature = buildIntelContentSignature(latestHub);
+          if (nextSignature === contentSignature) {
+            setRadarUpdatedAt(radar.generated_at);
+            return;
+          }
+
+          await load({ silent: true, suppressErrorToast: true, forceRefresh: false });
+          setAutoRefreshNotice(formatIntelAutoRefreshNotice(radar.generated_at));
+          if (autoRefreshNoticeTimerRef.current) {
+            window.clearTimeout(autoRefreshNoticeTimerRef.current);
+          }
+          autoRefreshNoticeTimerRef.current = window.setTimeout(() => {
+            setAutoRefreshNotice("");
+            autoRefreshNoticeTimerRef.current = null;
+          }, 4000);
+        } catch {
+          // Keep auto-detection silent; the next cycle can retry.
+        } finally {
+          autoRefreshInFlightRef.current = false;
+        }
+      })();
+    }, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [contentSignature, hub, location.pathname, radarUpdatedAt, refreshState]);
+
+  useEffect(() => () => {
+    if (autoRefreshNoticeTimerRef.current) {
+      window.clearTimeout(autoRefreshNoticeTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -350,6 +515,10 @@ export function Intel() {
     writeJson("intel-focuses", focuses);
   }, [focuses]);
 
+  useEffect(() => {
+    writeJson("intel-event-priority-sort", eventPrioritySort);
+  }, [eventPrioritySort]);
+
   const techHeadlines = hub?.fundamental.global_tech_headlines ?? [];
   const macroEvents = hub?.fundamental.macro_events ?? [];
   const industryDynamics = hub?.fundamental.industry_dynamics ?? [];
@@ -362,10 +531,63 @@ export function Intel() {
   const liquidityCommodities = hub?.liquidity.commodities ?? [];
   const eventProbability = hub?.event_probability ?? {
     summary: { title: "事件概率体系入口", description: "当前先接结构化骨架。", updated_at: "" },
+    scenario_snapshot: {
+      base_case: { label: "基准情景", summary: "当前先保留事件概率的观察骨架。" },
+      upside_case: { label: "上行情景", summary: "后续有更多催化验证时，在这里承接上行判断。" },
+      downside_case: { label: "下行情景", summary: "后续有关键变量走弱时，在这里承接下行情景。" },
+      active_count: 0,
+      watching_count: 0,
+    },
     planned_modules: [],
     priority_events: [],
     source_interfaces: [],
   };
+  const eventProbabilityCategoryCounts = {
+    macro: eventProbability.priority_events.filter((item) => item.category === "宏观窗口").length,
+    industry: eventProbability.priority_events.filter((item) => item.category === "行业催化").length,
+    stock: eventProbability.priority_events.filter((item) => item.category === "个股催化").length,
+  };
+  const eventProbabilityActiveSourceCount = eventProbability.source_interfaces.filter((item) => item.status === "active").length;
+  const eventProbabilityWatchingModuleCount = eventProbability.planned_modules.filter((item) => item.status === "watching").length;
+  const sortedEventProbabilityEvents = useMemo(() => {
+    const rows = [...eventProbability.priority_events];
+    if (eventPrioritySort === "window") {
+      return rows.sort((left, right) => (
+        right.rank_breakdown.status_score - left.rank_breakdown.status_score
+        || right.rank_score - left.rank_score
+        || left.title.localeCompare(right.title, "zh-CN")
+      ));
+    }
+    if (eventPrioritySort === "probability") {
+      return rows.sort((left, right) => (
+        right.rank_breakdown.probability_score - left.rank_breakdown.probability_score
+        || right.rank_score - left.rank_score
+        || left.title.localeCompare(right.title, "zh-CN")
+      ));
+    }
+    if (eventPrioritySort === "category") {
+      return rows.sort((left, right) => (
+        eventProbabilityCategoryRank(left.category) - eventProbabilityCategoryRank(right.category)
+        || right.rank_score - left.rank_score
+        || left.title.localeCompare(right.title, "zh-CN")
+      ));
+    }
+    return rows.sort((left, right) => (
+      (left.rank_order ?? 99) - (right.rank_order ?? 99)
+      || right.rank_score - left.rank_score
+      || left.title.localeCompare(right.title, "zh-CN")
+    ));
+  }, [eventPrioritySort, eventProbability.priority_events]);
+  const eventProbabilityCategoryGroups = useMemo(() => {
+    if (eventPrioritySort !== "category") return [];
+    const groups = new Map<string, typeof sortedEventProbabilityEvents>();
+    for (const item of sortedEventProbabilityEvents) {
+      const current = groups.get(item.category) ?? [];
+      current.push(item);
+      groups.set(item.category, current);
+    }
+    return Array.from(groups.entries()).map(([category, items]) => ({ category, items }));
+  }, [eventPrioritySort, sortedEventProbabilityEvents]);
   const defaultSources = useMemo(() => buildDefaultSources(hub), [hub]);
   const moduleTopics = useMemo(() => ({
     tech: (radarConfig?.industries ?? []).filter((item) => item.module === "tech"),
@@ -467,9 +689,18 @@ export function Intel() {
   const generateDigest = async (kind: IntelKind) => {
     setBusyKind(kind);
     try {
-      const digest = await api.generateIntelDigest(kind);
+      const result = await chat(
+        [{ role: "user", content: buildIntelDigestPrompt(kind) }],
+        buildIntelDigestContext(kind, hub),
+      );
+      const digest = {
+        kind,
+        title: `${FUNDAMENTAL_MODULES.find((item) => item.key === kind)?.label || "模块"}摘要`,
+        summary_text: result.content,
+        generated_at: new Date().toISOString(),
+      } satisfies IntelDigestResult;
       setIntelDigests((prev) => ({ ...prev, [kind]: digest }));
-      toast.success(`${digest.title}已生成`);
+      toast.success(`${FUNDAMENTAL_MODULES.find((item) => item.key === kind)?.label || "模块"}要点已生成`);
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "摘要生成失败");
     } finally {
@@ -494,7 +725,16 @@ export function Intel() {
     try {
       const next: Partial<Record<IntelKind, IntelDigestResult>> = {};
       for (const item of FUNDAMENTAL_MODULES) {
-        next[item.key] = await api.generateIntelDigest(item.key);
+        const digest = await chat(
+          [{ role: "user", content: buildIntelDigestPrompt(item.key) }],
+          buildIntelDigestContext(item.key, hub),
+        );
+        next[item.key] = {
+          kind: item.key,
+          title: `${item.label}摘要`,
+          summary_text: digest.content,
+          generated_at: new Date().toISOString(),
+        };
       }
       setIntelDigests((prev) => ({ ...prev, ...next }));
       toast.success("六类基本面要点已一键提炼");
@@ -1103,6 +1343,7 @@ export function Intel() {
             <h3 className="flex items-center gap-2 font-semibold"><Icon className="h-4 w-4 text-primary" /> {meta.label}</h3>
           </div>
           <div className="flex flex-wrap gap-2">
+            <CurrentModelHint />
             <button onClick={() => void generateDigest(kind)} disabled={busyKind === kind} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-primary disabled:opacity-60">
               <Sparkles className="h-4 w-4" /> AI 提炼要点
             </button>
@@ -1147,6 +1388,16 @@ export function Intel() {
         }
       />
       <div className="space-y-4">
+        {autoRefreshNotice && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            {autoRefreshNotice}
+          </div>
+        )}
+        {refreshFallbackMessage && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {refreshFallbackMessage}
+          </div>
+        )}
         {active === "fundamental" ? (
           <div className="space-y-4">
             <SectionTabs tabs={FUNDAMENTAL_VIEW_TABS} active={fundamentalView} onChange={setFundamentalView} draggableStorageKey="intel-fundamental-view-order" />
@@ -1155,7 +1406,8 @@ export function Intel() {
                 <GlassCard glow>
                   <div className="mb-2 flex items-center gap-2 text-primary"><Lightbulb className="h-4 w-4" /> 要点总览</div>
                   <p className="text-sm text-muted-foreground">这一页保留六类基本面的统一要点入口，可以一键提炼后面 6 个模块的要点，并统一生成图片请求。</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <CurrentModelHint />
                     <button onClick={() => void generateOverviewDigests()} disabled={overviewBusy !== ""} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-primary disabled:opacity-60">
                       <Sparkles className="h-4 w-4" /> {overviewBusy === "digest" ? "提炼中..." : "一键提炼 6 类要点"}
                     </button>
@@ -1269,11 +1521,47 @@ export function Intel() {
               <GlassCard glow>
                 <div className="mb-2 flex items-center gap-2 text-primary"><Lightbulb className="h-4 w-4" /> {eventProbability.summary.title}</div>
                 <p className="text-sm text-muted-foreground">{eventProbability.summary.description}</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-xl border border-border/40 p-4">
+                    <p className="text-xs text-muted-foreground">重点事件总数</p>
+                    <p className="mt-2 text-2xl font-semibold">{eventProbability.priority_events.length}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">当前混合事件流已纳入的事件条目</p>
+                  </div>
+                  <div className="rounded-xl border border-border/40 p-4">
+                    <p className="text-xs text-muted-foreground">宏观 / 行业 / 个股</p>
+                    <p className="mt-2 text-2xl font-semibold">{eventProbabilityCategoryCounts.macro} / {eventProbabilityCategoryCounts.industry} / {eventProbabilityCategoryCounts.stock}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">三类事件的当前覆盖数量</p>
+                  </div>
+                  <div className="rounded-xl border border-border/40 p-4">
+                    <p className="text-xs text-muted-foreground">已激活数据接口</p>
+                    <p className="mt-2 text-2xl font-semibold">{eventProbabilityActiveSourceCount}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">已真正参与当前事件流的上游接口</p>
+                  </div>
+                  <div className="rounded-xl border border-border/40 p-4">
+                    <p className="text-xs text-muted-foreground">观察中模块</p>
+                    <p className="mt-2 text-2xl font-semibold">{eventProbabilityWatchingModuleCount}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">已进入跟踪、但仍待情景化沉淀的能力</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {[eventProbability.scenario_snapshot.base_case, eventProbability.scenario_snapshot.upside_case, eventProbability.scenario_snapshot.downside_case].map((item) => (
+                    <div key={item.label} className="rounded-xl border border-border/40 p-4">
+                      <p className="text-sm font-medium">{item.label}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.summary}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span className="rounded-full border border-border/50 px-2 py-1">活跃事件 {eventProbability.scenario_snapshot.active_count}</span>
+                  <span className="rounded-full border border-border/50 px-2 py-1">观察事件 {eventProbability.scenario_snapshot.watching_count}</span>
+                </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
                   {eventProbability.planned_modules.map((item) => (
                     <div key={item.key} className="rounded-xl border border-border/40 p-4">
-                      <p className="text-sm font-medium">{item.label}</p>
-                      <p className="mt-1 text-xs text-primary">{item.status}</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">{item.label}</p>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{eventProbabilityStatusLabel(item.status)}</span>
+                      </div>
                       <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
                     </div>
                   ))}
@@ -1282,18 +1570,54 @@ export function Intel() {
             )}
             {eventProbabilityView === "priority-events" && (
               <GlassCard>
-                <h3 className="mb-3 font-semibold">重点事件</h3>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">重点事件</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">同一批事件支持从不同视角重排，方便先看近端、先看高概率，或先按类别扫一遍。</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {EVENT_PROBABILITY_SORT_OPTIONS.map((option) => (
+                      <button
+                        key={option.key}
+                        onClick={() => setEventPrioritySort(option.key)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs transition-colors",
+                          eventPrioritySort === option.key
+                            ? "border-primary/50 bg-primary/10 text-primary"
+                            : "border-border/50 text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-3">
-                  {eventProbability.priority_events.map((item) => (
+                  {!sortedEventProbabilityEvents.length && (
+                    <div className="rounded-xl border border-dashed border-border/50 p-4 text-sm text-muted-foreground">
+                      当前还没有可展示的重点事件，等宏观日历、行业条目或关注列表催化进入事件流后会自动出现在这里。
+                    </div>
+                  )}
+                  {sortedEventProbabilityEvents.map((item) => (
                     <div key={item.key} className="rounded-xl border border-border/40 p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="font-medium">{item.title}</p>
+                        <div>
+                          <p className="font-medium">{item.title}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">优先级 #{item.rank_order ?? "—"} · {item.trigger_window}</p>
+                        </div>
                         <div className="flex items-center gap-2">
+                          <span className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground">评分 {item.rank_score}</span>
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.probability_label}</span>
-                          <span className="text-xs text-primary">{item.status}</span>
+                          <span className="text-xs text-primary">{eventProbabilityStatusLabel(item.status)}</span>
                         </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{item.rank_reason}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                      </div>
                       <p className="mt-2 text-sm">{item.judgment}</p>
                       <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
                     </div>
@@ -1305,13 +1629,29 @@ export function Intel() {
               <GlassCard>
                 <h3 className="mb-3 font-semibold">数据接口</h3>
                 <div className="space-y-3">
+                  <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
+                    <p className="text-sm font-medium">接口接入概览</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      当前共接入 {eventProbability.source_interfaces.length} 路接口，其中 {eventProbabilityActiveSourceCount} 路已在本轮事件流中激活。
+                    </p>
+                  </div>
+                  {!eventProbability.source_interfaces.length && (
+                    <div className="rounded-xl border border-dashed border-border/50 p-4 text-sm text-muted-foreground">
+                      当前还没有登记数据接口，后续接入的事件源会统一出现在这里。
+                    </div>
+                  )}
                   {eventProbability.source_interfaces.map((item) => (
                     <div key={item.key} className="rounded-xl border border-border/40 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="font-medium">{item.label}</p>
-                        <span className="text-xs text-primary">{item.status}</span>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{eventProbabilityStatusLabel(item.status)}</span>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{item.provider}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">{item.provider}</span>
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">{eventProbabilitySourceCoverage(item.key)}</span>
+                        <span className="rounded-full border border-border/50 px-2 py-0.5">已覆盖 {item.coverage_count} 条</span>
+                      </div>
+                      {item.latest_signal && <p className="mt-2 text-sm">最新信号：{item.latest_signal}</p>}
                       <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
                     </div>
                   ))}

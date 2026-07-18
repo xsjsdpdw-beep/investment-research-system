@@ -220,6 +220,7 @@ export function Settings() {
         <p className="mb-3 text-xs text-muted-foreground">
           个股页里可额外启用一条多 Agent 深度分析链路。它只支持 <b className="text-foreground">A 股 6 位代码</b>，且
           <b className="text-foreground"> 只能走 API 模式</b>，不能复用本机订阅 CLI。一次分析会消耗多轮模型调用，适合做深度拆解，不适合高频问答。
+          <span className="text-muted-foreground/70"> 如果这里不单独填写，会默认继承上方当前生效的 API 接入配置。</span>
         </p>
         <div className="space-y-4 text-sm">
           <label className="flex items-center gap-2">
