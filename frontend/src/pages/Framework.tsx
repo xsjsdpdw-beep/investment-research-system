@@ -11,6 +11,8 @@ import { SectionTabs } from "@/components/ui/SectionTabs";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { StructuredOverviewRenderer } from "@/components/research/StructuredOverviewRenderer";
 import { StructuredOverviewSidebar } from "@/components/research/StructuredOverviewSidebar";
+import { HBMDraftDashboard } from "@/components/research/HBMDraftDashboard";
+import { shouldUseHBMDraftDashboard } from "@/components/research/hbm-draft-dashboard";
 import { api, ApiError, type KnowledgeEntry, type OverviewCandidate, type OverviewContentBlock, type OverviewDeepCard, type OverviewEditorBinding, type OverviewWorkbench, type SectorIndicator, type SectorModule, type SectorTreeNode, type StockCenterData, type StockModule, type StructuredRenderBlock, type WatchIndicator, type WatchStock, type YoudaoNoteCandidate } from "@/lib/api";
 import { FRAMEWORK_TABS } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -1540,6 +1542,8 @@ export function Framework() {
   const [learningView, setLearningView] = useState("overview");
   const [sectorWorkbench, setSectorWorkbench] = useState<OverviewWorkbench | null>(null);
   const [stockWorkbench, setStockWorkbench] = useState<OverviewWorkbench | null>(null);
+  const [structuredEditorDrafts, setStructuredEditorDrafts] = useState<Record<string, StructuredRenderBlock[]>>({});
+  const [structuredEditorSaving, setStructuredEditorSaving] = useState<Record<string, boolean>>({});
   const [reportSources, setReportSources] = useState<Record<"sector" | "stock", "deep" | "deep_plus_candidates" | "draft_plus_deep">>({
     sector: "deep",
     stock: "deep",
@@ -3716,6 +3720,50 @@ export function Framework() {
     });
   };
 
+  const structuredEditorKey = (scope: "sector" | "stock", density: "draft" | "deep") => `${scope}:${density}`;
+
+  const openStructuredEdit = (scope: "sector" | "stock", density: "draft" | "deep", blocks: StructuredRenderBlock[]) => {
+    const key = structuredEditorKey(scope, density);
+    setStructuredEditorDrafts((current) => ({
+      ...current,
+      [key]: JSON.parse(JSON.stringify(blocks || [])) as StructuredRenderBlock[],
+    }));
+  };
+
+  const cancelStructuredEdit = (scope: "sector" | "stock", density: "draft" | "deep") => {
+    const key = structuredEditorKey(scope, density);
+    setStructuredEditorDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const saveStructuredEdit = async (scope: "sector" | "stock", density: "draft" | "deep") => {
+    const scopeId = scope === "sector" ? selectedSector : selectedTicker;
+    const workbench = scope === "sector" ? sectorWorkbench : stockWorkbench;
+    const key = structuredEditorKey(scope, density);
+    const editedBlocks = structuredEditorDrafts[key] || [];
+    if (!scopeId || !workbench) return;
+    setStructuredEditorSaving((current) => ({ ...current, [key]: true }));
+    try {
+      const refreshed = await api.saveOverviewStructuredPreview({
+        scope_type: scope,
+        scope_id: scopeId,
+        draft_blocks: density === "draft" ? editedBlocks : (workbench.draft_structured_blocks || []),
+        deep_blocks: density === "deep" ? editedBlocks : (workbench.deep_structured_blocks || []),
+      });
+      if (scope === "sector") setSectorWorkbench(refreshed);
+      else setStockWorkbench(refreshed);
+      cancelStructuredEdit(scope, density);
+      toast.success("正文已保存");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "正文保存失败");
+    } finally {
+      setStructuredEditorSaving((current) => ({ ...current, [key]: false }));
+    }
+  };
+
   const renderPreviewSectionDirectory = (nodes: NotebookHeadingNode[]): ReactNode => (
     <div className="space-y-0.5">
       {nodes.map((node) => {
@@ -3820,6 +3868,7 @@ export function Framework() {
   const renderStructuredOverviewShell = (
     blocks: StructuredRenderBlock[],
     options?: {
+      scope: "sector" | "stock";
       density?: "draft" | "deep";
       placeholder?: string;
       leftTitle?: string;
@@ -3828,6 +3877,11 @@ export function Framework() {
     },
   ) => {
     const safeBlocks = (blocks || []).filter(Boolean);
+    const scope = options?.scope || "stock";
+    const density = options?.density || "deep";
+    const editorKey = structuredEditorKey(scope, density);
+    const editing = Array.isArray(structuredEditorDrafts[editorKey]);
+    const displayBlocks = editing ? structuredEditorDrafts[editorKey] : safeBlocks;
     return (
       <div className="rounded-xl border border-border/30 bg-black/10 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -3835,16 +3889,29 @@ export function Framework() {
             <p className="text-sm font-medium">{options?.rightTitle || "结构化预览"}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">当前已优先展示结构化内容块，便于后续流程图、表格、产业链图统一渲染。</p>
           </div>
-          {safeBlocks.length > 0 && (
-            <span className="rounded-full border border-border/20 bg-black/10 px-2.5 py-1 text-[11px] text-muted-foreground">
-              结构块 {safeBlocks.length}
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {displayBlocks.length > 0 && (
+              <span className="rounded-full border border-border/20 bg-black/10 px-2.5 py-1 text-[11px] text-muted-foreground">
+                结构块 {displayBlocks.length}
+              </span>
+            )}
+            {safeBlocks.length > 0 && !editing && (
+              <button onClick={() => openStructuredEdit(scope, density, safeBlocks)} className={smallSecondaryButtonClass}>编辑正文</button>
+            )}
+            {editing && (
+              <>
+                <button onClick={() => void saveStructuredEdit(scope, density)} disabled={structuredEditorSaving[editorKey]} className={smallPrimaryButtonClass}>
+                  {structuredEditorSaving[editorKey] ? "保存中..." : "保存正文"}
+                </button>
+                <button onClick={() => cancelStructuredEdit(scope, density)} className={smallSecondaryButtonClass}>取消编辑</button>
+              </>
+            )}
+          </div>
         </div>
-        <div className={cn("gap-3", safeBlocks.length > 0 ? "grid lg:grid-cols-[210px_minmax(0,1fr)]" : "block")}>
-          {safeBlocks.length > 0 && (
+        <div className={cn("gap-3", displayBlocks.length > 0 ? "grid lg:grid-cols-[210px_minmax(0,1fr)]" : "block")}>
+          {displayBlocks.length > 0 && (
             <StructuredOverviewSidebar
-              blocks={safeBlocks}
+              blocks={displayBlocks}
               activeId={activeOutlineBlockId}
               onJump={(id) => {
                 setActiveOutlineBlockId(id);
@@ -3856,10 +3923,15 @@ export function Framework() {
             />
           )}
           <div className="space-y-3">
-            {safeBlocks.length === 0 ? (
+            {displayBlocks.length === 0 ? (
               renderCompactNotice(options?.placeholder || "当前还没有可展示的结构化内容。")
             ) : (
-              <StructuredOverviewRenderer blocks={safeBlocks} density={options?.density || "deep"} />
+              <StructuredOverviewRenderer
+                blocks={displayBlocks}
+                density={density}
+                editable={editing}
+                onBlocksChange={(nextBlocks) => setStructuredEditorDrafts((current) => ({ ...current, [editorKey]: nextBlocks }))}
+              />
             )}
           </div>
         </div>
@@ -4161,8 +4233,8 @@ export function Framework() {
       return (
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-medium">概览主笔记</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">前台已收口成单篇主笔记，待吸收资料仍先进入检查页和候选池。</p>
+            <p className="text-sm font-medium">概览框架</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">前台已收口成单篇框架，待吸收资料仍先进入检查页和候选池。</p>
           </div>
           {renderUnclassifiedReview(scope, cards, scope === "sector" ? sectorWorkbench : stockWorkbench)}
         </div>
@@ -4177,7 +4249,7 @@ export function Framework() {
     const pendingCount = candidates.filter((item) => item.status !== "accepted" && item.status !== "ignored").length;
     const recentVersions = versions.slice(0, 8);
     const statusBits = [
-      binding.file_id ? `已绑定：${binding.title || binding.file_id}` : "未绑定有道主笔记",
+      binding.file_id ? `已绑定：${binding.title || binding.file_id}` : "未绑定有道框架",
       binding.last_synced_at ? `同步 ${binding.last_synced_at.slice(5, 16).replace("T", " ")}` : "",
       normalizedPreview.mode === "enhanced-note" ? "增强阅读" : "",
       pendingCount > 0 ? `待吸收 ${pendingCount}` : "",
@@ -4246,7 +4318,7 @@ export function Framework() {
         const synced = await api.syncOverviewEditor({ scope_type: scope, scope_id: scopeId });
         if (scope === "sector") setSectorWorkbench((current) => current ? { ...current, editor_binding: synced } : current);
         else setStockWorkbench((current) => current ? { ...current, editor_binding: synced } : current);
-        if (!synced.file_id) toast.error(synced.message || "已检测到有道主笔记失效");
+        if (!synced.file_id) toast.error(synced.message || "已检测到有道框架失效");
         else toast.success(synced.message || "已同步有道笔记最新内容");
       } catch (error) {
         toast.error(error instanceof ApiError ? error.message : "同步有道笔记失败");
@@ -4287,7 +4359,7 @@ export function Framework() {
         <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">{scope === "sector" ? `${selectedSector || "行业"}概览主笔记` : `${selectedTicker || "个股"}概览主笔记`}</p>
+              <p className="text-sm font-medium text-foreground">{scope === "sector" ? `${selectedSector || "行业"}概览框架` : `${selectedTicker || "个股"}概览框架`}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                 {statusBits.map((bit) => (
                   <span key={bit} className="rounded-full border border-border/20 bg-black/10 px-2.5 py-1">
@@ -4304,7 +4376,7 @@ export function Framework() {
             <div className="flex flex-wrap gap-2">
               {!binding.file_id ? (
                 <button onClick={() => void bindOrCreateYoudao()} className={smallPrimaryButtonClass}>
-                  {youdaoBindAssistOpen[scope] ? "收起搜索笔记" : "绑定有道主笔记"}
+                  {youdaoBindAssistOpen[scope] ? "收起搜索笔记" : "绑定有道框架"}
                 </button>
               ) : (
                 <>
@@ -4354,14 +4426,15 @@ export function Framework() {
           <div className="mt-3">
             {((scope === "sector" ? sectorWorkbench?.deep_structured_blocks : stockWorkbench?.deep_structured_blocks) || []).length > 0
               ? renderStructuredOverviewShell((scope === "sector" ? sectorWorkbench?.deep_structured_blocks : stockWorkbench?.deep_structured_blocks) || [], {
+                  scope,
                   density: "deep",
                   leftTitle: "深度目录",
                   rightTitle: "深度预览",
-                  placeholder: "这篇主笔记还没有结构化内容。",
+                  placeholder: "这篇框架还没有结构化内容。",
                   recentVersions,
                 })
               : renderOverviewPreviewShell(noteMarkdown, normalizedPreview.mode, {
-                  placeholder: "这篇主笔记还没有内容。你可以先在有道里写，再回来提取。",
+                  placeholder: "这篇框架还没有内容。你可以先在有道里写，再回来提取。",
                   recentVersions,
                 })}
           </div>
@@ -5915,8 +5988,11 @@ export function Framework() {
                   {renderOverviewHintBar(
                     sectorWorkbench?.draft.summary || "这里承接自动提取研报后的第一版框架。后续即便有新研报进入，也只会更新初稿，不会覆盖你的深度版本。",
                   )}
-                  {(sectorWorkbench?.draft_structured_blocks || []).length > 0
+                  {shouldUseHBMDraftDashboard(selectedSector || "", sectorWorkbench)
+                    ? <HBMDraftDashboard data={sectorWorkbench.draft_theme_schema} />
+                    : (sectorWorkbench?.draft_structured_blocks || []).length > 0
                     ? renderStructuredOverviewShell(sectorWorkbench?.draft_structured_blocks || [], {
+                        scope: "sector",
                         density: "draft",
                         leftTitle: "初稿目录",
                         rightTitle: "初稿预览",
@@ -6308,6 +6384,7 @@ export function Framework() {
                   )}
                   {(stockWorkbench?.draft_structured_blocks || []).length > 0
                     ? renderStructuredOverviewShell(stockWorkbench?.draft_structured_blocks || [], {
+                        scope: "stock",
                         density: "draft",
                         leftTitle: "初稿目录",
                         rightTitle: "初稿预览",

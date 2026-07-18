@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
 
 import astock
 import data_adapters
+import hiringradar
 import knowledge
 import myreports
 import newsradar
 
 
-MODULE_ORDER = ("tech", "macro", "industry", "stock", "geopolitics")
+MODULE_ORDER = ("tech", "macro", "industry", "stock", "geopolitics", "hiring")
 AUTO_OVERVIEW_SOURCE = "auto_overview_builder"
 MARKET_REPORT_DIR = Path(os.environ.get("VR_DATA_DIR") or Path.home() / ".vibe-research") / "market_reports"
 MAX_REPORT_TEXT_CHARS = 8000
 MAX_REPORT_PDF_PAGES = 8
+HBM_DRAFT_TABS = (
+    ("overview", "总览"),
+    ("generation", "技术代际"),
+    ("cost_bottleneck", "成本与卡口"),
+    ("leaders", "产业龙头"),
+    ("cycle_meter", "周期温度计"),
+)
 
 SECTOR_OVERVIEW_TEMPLATES = (
     ("市场规模与需求", ("市场规模", "需求", "销量", "景气", "渗透率", "空间", "总量", "增速")),
@@ -195,6 +203,15 @@ def _sector_relevance_score(sector: str, text: str) -> int:
     for keyword, weight in weights.items():
         score += text_low.count(keyword.lower()) * weight
     return score
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def is_hbm_sector(sector: str) -> bool:
+    normalized = (sector or "").strip().lower()
+    return normalized in {"hbm", "hbm存储"}
 
 
 def ingest_sector_reports(sector: str, days: int = 365, max_pages: int = 5, max_reports: int = 12) -> dict:
@@ -666,6 +683,99 @@ def _sector_sources(sector: str) -> list[dict]:
     return sorted(sources, key=lambda item: _sector_relevance_score(sector, f"{item.get('label', '')} {item.get('text', '')}"), reverse=True)
 
 
+def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
+    keywords = tuple(_sector_report_keywords(sector))
+    ranked = _ranked_research_points(sources, keywords, limit=24, context=sector)
+    source_labels = [item.get("label", "") for item in ranked[:3] if item.get("label")]
+    tab_keywords = {
+        "overview": ("hbm", "存储", "dram", "ai存储", "景气", "需求", "供给"),
+        "generation": ("hbm2e", "hbm3", "hbm3e", "带宽", "12hi", "16hi", "堆叠", "封装"),
+        "cost_bottleneck": ("良率", "产能", "设备", "封装", "材料", "成本", "卡口", "capex"),
+        "leaders": ("海力士", "三星", "美光", "龙头", "份额", "a股", "映射", "封测"),
+        "cycle_meter": ("价格", "库存", "扩产", "验证", "周期", "景气", "涨价"),
+    }
+
+    def pick_points(key: str, fallback_start: int) -> list[dict]:
+        picked = [
+            point for point in ranked
+            if any(keyword.lower() in point.get("text", "").lower() for keyword in tab_keywords[key])
+        ]
+        if picked:
+            return picked[:4]
+        return ranked[fallback_start:fallback_start + 3]
+
+    def metrics_for_tab(key: str, points: list[dict]) -> list[dict]:
+        if key == "overview":
+            return [
+                {"label": "景气", "value": "高关注"},
+                {"label": "供给", "value": "偏紧" if any("供给" in p.get("text", "") or "产能" in p.get("text", "") for p in points) else "跟踪中"},
+                {"label": "主线", "value": "AI 存储"},
+            ]
+        if key == "generation":
+            return [
+                {"label": "当前代际", "value": "HBM3 / 3E"},
+                {"label": "层数", "value": "12hi/16hi"},
+                {"label": "核心变量", "value": "带宽与封装"},
+            ]
+        if key == "cost_bottleneck":
+            return [
+                {"label": "核心卡口", "value": "良率"},
+                {"label": "扩产约束", "value": "设备/封装"},
+            ]
+        if key == "leaders":
+            return [
+                {"label": "海外龙头", "value": "海力士/三星/美光"},
+                {"label": "本地映射", "value": "设备/材料/封测"},
+            ]
+        return [
+            {"label": "周期温度", "value": "高位跟踪"},
+            {"label": "领先信号", "value": "价格/库存/扩产"},
+        ]
+
+    def panels_for_tab(key: str, points: list[dict]) -> list[dict]:
+        if not points:
+            return []
+        if key == "overview":
+            return [{"title": "当前主矛盾", "items": [point.get("text", "") for point in points[:3]]}]
+        if key == "generation":
+            return [
+                {"title": "代际演进", "items": [point.get("text", "") for point in points[:2]]},
+                {"title": "升级信号", "items": [point.get("text", "") for point in points[2:4]] or [points[0].get("text", "")]},
+            ]
+        if key == "cost_bottleneck":
+            return [
+                {"title": "成本与卡口", "items": [point.get("text", "") for point in points[:3]]},
+            ]
+        if key == "leaders":
+            return [
+                {"title": "全球龙头", "items": [point.get("text", "") for point in points[:2]]},
+                {"title": "A股映射", "items": [point.get("text", "") for point in points[2:4]] or [points[0].get("text", "")]},
+            ]
+        return [
+            {"title": "周期信号", "items": [point.get("text", "") for point in points[:3]]},
+        ]
+
+    tabs = []
+    for index, (key, title) in enumerate(HBM_DRAFT_TABS):
+        points = pick_points(key, index * 2)
+        summary = [point.get("text", "") for point in points[:3] if point.get("text")]
+        tabs.append({
+            "key": key,
+            "title": title,
+            "headline": summary[0] if summary else "",
+            "summary": summary,
+            "metrics": metrics_for_tab(key, points),
+            "panels": panels_for_tab(key, points),
+            "sources": source_labels,
+            "empty_state": "资料不足，等待更多 HBM 资料进入当前栏目。",
+        })
+    return {
+        "kind": "hbm_draft_dashboard",
+        "tabs": tabs,
+        "generated_at": _utc_now_iso(),
+    }
+
+
 def build_sector_overview_modules(sector: str) -> dict:
     """把行业相关资料沉淀为固定框架模块，供行业概览持续迭代。"""
     sector = (sector or "").strip()
@@ -685,13 +795,16 @@ def build_sector_overview_modules(sector: str) -> dict:
             "data_source": AUTO_OVERVIEW_SOURCE,
             "sort_order": index,
         }))
-    return {
+    result = {
         "scope": "sector",
         "target": sector,
         "sources_count": len(sources),
         "report_ingest": report_ingest,
         "modules": modules,
     }
+    if is_hbm_sector(sector):
+        result["draft_theme_schema"] = build_hbm_draft_dashboard(sector, sources)
+    return result
 
 
 def _stock_sources(ticker: str) -> list[dict]:
@@ -818,6 +931,7 @@ def _flatten_group_items(groups: list[dict], limit_per_group: int = 3, total_lim
 def get_research_hub() -> dict:
     radar = newsradar.get_radar(force=False)
     cfg = newsradar.load_sources_config()
+    hiring = hiringradar.get_hiring_radar(force=False)
     tech_groups = _module_groups(radar, cfg, "tech")
     macro_groups = _module_groups(radar, cfg, "macro")
     industry_groups = _module_groups(radar, cfg, "industry")
@@ -918,6 +1032,7 @@ def get_research_hub() -> dict:
                 "groups": geopolitics_groups,
                 "items": _flatten_group_items(geopolitics_groups, limit_per_group=2, total_limit=12),
             },
+            "hiring_radar": hiring,
             "news_source_config": cfg,
         },
         "liquidity": {
@@ -953,7 +1068,9 @@ def _intel_kind_label(kind: str) -> str:
         return "个股动态"
     if kind == "geopolitics":
         return "地缘政治"
-    raise ValueError("kind 仅支持 tech、macro、industry、stock 或 geopolitics")
+    if kind == "hiring":
+        return "招聘雷达"
+    raise ValueError("kind 仅支持 tech、macro、industry、stock、geopolitics 或 hiring")
 
 
 def generate_intel_digest(kind: str) -> dict:
@@ -986,6 +1103,12 @@ def generate_intel_digest(kind: str) -> dict:
             first = item.get("items", [{}])[0] if item.get("items") else {}
             rows.append(f"{item.get('name')}：{first.get('zh') or first.get('title') or '暂无摘要'}")
         summary = "\n".join(rows) or "暂无个股动态，请先维护关注列表。"
+    elif kind == "hiring":
+        rows = [
+            f"{item.get('company', '未知公司')}：{item.get('title', '未命名岗位')}（{item.get('location', '未知地点')}）"
+            for item in hub["fundamental"]["hiring_radar"].get("items", [])[:8]
+        ]
+        summary = "\n".join(rows) or "暂无招聘信号，稍后重试。"
     else:
         rows = [
             f"{item.get('industry_name') or item.get('title')}：{item.get('summary') or item.get('title') or '暂无摘要'}"

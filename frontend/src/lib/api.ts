@@ -53,15 +53,22 @@ export async function downloadReport(id: string, name: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function request<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
+  body?: unknown,
+  init?: RequestInit,
+): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
-  const opts: RequestInit = { method };
+  const opts: RequestInit = { method, ...init };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  if (Object.keys(headers).length > 0) opts.headers = headers;
+  const extraHeaders = (init?.headers || {}) as Record<string, string>;
+  const mergedHeaders = { ...extraHeaders, ...headers };
+  if (Object.keys(mergedHeaders).length > 0) opts.headers = mergedHeaders;
   try {
     resp = await fetch(`/api${path}`, opts);
   } catch {
@@ -82,7 +89,7 @@ async function request<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE
   return (payload?.data ?? payload) as T;
 }
 
-const get = <T>(path: string) => request<T>(path, "GET");
+const get = <T>(path: string, init?: RequestInit) => request<T>(path, "GET", undefined, init);
 
 export interface Quote {
   name: string; price: number; last_close: number; change_pct: number;
@@ -401,6 +408,25 @@ export interface ResearchHubData {
         url?: string;
       }[];
     };
+    hiring_radar: {
+      title: string;
+      summary: string;
+      updated_at: string;
+      companies: string[];
+      source: string;
+      items: {
+        company: string;
+        title: string;
+        location: string;
+        time: string;
+        url: string;
+        summary: string;
+        source: string;
+        department?: string;
+        salary?: string;
+        remote?: string;
+      }[];
+    };
   };
   liquidity: {
     daily_review: { summary: string; etf_placeholder: string };
@@ -538,6 +564,36 @@ export interface OverviewBuildResult {
   target: string;
   sources_count: number;
   modules: SectorModule[] | StockModule[];
+  draft_theme_schema?: HBMDraftDashboardData;
+}
+
+export interface HBMDraftMetric {
+  label: string;
+  value: string;
+  tone?: string;
+}
+
+export interface HBMDraftPanel {
+  title: string;
+  items: string[];
+  tone?: string;
+}
+
+export interface HBMDraftTab {
+  key: "overview" | "generation" | "cost_bottleneck" | "leaders" | "cycle_meter";
+  title: string;
+  headline?: string;
+  summary: string[];
+  metrics: HBMDraftMetric[];
+  panels: HBMDraftPanel[];
+  sources?: string[];
+  empty_state?: string;
+}
+
+export interface HBMDraftDashboardData {
+  kind: "hbm_draft_dashboard";
+  tabs: HBMDraftTab[];
+  generated_at?: string;
 }
 
 export interface OverviewChartBlock {
@@ -661,6 +717,7 @@ export interface OverviewWorkbench {
   deep_cards: OverviewDeepCard[];
   draft_structured_blocks?: StructuredRenderBlock[];
   deep_structured_blocks?: StructuredRenderBlock[];
+  draft_theme_schema?: HBMDraftDashboardData;
   candidates: OverviewCandidate[];
   versions: OverviewVersion[];
   editor_binding?: OverviewEditorBinding;
@@ -785,14 +842,14 @@ export interface StockModuleData {
 }
 
 export interface IntelDigestResult {
-  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics";
+  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring";
   title: string;
   summary_text: string;
   generated_at: string;
 }
 
 export interface IntelImageArtifact {
-  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics";
+  kind: "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring";
   title: string;
   summary_text: string;
   artifact_type: string;
@@ -813,6 +870,7 @@ export const api = {
   globalStock: (symbol: string) => get<GlobalStock>(`/global/stock?symbol=${encodeURIComponent(symbol)}`),
   radar: () => get<RadarData>("/radar"),
   radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
+  hiringRadarRefresh: () => request<ResearchHubData["fundamental"]["hiring_radar"]>("/research/hiring-radar/refresh", "POST"),
   portfolio: () => get<PortfolioData>("/portfolio"),
   addHolding: (code: string, shares: number, cost: number) => request<PortfolioData>("/portfolio/holding", "POST", { code, shares, cost }),
   removeHolding: (code: string) => request<PortfolioData>(`/portfolio/holding?code=${code}`, "DELETE"),
@@ -960,7 +1018,10 @@ export const api = {
     summary_text?: string;
   }) => request<PremiumNoteIngestResult>("/research/premium-notes", "POST", payload),
   overviewWorkbench: (scopeType: "sector" | "stock", scopeId: string) =>
-    get<OverviewWorkbench>(`/research/overview-workbench?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}`),
+    get<OverviewWorkbench>(
+      `/research/overview-workbench?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}`,
+      { cache: "no-store" },
+    ),
   saveOverviewDraft: (payload: {
     scope_type: "sector" | "stock";
     scope_id: string;
@@ -1062,9 +1123,9 @@ export const api = {
     request<OverviewBuildResult>("/research/sector-overview/build", "POST", { sector }),
   buildStockOverview: (ticker: string) =>
     request<OverviewBuildResult>("/research/stock-overview/build", "POST", { ticker }),
-  generateIntelDigest: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics") =>
+  generateIntelDigest: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring") =>
     request<IntelDigestResult>("/research/intel-digest", "POST", { kind }),
-  generateIntelImageArtifact: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics") =>
+  generateIntelImageArtifact: (kind: "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring") =>
     request<IntelImageArtifact>("/research/intel-image-artifact", "POST", { kind }),
   generateLearningPack: (payload: { source_entry_id: string; title?: string }) =>
     request<KnowledgeEntry>("/learning/packs/generate", "POST", payload),

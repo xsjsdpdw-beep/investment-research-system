@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -111,8 +112,16 @@ def _entry_dir(kind: str) -> Path:
 
 def _atomic_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        "w",
+        suffix=".tmp",
+        prefix=f"{path.name}.",
+        dir=path.parent,
+        encoding="utf-8",
+        delete=False,
+    ) as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        tmp = Path(handle.name)
     tmp.replace(path)
 
 
@@ -203,6 +212,7 @@ def _overview_record_defaults(scope_type: str, scope_id: str, record: dict[str, 
         "editor_binding": current.get("editor_binding", {}) or {},
         "draft_structured_blocks": normalize_structured_render_blocks(current.get("draft_structured_blocks") or []),
         "deep_structured_blocks": normalize_structured_render_blocks(current.get("deep_structured_blocks") or []),
+        "draft_theme_schema": deepcopy(current.get("draft_theme_schema") or {}),
         "updated_at": current.get("updated_at") or now,
     }
 
@@ -1106,6 +1116,15 @@ def save_overview_structured_preview(scope_type: str, scope_id: str, draft_block
     return deepcopy(record)
 
 
+def save_overview_draft_theme_schema(scope_type: str, scope_id: str, schema: dict[str, Any] | None) -> dict[str, Any]:
+    record, items, index = _get_or_create_overview_record(scope_type, scope_id)
+    record["draft_theme_schema"] = deepcopy(schema or {})
+    record["updated_at"] = _now_iso()
+    items[index] = record
+    _save_overview_workbench(items)
+    return deepcopy(record)
+
+
 def get_overview_editor_binding(scope_type: str, scope_id: str) -> dict[str, Any]:
     record = get_overview_workbench(scope_type, scope_id)
     binding = deepcopy(record.get("editor_binding") or {})
@@ -1117,6 +1136,7 @@ def get_overview_editor_binding(scope_type: str, scope_id: str) -> dict[str, Any
     binding.setdefault("preview", "")
     binding.setdefault("updated_at", "")
     binding.setdefault("last_synced_at", "")
+    binding.setdefault("structured_parser_version", "")
     return binding
 
 
@@ -1133,6 +1153,7 @@ def save_overview_editor_binding(scope_type: str, scope_id: str, payload: dict[s
         "preview": payload.get("preview") if payload.get("preview") is not None else current.get("preview", ""),
         "updated_at": now,
         "last_synced_at": payload.get("last_synced_at") or current.get("last_synced_at") or "",
+        "structured_parser_version": payload.get("structured_parser_version") or current.get("structured_parser_version") or "",
     }
     record["editor_binding"] = binding
     record["updated_at"] = now

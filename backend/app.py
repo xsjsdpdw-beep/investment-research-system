@@ -29,6 +29,7 @@ import knowledge
 import learning_factory
 import macro_registry
 import newsradar
+import hiringradar
 import portfolio as pf
 import market
 import myreports as mr
@@ -404,13 +405,32 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
     binding["content"] = note["content"]
     binding["preview"] = note["content"].replace("\n", " ")[:240]
     data["editor_binding"] = binding
-    if not (data.get("deep_structured_blocks") or []):
+    should_refresh_structured = not (data.get("deep_structured_blocks") or [])
+    if binding.get("provider") == "youdao" and binding.get("structured_parser_version") != research_ingest.YOUDAO_STRUCTURED_VERSION:
+        should_refresh_structured = True
+    if should_refresh_structured:
+        _, deep_blocks = research_ingest.extract_youdao_note_to_blocks(file_id, binding.get("title") or "")
+        saved_binding = knowledge.save_overview_editor_binding(
+            scope_type,
+            scope_id,
+            {
+                "provider": binding.get("provider") or "youdao",
+                "file_id": file_id,
+                "title": binding.get("title") or "",
+                "parent_id": binding.get("parent_id") or "",
+                "content": note["content"],
+                "preview": note["content"].replace("\n", " ")[:240],
+                "last_synced_at": binding.get("last_synced_at") or "",
+                "structured_parser_version": research_ingest.YOUDAO_STRUCTURED_VERSION,
+            },
+        )
         refreshed = knowledge.save_overview_structured_preview(
             scope_type,
             scope_id,
             data.get("draft_structured_blocks") or [],
-            research_ingest.youdao_note_content_to_blocks(note["content"], binding.get("title") or ""),
+            deep_blocks,
         )
+        data["editor_binding"] = saved_binding
         data["draft_structured_blocks"] = refreshed.get("draft_structured_blocks") or []
         data["deep_structured_blocks"] = refreshed.get("deep_structured_blocks") or []
         data["updated_at"] = refreshed.get("updated_at") or data.get("updated_at", "")
@@ -635,7 +655,10 @@ def research_premium_notes_ingest(payload: PremiumNoteIn):
 @app.post("/api/research/sector-overview/build")
 def research_sector_overview_build(payload: SectorOverviewBuildIn):
     try:
-        return {"data": research_hub.build_sector_overview_modules(payload.sector)}
+        result = research_hub.build_sector_overview_modules(payload.sector)
+        if result.get("draft_theme_schema"):
+            knowledge.save_overview_draft_theme_schema("sector", payload.sector, result["draft_theme_schema"])
+        return {"data": result}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -651,7 +674,9 @@ def research_stock_overview_build(payload: StockOverviewBuildIn):
 @app.get("/api/research/overview-workbench")
 def research_overview_workbench(scope_type: Literal["sector", "stock"] = Query(...), scope_id: str = Query(..., min_length=1)):
     try:
-        return {"data": _validated_overview_workbench(scope_type, scope_id)}
+        response = JSONResponse({"data": _validated_overview_workbench(scope_type, scope_id)})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except youdao_sync.YoudaoSyncError as e:
@@ -757,7 +782,7 @@ def research_overview_workbench_editor_sync(payload: OverviewWorkbenchQueryIn):
         if not file_id:
             raise ValueError("当前还没有绑定有道笔记")
         note = youdao_sync.read_note(file_id)
-        deep_blocks = research_ingest.youdao_note_content_to_blocks(note["content"], binding.get("title") or "")
+        _content, deep_blocks = research_ingest.extract_youdao_note_to_blocks(file_id, binding.get("title") or "")
         binding = knowledge.save_overview_editor_binding(
             payload.scope_type,
             payload.scope_id,
@@ -769,6 +794,7 @@ def research_overview_workbench_editor_sync(payload: OverviewWorkbenchQueryIn):
                 "content": note["content"],
                 "preview": note["content"].replace("\n", " ")[:240],
                 "last_synced_at": knowledge._now_iso(),
+                "structured_parser_version": research_ingest.YOUDAO_STRUCTURED_VERSION,
             },
         )
         record = knowledge.get_overview_workbench(payload.scope_type, payload.scope_id)
@@ -990,6 +1016,14 @@ def research_intel_image_artifact(payload: IntelArtifactIn):
         return {"data": research_hub.generate_intel_image_artifact(payload.kind)}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/hiring-radar/refresh")
+def research_hiring_radar_refresh():
+    try:
+        return {"data": hiringradar.fetch_hiring_radar()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"招聘雷达刷新失败：{e}") from e
 
 
 @app.get("/api/research/news-sources-config")
