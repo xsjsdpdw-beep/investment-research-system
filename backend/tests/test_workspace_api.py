@@ -163,6 +163,31 @@ def test_research_hub_exposes_event_probability_scaffold(workspace_client: TestC
     assert data["event_probability"]["source_interfaces"][0]["status"] == "scaffold"
 
 
+def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_client: TestClient, monkeypatch):
+    import astock
+
+    monkeypatch.setattr(astock, "announcements", lambda code: [
+        {"date": "2026-07-17", "title": "关于海外订单增长的公告", "type": "公告", "url": "https://example.com/a1"},
+    ])
+    monkeypatch.setattr(astock, "stock_news", lambda code, limit=20: [
+        {"新闻标题": "徐工机械出口订单继续增长", "发布时间": "2026-07-17 09:30", "新闻链接": "https://example.com/n1"},
+    ])
+
+    workspace_client.put("/api/watchlist", json={
+        "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
+        "indicators": [],
+    })
+
+    hub = workspace_client.get("/api/research/hub")
+    assert hub.status_code == 200
+
+    events = hub.json()["data"]["event_probability"]["priority_events"]
+    assert any(item["category"] == "宏观窗口" for item in events)
+    catalyst = next(item for item in events if item["category"] == "个股催化")
+    assert "徐工机械" in catalyst["title"]
+    assert "公告" in catalyst["note"] or "新闻" in catalyst["note"]
+
+
 def test_stock_center_aggregation_and_provider_status(workspace_client: TestClient, monkeypatch):
     import astock
 

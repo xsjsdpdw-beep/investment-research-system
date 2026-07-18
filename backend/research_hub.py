@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import os
 from pathlib import Path
 import re
@@ -928,6 +928,69 @@ def _flatten_group_items(groups: list[dict], limit_per_group: int = 3, total_lim
     return rows[:total_limit]
 
 
+def _event_probability_status(event_day: str | None) -> str:
+    if not event_day:
+        return "watching"
+    try:
+        days = (date.fromisoformat(event_day) - datetime.now().date()).days
+    except ValueError:
+        return "watching"
+    if days <= 7:
+        return "active"
+    if days <= 30:
+        return "watching"
+    return "planned"
+
+
+def _macro_priority_events(limit: int = 4) -> list[dict]:
+    events = []
+    for item in knowledge.list_calendar_events(view="upcoming"):
+        if item.get("category") != "macro":
+            continue
+        title = item.get("title", "").strip()
+        if not title:
+            continue
+        event_day = item.get("date", "")
+        source = item.get("source", "公开事件日历")
+        notes = item.get("notes", "").strip()
+        events.append({
+            "key": item.get("id") or f"macro-{_safe_slug(title)}-{event_day}",
+            "title": title,
+            "category": "宏观窗口",
+            "status": _event_probability_status(event_day),
+            "note": f"{event_day} · {source}" + (f" · {notes}" if notes else ""),
+        })
+        if len(events) >= limit:
+            break
+    return events
+
+
+def _stock_catalyst_priority_events(stock_watch_feed: list[dict], limit: int = 4) -> list[dict]:
+    events = []
+    for item in stock_watch_feed:
+        highlights = [text for text in item.get("highlights", []) if text and not text.startswith("关注列表联动")]
+        if not highlights:
+            continue
+        label = item.get("name") or item.get("ticker", "")
+        group = item.get("group", "未分组")
+        events.append({
+            "key": f"stock-catalyst-{_safe_slug(item.get('ticker', label))}",
+            "title": f"{label} 催化跟踪",
+            "category": "个股催化",
+            "status": "active",
+            "note": f"{group} · {'；'.join(highlights[:2])}",
+        })
+        if len(events) >= limit:
+            break
+    return events
+
+
+def _event_probability_priority_events(stock_watch_feed: list[dict]) -> list[dict]:
+    rows = _macro_priority_events()
+    rows.extend(_stock_catalyst_priority_events(stock_watch_feed))
+    return rows[:8]
+
+
 def get_research_hub() -> dict:
     radar = newsradar.get_radar(force=False)
     cfg = newsradar.load_sources_config()
@@ -971,27 +1034,7 @@ def get_research_hub() -> dict:
                 },
             ],
             "priority_events": [
-                {
-                    "key": "fed-window",
-                    "title": "美联储重要议息窗口",
-                    "category": "宏观窗口",
-                    "status": "watching",
-                    "note": "当前仅保留观察位，后续再接真实事件节奏与概率判断。",
-                },
-                {
-                    "key": "china-policy-window",
-                    "title": "国内重要政策与发布窗口",
-                    "category": "政策窗口",
-                    "status": "watching",
-                    "note": "用于承接政策会议、发布会和重点制度调整的后续事件库。",
-                },
-                {
-                    "key": "sector-catalyst-template",
-                    "title": "行业催化模板观察位",
-                    "category": "行业催化",
-                    "status": "planned",
-                    "note": "用于后续接入重点行业催化、景气验证和供需转折跟踪。",
-                },
+                * _event_probability_priority_events(stock_watch_feed),
             ],
             "source_interfaces": [
                 {
