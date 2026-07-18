@@ -81,6 +81,28 @@ def test_extract_hbm_expression_units_collects_steps_nodes_metrics_and_series():
     assert extracted["metrics"][0]["label"] == "单颗容量"
 
 
+def test_extract_hbm_expression_units_filters_market_noise_and_infers_visual_defaults():
+    extracted = extract_hbm_expression_units(
+        [
+            {
+                "label": "研报/HBM",
+                "text": (
+                    "2026 年电子指数下跌 1.66%，跑输沪深 300 指数。"
+                    "AI 旺盛需求下，三星、SK 海力士积极扩产 HBM，先进封装、TSV、DRAM 原厂和服务器链路景气度较高。"
+                    "HBM3E 层数 12Hi，单颗容量 24GB，带宽 819GB/s，良率爬坡仍是卡口。"
+                ),
+            }
+        ]
+    )
+
+    metric_labels = {item["label"] for item in extracted["metrics"]}
+    assert {"层数", "单颗容量", "带宽"}.issubset(metric_labels)
+    assert "电子指数下跌" not in metric_labels
+    assert extracted["steps"][0]["label"] == "DRAM Die"
+    assert extracted["nodes"][0]["label"] == "AI 加速器 / GPU"
+    assert extracted["series"]
+
+
 def test_build_hbm_infographic_tabs_outputs_flow_chain_range_and_chart_blocks():
     tabs = build_hbm_infographic_tabs(
         "HBM",
@@ -102,6 +124,24 @@ def test_build_hbm_infographic_tabs_outputs_flow_chain_range_and_chart_blocks():
     assert any(block["type"] == "flow_map" for block in overview)
     assert any(block["type"] == "industry_chain" for block in overview)
     assert any(block["type"] == "chart_spec" for block in overview)
+
+
+def test_build_hbm_draft_canvas_supplies_visual_defaults_for_report_style_sources():
+    schema = build_hbm_draft_canvas(
+        "HBM",
+        [
+            {
+                "label": "研报/HBM",
+                "text": "AI 服务器需求拉动 HBM 放量，SK 海力士、三星、美光扩产，先进封装、TSV、良率和库存周期是核心变量。",
+            }
+        ],
+    )
+    blocks = {block["id"]: block for tab in schema["tabs"] for block in tab["blocks"]}
+
+    assert blocks["overview-flow"]["spec"]["steps"]
+    assert blocks["overview-chain"]["spec"]["nodes"]
+    assert blocks["overview-chart"]["spec"]["series"]
+    assert blocks["generation-table"]["spec"]["rows"][0]["kind"] == "header"
 
 
 def test_build_hbm_draft_dashboard_populates_tab_specific_content():
@@ -213,6 +253,69 @@ def test_validated_overview_workbench_backfills_hbm_dashboard_schema(monkeypatch
     assert result["draft_theme_schema"]["kind"] == "industry_draft_canvas"
     reloaded = knowledge.get_overview_workbench("sector", scope_id)
     assert reloaded["draft_theme_schema"]["tabs"][0]["id"] == "tab-overview"
+
+
+def test_validated_overview_workbench_rebuilds_legacy_hbm_canvas_with_real_sources(monkeypatch):
+    scope_id = "HBM-test-rebuild-legacy-canvas"
+    knowledge.save_overview_draft(
+        "sector",
+        scope_id,
+        {
+            "summary": "",
+            "sources": [
+                {"label": "东财公开行业研报接口", "text": ""},
+                {"label": "AlphaEngine 行业专家纪要接口", "text": ""},
+            ],
+            "modules": [],
+            "keywords": [],
+        },
+    )
+    knowledge.save_overview_draft_theme_schema(
+        "sector",
+        scope_id,
+        {
+            "kind": "industry_draft_canvas",
+            "version": "v1",
+            "scope": "HBM",
+            "tabs": [
+                {
+                    "id": "tab-generation",
+                    "title": "技术代际",
+                    "cards": [
+                        {
+                            "id": "generation-hero",
+                            "type": "summary_hero",
+                            "content": {"headline": "旧文字卡"},
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "research_hub._sector_sources",
+        lambda sector: [
+            {
+                "label": "研报/HBM",
+                "text": (
+                    "工艺流程：Base Die -> TSV -> Hybrid Bonding -> 堆叠封装。\n"
+                    "产业链：GPU、DRAM 原厂、先进封装、服务器。\n"
+                    "关键指标：单颗容量 24GB，层数 12Hi，带宽 819GB/s。\n"
+                    "| 代际 | 层数 |\n| HBM3E | 12Hi |\n"
+                    "HBM2E 向 HBM3E 过渡，AI 需求、扩产、良率和库存决定周期温度。"
+                ),
+            }
+        ],
+    )
+    monkeypatch.setattr("research_hub.is_hbm_sector", lambda sector: sector == scope_id)
+
+    result = app_module._validated_overview_workbench("sector", scope_id)
+    tabs = result["draft_theme_schema"]["tabs"]
+    block_types = {block["type"] for tab in tabs for block in tab.get("blocks", [])}
+
+    assert result["draft_theme_schema"]["version"] == "v2"
+    assert {"flow_map", "industry_chain", "chart_spec", "comparison_table"}.issubset(block_types)
+    assert tabs[0]["blocks"][2]["spec"]["steps"][0]["label"] == "Base Die"
 
 
 def test_validated_overview_workbench_uses_youdao_note_content_when_sources_missing(monkeypatch):

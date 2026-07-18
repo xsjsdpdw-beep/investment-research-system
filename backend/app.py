@@ -394,27 +394,21 @@ def _should_invalidate_youdao_binding(error: Exception) -> bool:
 def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_id: str) -> dict:
     data = knowledge.get_overview_workbench(scope_type, scope_id)
     existing_schema = data.get("draft_theme_schema") or {}
-    if (
-        scope_type == "sector"
-        and research_hub.is_hbm_sector(scope_id)
-        and existing_schema.get("kind") == "hbm_draft_dashboard"
-    ):
-        upgraded = research_hub.map_legacy_hbm_dashboard_to_canvas(existing_schema)
-        saved = knowledge.save_overview_draft_theme_schema(scope_type, scope_id, upgraded)
-        data["draft_theme_schema"] = saved.get("draft_theme_schema") or upgraded
-        data["updated_at"] = saved.get("updated_at") or data.get("updated_at", "")
-        existing_schema = data.get("draft_theme_schema") or {}
     needs_hbm_schema = (
         scope_type == "sector"
         and research_hub.is_hbm_sector(scope_id)
-        and existing_schema.get("kind") != "industry_draft_canvas"
+        and (
+            existing_schema.get("kind") != "industry_draft_canvas"
+            or existing_schema.get("version") != "v2"
+        )
     )
 
     def hydrate_hbm_schema(sources: list[dict] | None = None) -> None:
         nonlocal data, needs_hbm_schema
         if not needs_hbm_schema:
             return
-        resolved_sources = sources or research_hub._sector_sources(scope_id)
+        sector_sources = research_hub._sector_sources(scope_id)
+        resolved_sources = sector_sources or sources or []
         schema = research_hub.build_hbm_draft_canvas(scope_id, resolved_sources)
         saved = knowledge.save_overview_draft_theme_schema(scope_type, scope_id, schema)
         data["draft_theme_schema"] = saved.get("draft_theme_schema") or schema
@@ -423,8 +417,9 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
 
     binding = data.get("editor_binding") or {}
     file_id = (binding.get("file_id") or "").strip()
-    if needs_hbm_schema and (data.get("sources") or []):
-        hydrate_hbm_schema(data.get("sources") or [])
+    draft_sources = data.get("draft", {}).get("sources") or []
+    if needs_hbm_schema and draft_sources:
+        hydrate_hbm_schema(draft_sources)
     if not file_id:
         hydrate_hbm_schema()
         return data
@@ -442,7 +437,7 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
     binding["preview"] = note["content"].replace("\n", " ")[:240]
     data["editor_binding"] = binding
     if needs_hbm_schema:
-        sources = data.get("sources") or []
+        sources = draft_sources
         if not sources and note["content"].strip():
             sources = [{"label": binding.get("title") or file_id, "text": note["content"]}]
         hydrate_hbm_schema(sources)

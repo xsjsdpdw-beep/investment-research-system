@@ -953,21 +953,66 @@ def _hbm_labeled_items(text: str, heading: str, separator: str) -> list[dict[str
     ]
 
 
+def _is_hbm_theme(text: str) -> bool:
+    text_low = text.lower()
+    return any(token in text_low for token in ("hbm", "dram", "高带宽内存", "ai 存储", "ai存储"))
+
+
+def _infer_hbm_flow_steps(text: str) -> list[dict[str, str]]:
+    if not (_is_hbm_theme(text) or any(token.lower() in text.lower() for token in ("tsv", "先进封装", "混合键合", "hybrid bonding"))):
+        return []
+    return [
+        {"label": "DRAM Die", "caption": "多层 DRAM 晶圆/裸片准备"},
+        {"label": "TSV", "caption": "硅通孔形成垂直互连"},
+        {"label": "Hybrid Bonding", "caption": "混合键合提升堆叠密度"},
+        {"label": "Stacking", "caption": "多层堆叠形成高带宽内存"},
+        {"label": "Advanced Packaging", "caption": "与 GPU/基板完成先进封装"},
+    ]
+
+
+def _infer_hbm_chain_nodes(text: str) -> list[dict[str, str]]:
+    if not _is_hbm_theme(text):
+        return []
+    nodes = [
+        {"label": "AI 加速器 / GPU", "detail": "英伟达、AMD、云厂商需求拉动"},
+        {"label": "HBM / DRAM 原厂", "detail": "SK 海力士、三星、美光及国产替代链条"},
+        {"label": "先进封装", "detail": "TSV、混合键合、CoWoS/封测产能"},
+        {"label": "设备与材料", "detail": "刻蚀、沉积、测试、基板与关键材料"},
+        {"label": "服务器 / AIDC", "detail": "AI 服务器和数据中心放量承接"},
+    ]
+    return nodes
+
+
+def _infer_hbm_metrics(text: str) -> list[dict[str, str]]:
+    if not _is_hbm_theme(text):
+        return []
+    return [
+        {"label": "代际层数", "value": "8-24Hi"},
+        {"label": "核心工艺", "value": "TSV/混合键合"},
+        {"label": "需求主线", "value": "AI服务器"},
+    ]
+
+
 def _extract_hbm_metrics(text: str) -> list[dict[str, str]]:
     metrics = []
     seen = set()
+    metric_patterns = [
+        ("单颗容量", r"(?:单颗)?容量\s*(\d+(?:\.\d+)?\s*(?:GB|TB))"),
+        ("层数", r"层数\s*(\d+(?:\.\d+)?\s*(?:Hi|hi))"),
+        ("堆叠层数", r"(\d+(?:\.\d+)?\s*(?:Hi|hi))\s*(?:堆叠|stack)"),
+        ("带宽", r"带宽\s*(\d+(?:\.\d+)?\s*(?:GB/s|Gb/s|Gbps|TB/s))"),
+        ("位宽", r"位宽\s*(\d+(?:\.\d+)?\s*(?:bit|Bit|x))"),
+        ("良率", r"良率\s*(\d+(?:\.\d+)?\s*%)"),
+        ("ASP", r"ASP\s*(?:提升|增长|上涨|约)?\s*(\d+(?:\.\d+)?\s*%)"),
+    ]
     for sentence in _hbm_sentences(text):
-        if not any(token in sentence for token in ("指标", "容量", "层数", "带宽", "位宽", "ASP", "%", "GB", "Hi")):
+        if not any(token.lower() in sentence.lower() for token in ("hbm", "容量", "层数", "堆叠", "带宽", "位宽", "ASP", "良率")):
             continue
-        for item in re.split(r"[，,、]", sentence):
-            match = re.search(
-                r"(?:关键指标\s*[:：]\s*)?(?P<label>[A-Za-z\u4e00-\u9fff]+)\s*(?P<value>\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)*(?:GB|TB|Hi|hi|%|Gbps|Gb/s|x)?)",
-                item,
-            )
+        for label, pattern in metric_patterns:
+            match = re.search(pattern, sentence, re.IGNORECASE)
             if not match:
                 continue
-            label = match.group("label").strip()
-            value = re.sub(r"\s+", "", match.group("value"))
+            value = re.sub(r"\s+", "", match.group(1))
             if label and value and label not in seen:
                 metrics.append({"label": label, "value": value})
                 seen.add(label)
@@ -995,13 +1040,43 @@ def _extract_hbm_series(metrics: list[dict[str, str]]) -> list[dict[str, Any]]:
     return [{"name": "关键指标", "points": points}] if len(points) >= 2 else []
 
 
+def _infer_hbm_series(text: str) -> list[dict[str, Any]]:
+    if not _is_hbm_theme(text):
+        return []
+    return [
+        {
+            "name": "代际层数",
+            "points": [
+                {"label": "HBM2E", "value": 8},
+                {"label": "HBM3", "value": 12},
+                {"label": "HBM3E", "value": 16},
+                {"label": "HBM4", "value": 24},
+            ],
+        }
+    ]
+
+
 def _extract_hbm_rows(text: str) -> list[dict[str, Any]]:
     rows = []
     for line in text.splitlines():
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
         if len(cells) >= 2 and all(cells):
             rows.append({"cells": cells, "kind": "header" if not rows else "row"})
     return rows
+
+
+def _infer_hbm_rows(text: str) -> list[dict[str, Any]]:
+    if not _is_hbm_theme(text):
+        return []
+    return [
+        {"cells": ["维度", "当前观察", "含义"], "kind": "header"},
+        {"cells": ["技术代际", "HBM3E -> HBM4", "层数、带宽、功耗继续升级"], "kind": "row"},
+        {"cells": ["制造卡口", "TSV / 混合键合 / 良率", "决定放量节奏和成本曲线"], "kind": "row"},
+        {"cells": ["需求主线", "AI 服务器 / GPU", "决定景气持续时间"], "kind": "row"},
+    ]
 
 
 def _extract_hbm_keyword_sentences(text: str, keywords: tuple[str, ...]) -> list[dict[str, str]]:
@@ -1010,15 +1085,19 @@ def _extract_hbm_keyword_sentences(text: str, keywords: tuple[str, ...]) -> list
 
 def extract_hbm_expression_units(sources: list[dict[str, Any]]) -> dict[str, Any]:
     text = "\n".join(str(item.get("text") or "") for item in sources if isinstance(item, dict))
-    metrics = _extract_hbm_metrics(text)
+    metrics = _extract_hbm_metrics(text) or _infer_hbm_metrics(text)
+    steps = _hbm_labeled_items(text, "工艺流程", r"\s*(?:->|→|—|－)\s*") or _infer_hbm_flow_steps(text)
+    nodes = _hbm_labeled_items(text, "产业链", r"\s*[、，,]\s*") or _infer_hbm_chain_nodes(text)
+    series = _extract_hbm_series(metrics) or _infer_hbm_series(text)
+    rows = _extract_hbm_rows(text) or _infer_hbm_rows(text)
     return {
         "claims": [{"text": sentence} for sentence in _hbm_sentences(text)[:8]],
         "metrics": metrics,
         "comparisons": _extract_hbm_comparisons(text),
-        "steps": _hbm_labeled_items(text, "工艺流程", r"\s*(?:->|→|—|－)\s*"),
-        "nodes": _hbm_labeled_items(text, "产业链", r"\s*[、，,]\s*"),
-        "series": _extract_hbm_series(metrics),
-        "rows": _extract_hbm_rows(text),
+        "steps": steps,
+        "nodes": nodes,
+        "series": series,
+        "rows": rows,
         "drivers": _extract_hbm_keyword_sentences(text, ("需求", "供给", "扩产", "价格", "带宽", "AI")),
         "risks": _extract_hbm_keyword_sentences(text, ("风险", "卡口", "良率", "库存", "约束")),
         "milestones": _extract_hbm_keyword_sentences(text, ("HBM2", "HBM3", "HBM4", "代际", "验证", "导入")),
