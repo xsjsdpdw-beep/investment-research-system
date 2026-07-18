@@ -291,6 +291,81 @@ function TimelineEditor({
   );
 }
 
+function FlowMapEditor({
+  card,
+  onChange,
+}: {
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
+}) {
+  const steps = readSpecArray(card.spec.steps);
+  return <EditorTextarea
+    value={steps.map((step) => `${String(step?.label || step?.name || step || "")} | ${String(step?.caption || step?.note || "")}`).join("\n")}
+    placeholder="每行一个步骤：名称 | 说明"
+    onChange={(value) => onChange({
+      ...card,
+      spec: {
+        ...card.spec,
+        steps: value.split("\n").filter((line) => line.trim()).map((line) => {
+          const [label = "", caption = ""] = line.split("|").map((part) => part.trim());
+          return { label, caption };
+        }),
+      },
+    })}
+  />;
+}
+
+function IndustryChainEditor({
+  card,
+  onChange,
+}: {
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
+}) {
+  const columns = readSpecArray(card.spec.columns).map((column, index) => {
+    const value = column && typeof column === "object" ? column as Record<string, unknown> : {};
+    return { title: String(value.title || value.label || `环节 ${index + 1}`), nodes: readSpecArray(value.nodes).map(String) };
+  });
+  return <EditorTextarea
+    value={columns.map((column) => `${column.title} | ${column.nodes.join(", ")}`).join("\n")}
+    placeholder="每行一个环节：环节名称 | 节点1, 节点2"
+    onChange={(value) => onChange({
+      ...card,
+      spec: {
+        ...card.spec,
+        columns: value.split("\n").filter((line) => line.trim()).map((line, index) => {
+          const [title = `环节 ${index + 1}`, nodes = ""] = line.split("|").map((part) => part.trim());
+          return { title, nodes: nodes.split(",").map((node) => node.trim()).filter(Boolean) };
+        }),
+      },
+    })}
+  />;
+}
+
+function EvidenceTableEditor({
+  card,
+  onChange,
+}: {
+  card: IndustryDraftBlock;
+  onChange: (card: IndustryDraftBlock) => void;
+}) {
+  const rows = readSpecArray(card.spec.rows);
+  return <EditorTextarea
+    value={rows.map((row) => `${String(row?.conclusion || row?.title || "")} | ${String(row?.evidence || row?.detail || "")} | ${String(row?.source || "")}`).join("\n")}
+    placeholder="每行一条：结论 | 证据 | 来源"
+    onChange={(value) => onChange({
+      ...card,
+      spec: {
+        ...card.spec,
+        rows: value.split("\n").filter((line) => line.trim()).map((line) => {
+          const [conclusion = "", evidence = "", source = ""] = line.split("|").map((part) => part.trim());
+          return { conclusion, evidence, source };
+        }),
+      },
+    })}
+  />;
+}
+
 function ComparisonTableEditor({
   card,
   onChange,
@@ -404,8 +479,11 @@ function CardContentEditor({
   if (card.type === "range_band") return <RangeBandEditor card={card} onChange={onChange} />;
   if (card.type === "comparison_cards") return <ComparisonCardsEditor card={card} onChange={onChange} />;
   if (card.type === "timeline") return <TimelineEditor card={card} onChange={onChange} />;
+  if (card.type === "flow_map") return <FlowMapEditor card={card} onChange={onChange} />;
+  if (card.type === "industry_chain") return <IndustryChainEditor card={card} onChange={onChange} />;
   if (card.type === "comparison_table") return <ComparisonTableEditor card={card} onChange={onChange} />;
   if (card.type === "chart_spec") return <ChartSpecEditor card={card} onChange={onChange} />;
+  if (card.type === "evidence_table") return <EvidenceTableEditor card={card} onChange={onChange} />;
   return null;
 }
 

@@ -7,6 +7,7 @@ import {
   appendIndustryDraftBlock,
   createCanvasCard,
   createEmptyCanvasTab,
+  getIndustryDraftCanvasSourceKey,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
   buildComparisonTableRows,
@@ -16,6 +17,7 @@ import {
   removeIndustryDraftBlock,
   moveItem,
   shouldUseIndustryDraftCanvas,
+  shouldSyncIndustryDraft,
   updateIndustryDraftBlock,
 } from "../src/components/research/industry-draft-canvas.ts";
 
@@ -102,6 +104,22 @@ test("getComparisonTableHeaders keeps the rendered in-row header over conflictin
   assert.deepEqual(headers, ["项目", "HBM3E"]);
 });
 
+test("equivalent external data does not sync over an editing HBM draft", () => {
+  const data = {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "HBM",
+    tabs: [{ id: "tab-overview", title: "总览", blocks: [{ id: "block-1", type: "summary_hero", spec: {} }] }],
+  };
+  const equivalentData = structuredClone(data);
+  const sourceKey = getIndustryDraftCanvasSourceKey(data);
+
+  assert.equal(sourceKey, getIndustryDraftCanvasSourceKey(equivalentData));
+  assert.equal(shouldSyncIndustryDraft(sourceKey, sourceKey, true), false);
+  assert.equal(shouldSyncIndustryDraft(sourceKey, sourceKey, false), false);
+  assert.equal(shouldSyncIndustryDraft(`${sourceKey}-changed`, sourceKey, false), true);
+});
+
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
   const result = migrateCanvasCardsToBlocks({
     kind: "industry_draft_canvas",
@@ -179,13 +197,19 @@ test("IndustryDraftCanvas limits editing to the HBM initial-draft context", () =
   assert.match(source, /\{canEdit \? \(/);
 });
 
-test("IndustryDraftCanvasEditor routes comparison tables and charts to field editors", () => {
+test("IndustryDraftCanvasEditor routes supported editable block types to field editors", () => {
   const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvasEditor.tsx", import.meta.url), "utf8");
 
   assert.match(source, /function ComparisonTableEditor/);
   assert.match(source, /function ChartSpecEditor/);
+  assert.match(source, /function FlowMapEditor/);
+  assert.match(source, /function IndustryChainEditor/);
+  assert.match(source, /function EvidenceTableEditor/);
   assert.match(source, /card\.type === "comparison_table"/);
   assert.match(source, /card\.type === "chart_spec"/);
+  assert.match(source, /card\.type === "flow_map"/);
+  assert.match(source, /card\.type === "industry_chain"/);
+  assert.match(source, /card\.type === "evidence_table"/);
   assert.match(source, /normalizeComparisonTableRows\(card\.spec\.rows, headers\)/);
   assert.match(source, /\["bar", "stacked_bar", "line", "area"\]/);
 });

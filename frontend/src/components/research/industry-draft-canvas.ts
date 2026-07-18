@@ -17,6 +17,14 @@ type LegacyIndustryDraftCanvasSchema = Omit<IndustryDraftCanvasSchema, "tabs"> &
 
 export type IndustryDraftCanvasInput = IndustryDraftCanvasSchema | LegacyIndustryDraftCanvasSchema | HBMDraftDashboardData;
 
+export function getIndustryDraftCanvasSourceKey(data: IndustryDraftCanvasInput) {
+  return JSON.stringify(normalizeIndustryDraftCanvasInput(data));
+}
+
+export function shouldSyncIndustryDraft(sourceKey: string, lastSyncedSourceKey: string, editing: boolean) {
+  return !editing && sourceKey !== lastSyncedSourceKey;
+}
+
 const INDUSTRY_DRAFT_BLOCK_TYPES = new Set<IndustryDraftBlock["type"]>([
   "summary_hero",
   "metric_grid",

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api, ApiError, type IndustryDraftBlock, type IndustryDraftCanvasSchema } from "@/lib/api";
@@ -9,10 +9,12 @@ import { IndustryDraftCanvasEditor } from "./IndustryDraftCanvasEditor";
 import {
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
+  getIndustryDraftCanvasSourceKey,
   moveItem,
   normalizeIndustryDraftCanvasInput,
   appendIndustryDraftBlock,
   removeIndustryDraftBlock,
+  shouldSyncIndustryDraft,
   updateIndustryDraftBlock,
   type IndustryDraftCanvasInput,
 } from "./industry-draft-canvas";
@@ -31,19 +33,23 @@ export function IndustryDraftCanvas({
   isInitialDraftCanvas?: boolean;
 }) {
   const normalizedData = useMemo(() => normalizeIndustryDraftCanvasInput(data), [data]);
+  const sourceKey = useMemo(() => getIndustryDraftCanvasSourceKey(data), [data]);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(normalizedData);
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || normalizedData.tabs[0]?.id || "");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const lastSyncedSourceKey = useRef(sourceKey);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
   const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && scopeId === "HBM";
   const canEdit = isHbmInitialDraft;
 
   useEffect(() => {
+    if (!shouldSyncIndustryDraft(sourceKey, lastSyncedSourceKey.current, editing)) return;
     setDraft(normalizedData);
     setActiveTabId((current) => current || normalizedData.tabs[0]?.id || "");
-  }, [normalizedData]);
+    lastSyncedSourceKey.current = sourceKey;
+  }, [editing, normalizedData, sourceKey]);
 
   if (!activeTab) {
     return null;
