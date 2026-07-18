@@ -393,10 +393,21 @@ def _should_invalidate_youdao_binding(error: Exception) -> bool:
 
 def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_id: str) -> dict:
     data = knowledge.get_overview_workbench(scope_type, scope_id)
+    existing_schema = data.get("draft_theme_schema") or {}
+    if (
+        scope_type == "sector"
+        and research_hub.is_hbm_sector(scope_id)
+        and existing_schema.get("kind") == "hbm_draft_dashboard"
+    ):
+        upgraded = research_hub.map_legacy_hbm_dashboard_to_canvas(existing_schema)
+        saved = knowledge.save_overview_draft_theme_schema(scope_type, scope_id, upgraded)
+        data["draft_theme_schema"] = saved.get("draft_theme_schema") or upgraded
+        data["updated_at"] = saved.get("updated_at") or data.get("updated_at", "")
+        existing_schema = data.get("draft_theme_schema") or {}
     needs_hbm_schema = (
         scope_type == "sector"
         and research_hub.is_hbm_sector(scope_id)
-        and (data.get("draft_theme_schema") or {}).get("kind") != "hbm_draft_dashboard"
+        and existing_schema.get("kind") != "industry_draft_canvas"
     )
 
     def hydrate_hbm_schema(sources: list[dict] | None = None) -> None:
@@ -404,7 +415,7 @@ def _validated_overview_workbench(scope_type: Literal["sector", "stock"], scope_
         if not needs_hbm_schema:
             return
         resolved_sources = sources or research_hub._sector_sources(scope_id)
-        schema = research_hub.build_hbm_draft_dashboard(scope_id, resolved_sources)
+        schema = research_hub.build_hbm_draft_canvas(scope_id, resolved_sources)
         saved = knowledge.save_overview_draft_theme_schema(scope_type, scope_id, schema)
         data["draft_theme_schema"] = saved.get("draft_theme_schema") or schema
         data["updated_at"] = saved.get("updated_at") or data.get("updated_at", "")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import date, datetime, timezone
 import os
 from pathlib import Path
@@ -842,9 +843,102 @@ def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
         tabs.append(tab)
     return {
         "kind": "hbm_draft_dashboard",
+        "scope": sector,
         "tabs": tabs,
         "generated_at": _utc_now_iso(),
     }
+
+
+def map_legacy_hbm_dashboard_to_canvas(schema: dict[str, Any]) -> dict[str, Any]:
+    tabs = []
+    for index, tab in enumerate(schema.get("tabs") or []):
+        if not isinstance(tab, dict):
+            continue
+        key = str(tab.get("key") or f"tab-{index}")
+        title = str(tab.get("title") or "未命名栏目")
+        cards: list[dict[str, Any]] = [
+            {
+                "id": f"{key}-hero",
+                "type": "summary_hero",
+                "title": title,
+                "layout": "hero",
+                "content": {
+                    "headline": str(tab.get("headline") or ""),
+                    "bullets": [str(item) for item in (tab.get("summary") or []) if str(item).strip()],
+                    "tags": [str(metric.get("value") or "") for metric in (tab.get("metrics") or []) if str(metric.get("value") or "").strip()],
+                },
+                "sources": [str(item) for item in (tab.get("sources") or []) if str(item).strip()],
+            }
+        ]
+        if tab.get("metrics"):
+            cards.append(
+                {
+                    "id": f"{key}-metrics",
+                    "type": "metric_grid",
+                    "title": "关键指标",
+                    "layout": "grid",
+                    "content": {
+                        "items": [
+                            {
+                                "label": str(metric.get("label") or ""),
+                                "value": str(metric.get("value") or ""),
+                                "note": str(metric.get("tone") or ""),
+                            }
+                            for metric in (tab.get("metrics") or [])
+                            if isinstance(metric, dict)
+                        ]
+                    },
+                }
+            )
+        if tab.get("generation_steps"):
+            cards.append(
+                {
+                    "id": f"{key}-timeline",
+                    "type": "timeline",
+                    "title": "技术代际",
+                    "layout": "timeline",
+                    "content": {"steps": deepcopy(tab.get("generation_steps") or [])},
+                }
+            )
+        if tab.get("cost_stack"):
+            cards.append(
+                {
+                    "id": f"{key}-range",
+                    "type": "range_band",
+                    "title": "成本与卡口",
+                    "layout": "band",
+                    "content": {
+                        "current_label": "核心约束",
+                        "current_value": str((tab.get("metrics") or [{}])[0].get("value") or ""),
+                        "segments": deepcopy(tab.get("cost_stack") or []),
+                    },
+                }
+            )
+        if tab.get("leader_cards"):
+            cards.append(
+                {
+                    "id": f"{key}-comparison",
+                    "type": "comparison_cards",
+                    "title": "龙头对比",
+                    "layout": "comparison",
+                    "content": {"items": deepcopy(tab.get("leader_cards") or [])},
+                }
+            )
+        tabs.append({"id": f"tab-{key}", "title": title, "cards": cards})
+    return {
+        "kind": "industry_draft_canvas",
+        "version": "v1",
+        "scope": str(schema.get("scope") or "HBM"),
+        "tabs": tabs,
+        "meta": {
+            "generated_at": str(schema.get("generated_at") or _utc_now_iso()),
+            "source_mode": "auto",
+        },
+    }
+
+
+def build_hbm_draft_canvas(sector: str, sources: list[dict]) -> dict[str, Any]:
+    return map_legacy_hbm_dashboard_to_canvas(build_hbm_draft_dashboard(sector, sources))
 
 
 def build_sector_overview_modules(sector: str) -> dict:
@@ -874,7 +968,7 @@ def build_sector_overview_modules(sector: str) -> dict:
         "modules": modules,
     }
     if is_hbm_sector(sector):
-        result["draft_theme_schema"] = build_hbm_draft_dashboard(sector, sources)
+        result["draft_theme_schema"] = build_hbm_draft_canvas(sector, sources)
     return result
 
 
@@ -1176,6 +1270,9 @@ def _event_probability_modules(priority_events: list[dict]) -> list[dict]:
 
 def _event_probability_sources(priority_events: list[dict], sector_entries: list[dict], stock_watch_feed: list[dict]) -> list[dict]:
     categories = {item.get("category") for item in priority_events}
+    macro_events = [item for item in priority_events if item.get("category") == "宏观窗口"]
+    industry_events = [item for item in priority_events if item.get("category") == "行业催化"]
+    stock_events = [item for item in priority_events if item.get("category") == "个股催化"]
     return [
         {
             "key": "macro-calendar-live",
@@ -1183,6 +1280,8 @@ def _event_probability_sources(priority_events: list[dict], sector_entries: list
             "provider": "calendar_auto_feed",
             "status": "active" if "宏观窗口" in categories else "planned",
             "note": "直接复用当前投资日历里的自动宏观窗口事件。",
+            "coverage_count": len(macro_events),
+            "latest_signal": macro_events[0]["title"] if macro_events else "",
         },
         {
             "key": "industry-catalyst-knowledge",
@@ -1190,6 +1289,8 @@ def _event_probability_sources(priority_events: list[dict], sector_entries: list
             "provider": "knowledge_sector_entries",
             "status": "active" if sector_entries else "planned",
             "note": "复用行业卡片与周度复盘里的催化、验证、政策与销量线索。",
+            "coverage_count": len(industry_events),
+            "latest_signal": industry_events[0]["title"] if industry_events else "",
         },
         {
             "key": "stock-catalyst-watchlist",
@@ -1197,6 +1298,8 @@ def _event_probability_sources(priority_events: list[dict], sector_entries: list
             "provider": "watchlist_news_and_filings",
             "status": "active" if stock_watch_feed else "planned",
             "note": "复用关注列表个股的公告与新闻高亮，形成公司层面的催化跟踪。",
+            "coverage_count": len(stock_events),
+            "latest_signal": stock_events[0]["title"] if stock_events else "",
         },
     ]
 
