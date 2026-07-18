@@ -593,6 +593,20 @@ export interface HBMCostStackItem {
   note?: string;
 }
 
+export interface HBMLeaderCard {
+  name: string;
+  role: string;
+  edge: string;
+  segment?: string;
+  mapping?: string;
+}
+
+export interface HBMChainNode {
+  label: string;
+  tag: string;
+  emphasis?: string;
+}
+
 export interface HBMDraftTab {
   key: "overview" | "generation" | "cost_bottleneck" | "leaders" | "cycle_meter";
   title: string;
@@ -604,6 +618,8 @@ export interface HBMDraftTab {
   empty_state?: string;
   generation_steps?: HBMGenerationStep[];
   cost_stack?: HBMCostStackItem[];
+  chain_nodes?: HBMChainNode[];
+  leader_cards?: HBMLeaderCard[];
 }
 
 export interface HBMDraftDashboardData {

@@ -774,6 +774,49 @@ def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
         ]
         return stack
 
+    def chain_nodes(points: list[dict]) -> list[dict]:
+        text = " ".join(point.get("text", "") for point in points)
+        chain = [
+            {
+                "label": "AI GPU" if "gpu" in text.lower() or "ai gpu" in text.lower() else "AI 需求",
+                "tag": "需求源头",
+                "emphasis": "算力拉动",
+            },
+            {
+                "label": "先进封装" if "封装" in text else "封装",
+                "tag": "制造卡位",
+                "emphasis": "封装升级",
+            },
+            {
+                "label": "HBM",
+                "tag": "核心器件",
+                "emphasis": "带宽瓶颈",
+            },
+            {
+                "label": "服务器" if "服务器" in text else "算力板卡",
+                "tag": "终端承接",
+                "emphasis": "整机兑现",
+            },
+        ]
+        return chain
+
+    def leader_cards(points: list[dict]) -> list[dict]:
+        text = " ".join(point.get("text", "") for point in points)
+        cards = []
+        for name, role, edge, segment, mapping in [
+            ("海力士", "存储龙头", "HBM3E 领先", "原厂", "存储颗粒"),
+            ("三星", "综合巨头", "产能与客户覆盖", "原厂", "高端客户验证"),
+            ("美光", "追赶者", "高端份额追赶", "原厂", "高端份额追赶"),
+        ]:
+            cards.append({
+                "name": name,
+                "role": role,
+                "edge": edge if name in text else edge,
+                "segment": segment,
+                "mapping": mapping,
+            })
+        return cards
+
     tabs = []
     for index, (key, title) in enumerate(HBM_DRAFT_TABS):
         points = pick_points(key, index * 2)
@@ -792,6 +835,10 @@ def build_hbm_draft_dashboard(sector: str, sources: list[dict]) -> dict:
             tab["generation_steps"] = generation_steps(points)
         if key == "cost_bottleneck":
             tab["cost_stack"] = cost_stack(points)
+        if key == "overview":
+            tab["chain_nodes"] = chain_nodes(points)
+        if key == "leaders":
+            tab["leader_cards"] = leader_cards(points)
         tabs.append(tab)
     return {
         "kind": "hbm_draft_dashboard",

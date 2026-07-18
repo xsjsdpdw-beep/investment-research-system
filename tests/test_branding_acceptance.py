@@ -93,9 +93,11 @@ def test_data_storage_map_documents_current_storage_layout():
 
 def test_ai_settings_logic_is_centralized():
     helper = read("frontend/src/lib/ai-config.ts")
+    models = read("frontend/src/lib/ai-models.ts")
     settings = read("frontend/src/pages/Settings.tsx")
     llm = read("frontend/src/lib/llm.ts")
 
+    assert "export function getModelById" in models
     assert "getDefaultApiModel" in helper
     assert "getProviderByModelId" in helper
     assert "getInitialAiSettings" in helper

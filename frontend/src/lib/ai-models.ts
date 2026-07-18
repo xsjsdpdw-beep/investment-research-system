@@ -59,7 +59,8 @@ export const aiModels: ModelConfig[] = [
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "DeepSeek 官方 · 旗舰 · 最强推理", provider: "deepseek" },
   { id: "deepseek-ai/DeepSeek-V3", name: "SiliconFlow · DeepSeek V3", description: "硅基流动", provider: "silicon" },
   { id: "gpt-4o", name: "OpenAI GPT-4o", description: "OpenAI", provider: "openai" },
-  { id: "MiniMax-M2", name: "MiniMax M2", description: "MiniMax 海螺", provider: "minimax" },
+  { id: "MiniMax-M3", name: "MiniMax M3", description: "MiniMax 官方 · 1M 上下文 · Agent / Coding", provider: "minimax" },
+  { id: "MiniMax-M2", name: "MiniMax M2", description: "MiniMax 官方 · 编码与 Agent 工作流", provider: "minimax" },
   { id: "doubao-pro", name: "豆包 Pro", description: "火山方舟 · 填推理接入点 ID(ep-…)", provider: "openai-compatible" },
   { id: "openai/gpt-4o", name: "OpenRouter · GPT-4o", description: "OpenRouter 聚合（可改任意模型 id）", provider: "openrouter" },
   { id: "llama-3.3-70b-versatile", name: "Groq · Llama 3.3 70B", description: "Groq 超快推理", provider: "groq" },
@@ -67,6 +68,10 @@ export const aiModels: ModelConfig[] = [
   { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", description: "小米 MiMo（需自有网关）", provider: "mimo" },
   { id: "custom", name: "其它 OpenAI 兼容", description: "任意兼容端点，自填 baseURL/model", provider: "openai-compatible" },
 ];
+
+export function getModelById(id: string): ModelConfig | undefined {
+  return aiModels.find((model) => model.id === id);
+}
 
 export const subscriptionModels = aiModels.filter((m) => isCliProvider(m.provider));
 export const apiModels = aiModels.filter((m) => !isCliProvider(m.provider));

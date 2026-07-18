@@ -1,4 +1,4 @@
-import { PROVIDER_BASE, aiModels, apiModels, type ModelConfig, type ProviderId } from "./ai-models";
+import { PROVIDER_BASE, apiModels, getModelById, type ModelConfig, type ProviderId } from "./ai-models";
 import type { LlmConfig } from "./llm";
 
 export interface InitialAiSettings {
@@ -8,10 +8,6 @@ export interface InitialAiSettings {
   baseURL: string;
   modelName: string;
   apiKey: string;
-}
-
-export function getModelById(id: string): ModelConfig | undefined {
-  return aiModels.find((model) => model.id === id);
 }
 
 export function getProviderByModelId(id: string): ProviderId {
