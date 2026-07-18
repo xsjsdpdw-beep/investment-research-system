@@ -33,6 +33,7 @@ export function IndustryDraftCanvas({
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || normalizedData.tabs[0]?.id || "");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
+  const isHbmInitialDraft = scopeType === "sector" && scopeId === "HBM";
 
   useEffect(() => {
     setDraft(normalizedData);
@@ -197,7 +198,7 @@ export function IndustryDraftCanvas({
           </div>
         ) : (
           activeTab.blocks.map((block) => (
-            <Fragment key={block.id}>{renderIndustryDraftBlock(block)}</Fragment>
+            <Fragment key={block.id}>{renderIndustryDraftBlock(block, { isHbmInitialDraft })}</Fragment>
           ))
         )}
       </div>

@@ -177,7 +177,13 @@ export function getIndustryDraftBlockComponent(type: string) {
   return INDUSTRY_DRAFT_BLOCK_COMPONENTS[type as IndustryDraftBlock["type"]] || "GenericDraftBlock";
 }
 
-export function renderIndustryDraftBlock(block: IndustryDraftBlock): ReactNode {
+export function renderIndustryDraftBlock(
+  block: IndustryDraftBlock,
+  { isHbmInitialDraft = false }: { isHbmInitialDraft?: boolean } = {},
+): ReactNode {
+  if (!isHbmInitialDraft) {
+    return <CompatibilityBlockCard card={block} />;
+  }
   switch (getIndustryDraftBlockComponent(block.type)) {
     case "SummaryHeroBlock":
       return <SummaryHeroCard card={block} />;
@@ -205,6 +211,6 @@ export function renderIndustryDraftBlock(block: IndustryDraftBlock): ReactNode {
   }
 }
 
-export function IndustryDraftCardRenderer({ card }: { card: IndustryDraftBlock }) {
-  return renderIndustryDraftBlock(card);
+export function IndustryDraftCardRenderer({ card, isHbmInitialDraft = false }: { card: IndustryDraftBlock; isHbmInitialDraft?: boolean }) {
+  return renderIndustryDraftBlock(card, { isHbmInitialDraft });
 }

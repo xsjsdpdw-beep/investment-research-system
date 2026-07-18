@@ -17,7 +17,7 @@ export function ComparisonTableBlock({ block }: { block: IndustryDraftBlock }) {
       {block.title ? <h4 className="px-4 pt-4 text-sm font-semibold text-slate-100">{block.title}</h4> : null}
       <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm">
         {headers.length ? <thead className="border-y border-white/8 bg-white/[0.03]"><tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-medium text-slate-400">{header}</th>)}</tr></thead> : null}
-        <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-white/[0.06] last:border-0">{headers.map((header) => <td key={header} className="px-4 py-3 text-slate-200">{String(row[header] || "")}</td>)}</tr>)}</tbody>
+        <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-white/[0.06] last:border-0">{headers.map((header) => <td key={header} className="px-4 py-3 text-slate-200">{String(row[header] ?? "")}</td>)}</tr>)}</tbody>
       </table></div>
     </section>
   );

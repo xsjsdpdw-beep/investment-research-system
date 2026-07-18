@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 const require = createRequire(import.meta.url);
 const { build } = createRequire(require.resolve("vite"))("esbuild");
 
-async function loadComponent(path, exportName) {
+async function loadModule(path) {
   const result = await build({
     entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
     bundle: true,
@@ -15,19 +15,16 @@ async function loadComponent(path, exportName) {
     platform: "node",
     write: false,
   });
-  const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+}
+
+async function loadComponent(path, exportName) {
+  const module = await loadModule(path);
   return module[exportName];
 }
 
 test("getIndustryDraftBlockComponent routes first-phase block types", async () => {
-  const result = await build({
-    entryPoints: [fileURLToPath(new URL("../src/components/research/IndustryDraftCardRenderer.tsx", import.meta.url))],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    write: false,
-  });
-  const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+  const module = await loadModule("../src/components/research/IndustryDraftCardRenderer.tsx");
 
   assert.equal(module.getIndustryDraftBlockComponent("range_band"), "RangeBandBlock");
   assert.equal(module.getIndustryDraftBlockComponent("flow_map"), "FlowMapBlock");
@@ -101,4 +98,41 @@ test("ComparisonTableBlock renders generated cell rows as a table", async () => 
 
   assert.match(html, /<th[^>]*>代际<\/th>/);
   assert.match(html, /<td[^>]*>16<\/td>/);
+});
+
+test("non-HBM blocks keep the compatibility renderer", async () => {
+  const { renderIndustryDraftBlock } = await loadModule("../src/components/research/IndustryDraftCardRenderer.tsx");
+  const html = renderToStaticMarkup(renderIndustryDraftBlock({
+    id: "non-hbm-chart", type: "chart_spec", title: "通用行业图表", spec: { chart_type: "bar", series: [{ name: "指标", value: 12 }] },
+  }, { isHbmInitialDraft: false }));
+
+  assert.doesNotMatch(html, /data-chart-type/);
+  assert.match(html, /指标/);
+});
+
+test("ChartSpecBlock keeps multi-series line groups separate", async () => {
+  const ChartSpecBlock = await loadComponent("../src/components/research/industry-draft-blocks/ChartSpecBlock.tsx", "ChartSpecBlock");
+  const html = renderToStaticMarkup(ChartSpecBlock({ block: {
+    id: "chart-multi-series", type: "chart_spec", title: "多指标趋势", spec: {
+      chart_type: "line",
+      series: [
+        { name: "带宽", points: [{ label: "HBM3", value: 12 }, { label: "HBM3E", value: 16 }] },
+        { name: "容量", points: [{ label: "HBM3", value: 8 }, { label: "HBM3E", value: 12 }] },
+      ],
+    },
+  } }));
+
+  assert.match(html, /带宽/);
+  assert.match(html, /容量/);
+  assert.equal((html.match(/<polyline/g) || []).length, 2);
+});
+
+test("ComparisonTableBlock preserves zero and false cell values", async () => {
+  const ComparisonTableBlock = await loadComponent("../src/components/research/industry-draft-blocks/ComparisonTableBlock.tsx", "ComparisonTableBlock");
+  const html = renderToStaticMarkup(ComparisonTableBlock({ block: {
+    id: "table-falsy", type: "comparison_table", title: "布尔值", spec: { rows: [{ count: 0, enabled: false }] },
+  } }));
+
+  assert.match(html, /<td[^>]*>0<\/td>/);
+  assert.match(html, /<td[^>]*>false<\/td>/);
 });
