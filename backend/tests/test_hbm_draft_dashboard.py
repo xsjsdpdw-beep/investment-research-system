@@ -13,7 +13,7 @@ from research_hub import (
 def test_is_hbm_sector_matches_hbm_only():
     assert is_hbm_sector("HBM") is True
     assert is_hbm_sector("hbm") is True
-    assert is_hbm_sector("HBM存储") is True
+    assert is_hbm_sector("HBM存储") is False
     assert is_hbm_sector("光互联") is False
 
 

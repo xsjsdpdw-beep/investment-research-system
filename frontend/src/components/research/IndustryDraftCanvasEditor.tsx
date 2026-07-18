@@ -1,6 +1,14 @@
 import type { IndustryDraftBlock, IndustryDraftCanvasTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { buildComparisonTableRows, getComparisonTableHeaders, normalizeComparisonTableRows, normalizeEvidenceTableRows, normalizeIndustryChainColumns } from "./industry-draft-canvas";
+import {
+  buildComparisonTableRows,
+  buildEvidenceTableSpec,
+  buildIndustryChainSpec,
+  getComparisonTableHeaders,
+  normalizeComparisonTableRows,
+  normalizeEvidenceTableRows,
+  normalizeIndustryChainColumns,
+} from "./industry-draft-canvas";
 
 function EditorInput({
   value,
@@ -327,16 +335,13 @@ function IndustryChainEditor({
     value={columns.map((column) => `${column.title} | ${column.nodes.join(", ")}`).join("\n")}
     placeholder="每行一个环节：环节名称 | 节点1, 节点2"
     onChange={(value) => {
-      const { nodes: _nodes, ...spec } = card.spec;
+      const columns = value.split("\n").filter((line) => line.trim()).map((line, index) => {
+        const [title = `环节 ${index + 1}`, nodes = ""] = line.split("|").map((part) => part.trim());
+        return { title, nodes: nodes.split(",").map((node) => node.trim()).filter(Boolean) };
+      });
       onChange({
         ...card,
-        spec: {
-          ...spec,
-          columns: value.split("\n").filter((line) => line.trim()).map((line, index) => {
-            const [title = `环节 ${index + 1}`, nodes = ""] = line.split("|").map((part) => part.trim());
-            return { title, nodes: nodes.split(",").map((node) => node.trim()).filter(Boolean) };
-          }),
-        },
+        spec: buildIndustryChainSpec(card.spec, columns),
       });
     }}
   />;
@@ -354,16 +359,13 @@ function EvidenceTableEditor({
     value={rows.map((row) => `${row.conclusion} | ${row.evidence} | ${row.source}`).join("\n")}
     placeholder="每行一条：结论 | 证据 | 来源"
     onChange={(value) => {
-      const { items: _items, ...spec } = card.spec;
+      const rows = value.split("\n").filter((line) => line.trim()).map((line) => {
+        const [conclusion = "", evidence = "", source = ""] = line.split("|").map((part) => part.trim());
+        return { conclusion, evidence, source };
+      });
       onChange({
         ...card,
-        spec: {
-          ...spec,
-          rows: value.split("\n").filter((line) => line.trim()).map((line) => {
-            const [conclusion = "", evidence = "", source = ""] = line.split("|").map((part) => part.trim());
-            return { conclusion, evidence, source };
-          }),
-        },
+        spec: buildEvidenceTableSpec(card.spec, rows),
       });
     }}
   />;

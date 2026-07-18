@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import {
   adaptLegacyHBMDashboardToCanvas,
   appendIndustryDraftBlock,
+  buildEvidenceTableSpec,
+  buildIndustryChainSpec,
   createCanvasCard,
   createEmptyCanvasTab,
   getIndustryDraftCanvasSourceKey,
@@ -106,6 +108,15 @@ test("getComparisonTableHeaders keeps the rendered in-row header over conflictin
   assert.deepEqual(headers, ["项目", "HBM3E"]);
 });
 
+test("comparison table helpers infer headers from object rows before editing", () => {
+  const spec = { rows: [{ name: "HBM3E", value: "16Hi" }] };
+  const headers = getComparisonTableHeaders(spec);
+  const bodyRows = normalizeComparisonTableRows(spec.rows, headers);
+
+  assert.deepEqual(headers, ["name", "value"]);
+  assert.deepEqual(bodyRows, [{ cells: ["HBM3E", "16Hi"], kind: "row" }]);
+});
+
 test("equivalent external data does not sync over an editing HBM draft", () => {
   const data = {
     kind: "industry_draft_canvas",
@@ -139,6 +150,26 @@ test("normalizeEvidenceTableRows keeps legacy items editable as rows", () => {
   });
 
   assert.deepEqual(rows, [{ conclusion: "供给偏紧", evidence: "扩产周期长", source: "产业访谈" }]);
+});
+
+test("editable industry chain specs keep legacy nodes and normalized columns", () => {
+  const spec = buildIndustryChainSpec(
+    { nodes: [{ label: "旧节点", detail: "旧说明" }] },
+    [{ title: "DRAM 原厂", nodes: ["海力士", "三星"] }],
+  );
+
+  assert.deepEqual(spec.columns, [{ title: "DRAM 原厂", nodes: ["海力士", "三星"] }]);
+  assert.deepEqual(spec.nodes, [{ label: "DRAM 原厂", detail: "海力士 · 三星", nodes: ["海力士", "三星"] }]);
+});
+
+test("editable evidence table specs keep legacy items and normalized rows", () => {
+  const spec = buildEvidenceTableSpec(
+    { items: [{ title: "旧结论", detail: "旧证据" }] },
+    [{ conclusion: "供给偏紧", evidence: "扩产周期长", source: "产业访谈" }],
+  );
+
+  assert.deepEqual(spec.rows, [{ conclusion: "供给偏紧", evidence: "扩产周期长", source: "产业访谈" }]);
+  assert.deepEqual(spec.items, [{ title: "供给偏紧", detail: "扩产周期长", source: "产业访谈" }]);
 });
 
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
@@ -216,6 +247,9 @@ test("IndustryDraftCanvas limits editing to the HBM initial-draft context", () =
 
   assert.match(source, /const canEdit = isHbmInitialDraft/);
   assert.match(source, /\{canEdit \? \(/);
+  assert.match(source, /const \[savedBaseline, setSavedBaseline\] = useState\(normalizedData\)/);
+  assert.match(source, /setSavedBaseline\(next\)/);
+  assert.match(source, /setDraft\(savedBaseline\)/);
 });
 
 test("IndustryDraftCanvasEditor routes supported editable block types to field editors", () => {
@@ -232,6 +266,8 @@ test("IndustryDraftCanvasEditor routes supported editable block types to field e
   assert.match(source, /card\.type === "industry_chain"/);
   assert.match(source, /card\.type === "evidence_table"/);
   assert.match(source, /normalizeComparisonTableRows\(card\.spec\.rows, headers\)/);
+  assert.match(source, /buildIndustryChainSpec\(card\.spec, columns\)/);
+  assert.match(source, /buildEvidenceTableSpec\(card\.spec, rows\)/);
   assert.match(source, /\["bar", "stacked_bar", "line", "area"\]/);
 });
 
@@ -269,6 +305,7 @@ test("getIndustryDraftActiveTab resolves requested tab and falls back to first t
 test("shouldUseIndustryDraftCanvas is HBM-only and requires matching schema", () => {
   const canvas = adaptLegacyHBMDashboardToCanvas(legacy);
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: canvas }), true);
+  assert.equal(shouldUseIndustryDraftCanvas("HBM存储", { draft_theme_schema: canvas }), false);
   assert.equal(shouldUseIndustryDraftCanvas("光互联", { draft_theme_schema: canvas }), false);
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: null }), false);
 });

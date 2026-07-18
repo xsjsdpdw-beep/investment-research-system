@@ -37,6 +37,7 @@ export function IndustryDraftCanvas({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(normalizedData);
+  const [savedBaseline, setSavedBaseline] = useState(normalizedData);
   const [activeTabId, setActiveTabId] = useState(initialActiveTabId || normalizedData.tabs[0]?.id || "");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const lastSyncedSourceKey = useRef(sourceKey);
@@ -47,6 +48,7 @@ export function IndustryDraftCanvas({
   useEffect(() => {
     if (!shouldSyncIndustryDraft(sourceKey, lastSyncedSourceKey.current, editing)) return;
     setDraft(normalizedData);
+    setSavedBaseline(normalizedData);
     setActiveTabId((current) => current || normalizedData.tabs[0]?.id || "");
     lastSyncedSourceKey.current = sourceKey;
   }, [editing, normalizedData, sourceKey]);
@@ -76,6 +78,8 @@ export function IndustryDraftCanvas({
       });
       const next = normalizeIndustryDraftCanvasInput((saved.draft_theme_schema as IndustryDraftCanvasSchema) || draft);
       setDraft(next);
+      setSavedBaseline(next);
+      lastSyncedSourceKey.current = getIndustryDraftCanvasSourceKey(next);
       setEditing(false);
       setExpandedCardId(null);
       toast.success("初稿画布已保存");
@@ -114,7 +118,7 @@ export function IndustryDraftCanvas({
               type="button"
               onClick={() => {
                 if (editing) {
-                  setDraft(normalizedData);
+                  setDraft(savedBaseline);
                   setEditing(false);
                   setExpandedCardId(null);
                   return;

@@ -176,7 +176,17 @@ export function getComparisonTableHeaders(spec: Record<string, unknown>) {
     : Array.isArray(spec.columns)
       ? spec.columns.map(String)
       : [];
-  return explicitHeaders;
+  if (explicitHeaders.length) return explicitHeaders;
+  if (!Array.isArray(spec.rows)) return [];
+  return [
+    ...new Set(
+      spec.rows.flatMap((row) => (
+        row && typeof row === "object" && !Array.isArray(row)
+          ? Object.keys(row).filter((key) => key !== "cells" && key !== "kind")
+          : []
+      )),
+    ),
+  ];
 }
 
 export function normalizeComparisonTableRows(value: unknown, headers: string[]) {
@@ -230,6 +240,36 @@ export function normalizeEvidenceTableRows(spec: Record<string, unknown>) {
       source: String(value.source || value.provider || ""),
     };
   });
+}
+
+export function buildIndustryChainSpec(
+  currentSpec: Record<string, unknown>,
+  columns: Array<{ title: string; nodes: string[] }>,
+) {
+  return {
+    ...currentSpec,
+    columns,
+    nodes: columns.map((column) => ({
+      label: column.title,
+      detail: column.nodes.join(" · "),
+      nodes: column.nodes,
+    })),
+  };
+}
+
+export function buildEvidenceTableSpec(
+  currentSpec: Record<string, unknown>,
+  rows: Array<{ conclusion: string; evidence: string; source: string }>,
+) {
+  return {
+    ...currentSpec,
+    rows,
+    items: rows.map((row) => ({
+      title: row.conclusion,
+      detail: row.evidence,
+      source: row.source,
+    })),
+  };
 }
 
 export function appendIndustryDraftBlock(
