@@ -31,6 +31,7 @@ export function ChartSpecBlock({ block }: { block: IndustryDraftBlock }) {
   const series = readSeries(block.spec.series);
   const points = series.flatMap((item) => item.points);
   const maxValue = Math.max(1, ...points.map((item) => item.value));
+  const stackedTotal = points.reduce((total, item) => total + Math.max(0, item.value), 0);
   const isTrend = chartType === "line" || chartType === "area";
 
   return (
@@ -47,7 +48,7 @@ export function ChartSpecBlock({ block }: { block: IndustryDraftBlock }) {
             </g>;
           })}
         </svg> : <div className={chartType === "stacked_bar" ? "flex h-5 overflow-hidden rounded-full bg-white/[0.06]" : "space-y-3"}>
-          {points.map((item, index) => chartType === "stacked_bar" ? <div key={`${item.name}-${index}`} className="h-full" style={{ width: `${(item.value / maxValue) * 100}%`, backgroundColor: SERIES_COLORS[index % SERIES_COLORS.length] }} /> : <div key={`${item.name}-${index}`} className="grid grid-cols-[minmax(0,1fr)_3fr_auto] items-center gap-3 text-sm"><span className="truncate text-slate-300">{item.name}</span><div className="h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-[#38bdf8]" style={{ width: `${(item.value / maxValue) * 100}%` }} /></div><span className="text-slate-400">{item.displayValue}</span></div>)}
+          {points.map((item, index) => chartType === "stacked_bar" ? <div key={`${item.name}-${index}`} className="h-full" style={{ width: `${stackedTotal ? (Math.max(0, item.value) / stackedTotal) * 100 : 0}%`, backgroundColor: SERIES_COLORS[index % SERIES_COLORS.length] }} /> : <div key={`${item.name}-${index}`} className="grid grid-cols-[minmax(0,1fr)_3fr_auto] items-center gap-3 text-sm"><span className="truncate text-slate-300">{item.name}</span><div className="h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-[#38bdf8]" style={{ width: `${(item.value / maxValue) * 100}%` }} /></div><span className="text-slate-400">{item.displayValue}</span></div>)}
         </div>}
         {chartType === "stacked_bar" || isTrend ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{series.map((item, index) => <div key={item.name} className="space-y-1 text-xs text-slate-300"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: SERIES_COLORS[index % SERIES_COLORS.length] }} /><span>{item.name}</span></div>{item.points.map((point, pointIndex) => <div key={`${point.name}-${pointIndex}`} className="flex justify-between gap-3 pl-4 text-slate-400"><span>{point.name}</span><span>{point.displayValue}</span></div>)}</div>)}</div> : null}
       </div>

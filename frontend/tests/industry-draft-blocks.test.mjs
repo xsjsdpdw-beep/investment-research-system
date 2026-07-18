@@ -58,6 +58,19 @@ test("ChartSpecBlock renders supported chart labels and values", async () => {
   }
 });
 
+test("ChartSpecBlock normalizes stacked bar segments to their total", async () => {
+  const ChartSpecBlock = await loadComponent("../src/components/research/industry-draft-blocks/ChartSpecBlock.tsx", "ChartSpecBlock");
+  const html = renderToStaticMarkup(ChartSpecBlock({ block: {
+    id: "chart-stacked-total", type: "chart_spec", title: "层数构成", spec: {
+      chart_type: "stacked_bar", series: [{ name: "HBM3", value: 12 }, { name: "HBM3E", value: 16 }],
+    },
+  } }));
+  const widths = [...html.matchAll(/style="width:([\d.]+)%/g)].map((match) => Number(match[1]));
+
+  assert.equal(widths.length, 2);
+  assert.equal(widths.reduce((total, width) => total + width, 0), 100);
+});
+
 test("new first-phase blocks render their structured content", async () => {
   const [FlowMapBlock, IndustryChainBlock, ComparisonTableBlock] = await Promise.all([
     loadComponent("../src/components/research/industry-draft-blocks/FlowMapBlock.tsx", "FlowMapBlock"),
