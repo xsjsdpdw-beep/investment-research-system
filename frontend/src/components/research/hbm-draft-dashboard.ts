@@ -1,5 +1,5 @@
 import type { HBMDraftDashboardData, HBMDraftTab, IndustryDraftBlock, IndustryDraftCanvasSchema, OverviewWorkbench } from "@/lib/api";
-import { adaptLegacyHBMDashboardToCanvas, migrateCanvasCardsToBlocks } from "./industry-draft-canvas.ts";
+import { adaptLegacyHBMDashboardToCanvas, isHbmSectorName, migrateCanvasCardsToBlocks } from "./industry-draft-canvas.ts";
 
 type LegacyHbmSection = Record<string, unknown>;
 type LegacyHbmTab = Partial<HBMDraftTab> & { label?: string; sections?: LegacyHbmSection[] };
@@ -81,7 +81,7 @@ export function shouldUseHBMDraftDashboard(
   selectedSector: string,
   workbench?: Pick<OverviewWorkbench, "draft_theme_schema"> | null,
 ): workbench is Pick<OverviewWorkbench, "draft_theme_schema"> & { draft_theme_schema: HBMDraftDashboardData } {
-  return selectedSector === "HBM" && workbench?.draft_theme_schema?.kind === "hbm_draft_dashboard";
+  return isHbmSectorName(selectedSector) && workbench?.draft_theme_schema?.kind === "hbm_draft_dashboard";
 }
 
 export function getHBMDraftTabSummary(tab: HBMDraftTab): string[] {

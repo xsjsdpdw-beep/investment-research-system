@@ -324,6 +324,11 @@ export function createEmptyCanvasTab(): IndustryDraftCanvasTab {
   };
 }
 
+export function isHbmSectorName(value: string) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "hbm" || normalized === "hbm存储";
+}
+
 export function createCanvasCard(type: IndustryDraftBlock["type"]): IndustryDraftBlock {
   if (type === "metric_grid") {
     return {
@@ -394,5 +399,5 @@ export function shouldUseIndustryDraftCanvas(
   selectedSector: string,
   workbench?: Pick<OverviewWorkbench, "draft_theme_schema"> | null,
 ): workbench is Pick<OverviewWorkbench, "draft_theme_schema"> & { draft_theme_schema: IndustryDraftCanvasSchema } {
-  return selectedSector === "HBM" && workbench?.draft_theme_schema?.kind === "industry_draft_canvas";
+  return isHbmSectorName(selectedSector) && workbench?.draft_theme_schema?.kind === "industry_draft_canvas";
 }

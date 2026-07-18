@@ -112,6 +112,7 @@ test("getHBMDraftTabSummary falls back to empty state text", () => {
 
 test("shouldUseHBMDraftDashboard is HBM-only and requires matching schema", () => {
   assert.equal(shouldUseHBMDraftDashboard("HBM", { draft_theme_schema: data }), true);
+  assert.equal(shouldUseHBMDraftDashboard("HBM存储", { draft_theme_schema: data }), true);
   assert.equal(shouldUseHBMDraftDashboard("光互联", { draft_theme_schema: data }), false);
   assert.equal(shouldUseHBMDraftDashboard("HBM", { draft_theme_schema: null }), false);
 });

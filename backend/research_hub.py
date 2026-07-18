@@ -213,7 +213,7 @@ def _utc_now_iso() -> str:
 
 def is_hbm_sector(sector: str) -> bool:
     normalized = (sector or "").strip().lower()
-    return normalized == "hbm"
+    return normalized in {"hbm", "hbm存储"}
 
 
 def ingest_sector_reports(sector: str, days: int = 365, max_pages: int = 5, max_reports: int = 12) -> dict:

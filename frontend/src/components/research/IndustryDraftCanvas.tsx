@@ -14,6 +14,7 @@ import {
   normalizeIndustryDraftCanvasInput,
   appendIndustryDraftBlock,
   removeIndustryDraftBlock,
+  isHbmSectorName,
   shouldSyncIndustryDraft,
   updateIndustryDraftBlock,
   type IndustryDraftCanvasInput,
@@ -42,7 +43,7 @@ export function IndustryDraftCanvas({
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const lastSyncedSourceKey = useRef(sourceKey);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
-  const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && scopeId === "HBM";
+  const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && isHbmSectorName(scopeId);
   const canEdit = isHbmInitialDraft;
 
   useEffect(() => {
