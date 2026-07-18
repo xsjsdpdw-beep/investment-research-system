@@ -113,6 +113,19 @@ test("ComparisonTableBlock renders generated cell rows as a table", async () => 
   assert.match(html, /<td[^>]*>16<\/td>/);
 });
 
+test("ComparisonTableBlock renders legacy columns with edited cell rows", async () => {
+  const ComparisonTableBlock = await loadComponent("../src/components/research/industry-draft-blocks/ComparisonTableBlock.tsx", "ComparisonTableBlock");
+  const html = renderToStaticMarkup(ComparisonTableBlock({ block: {
+    id: "table-legacy-columns", type: "comparison_table", title: "规格对照", spec: {
+      columns: ["项目", "HBM3E"],
+      rows: [{ cells: ["层数", "16Hi"], kind: "row" }],
+    },
+  } }));
+
+  assert.match(html, /<th[^>]*>项目<\/th>/);
+  assert.match(html, /<td[^>]*>16Hi<\/td>/);
+});
+
 test("non-HBM blocks keep the compatibility renderer", async () => {
   const { renderIndustryDraftBlock } = await loadModule("../src/components/research/IndustryDraftCardRenderer.tsx");
   const html = renderToStaticMarkup(renderIndustryDraftBlock({

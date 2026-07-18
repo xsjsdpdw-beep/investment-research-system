@@ -24,7 +24,10 @@ def test_save_draft_theme_schema_round_trips_block_edits():
                             "id": "block-1",
                             "type": "comparison_table",
                             "title": "代际对比",
-                            "spec": {"columns": ["项目", "HBM3E"], "rows": [["层数", "16Hi"]]},
+                            "spec": {
+                                "columns": ["项目", "HBM3E"],
+                                "rows": [{"cells": ["层数", "16Hi"], "kind": "row"}],
+                            },
                         }
                     ],
                 }
@@ -35,7 +38,10 @@ def test_save_draft_theme_schema_round_trips_block_edits():
     response = client.post("/api/research/overview-workbench/draft-theme-schema", json=payload)
 
     assert response.status_code == 200
-    assert response.json()["data"]["draft_theme_schema"]["tabs"][0]["blocks"][0]["type"] == "comparison_table"
+    block = response.json()["data"]["draft_theme_schema"]["tabs"][0]["blocks"][0]
+    assert block["type"] == "comparison_table"
+    assert block["spec"]["columns"] == ["项目", "HBM3E"]
+    assert block["spec"]["rows"] == [{"cells": ["层数", "16Hi"], "kind": "row"}]
 
 
 def test_normalize_industry_draft_canvas_migrates_cards_to_blocks():

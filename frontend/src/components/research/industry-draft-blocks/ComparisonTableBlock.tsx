@@ -8,7 +8,12 @@ export function ComparisonTableBlock({ block }: { block: IndustryDraftBlock }) {
   const rawRows = readRows(block.spec.rows);
   const cellRows = rawRows.filter((row) => Array.isArray(row.cells));
   const cellHeader = cellRows.find((row) => row.kind === "header")?.cells as unknown[] | undefined;
-  const headers = cellHeader?.map(String) || (Array.isArray(block.spec.headers) ? block.spec.headers.map(String) : [...new Set(rawRows.flatMap(Object.keys).filter((key) => key !== "cells" && key !== "kind"))]);
+  const schemaHeaders = Array.isArray(block.spec.headers)
+    ? block.spec.headers.map(String)
+    : Array.isArray(block.spec.columns)
+      ? block.spec.columns.map(String)
+      : [];
+  const headers = cellHeader?.map(String) || (schemaHeaders.length ? schemaHeaders : [...new Set(rawRows.flatMap(Object.keys).filter((key) => key !== "cells" && key !== "kind"))]);
   const rows = cellRows.length
     ? cellRows.filter((row) => row.kind !== "header").map((row) => Object.fromEntries(headers.map((header, index) => [header, Array.isArray(row.cells) ? row.cells[index] : ""])))
     : rawRows;

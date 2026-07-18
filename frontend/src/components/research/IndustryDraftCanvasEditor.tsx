@@ -317,6 +317,7 @@ function ComparisonTableEditor({
           ...card,
           spec: {
             ...card.spec,
+            headers,
             rows: normalizeComparisonTableRows(
               value.split("\n").filter((line) => line.trim()).map((line) => line.split("|").map((cell) => cell.trim())),
               headers,
