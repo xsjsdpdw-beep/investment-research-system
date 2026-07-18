@@ -39,18 +39,21 @@ function mapLegacySectionToBlock(section: LegacyHbmSection, blockIndex: number):
 }
 
 export function mapLegacyHbmDashboardToCanvas(data: LegacyHbmDashboardData): IndustryDraftCanvasSchema {
-  if (!(data.tabs || []).some((tab) => tab.sections?.length)) {
-    return adaptLegacyHBMDashboardToCanvas(data as HBMDraftDashboardData);
-  }
   return {
     kind: "industry_draft_canvas",
     version: "v2",
     scope: "HBM",
     tabs: (data.tabs || []).map((tab, tabIndex) => {
       const sections = tab.sections || [];
-      const blocks: IndustryDraftBlock[] = sections.map(mapLegacySectionToBlock);
+      if (sections.length) {
+        const blocks: IndustryDraftBlock[] = sections.map(mapLegacySectionToBlock);
+        return { id: `tab-${tab.key || tabIndex + 1}`, title: tab.title || tab.label || "未命名栏目", blocks };
+      }
 
-      return { id: `tab-${tab.key || tabIndex + 1}`, title: tab.title || tab.label || "未命名栏目", blocks };
+      return adaptLegacyHBMDashboardToCanvas({
+        ...data,
+        tabs: [tab as HBMDraftTab],
+      }).tabs[0];
     }),
     meta: { generated_at: data.generated_at || "", source_mode: "auto" },
   };

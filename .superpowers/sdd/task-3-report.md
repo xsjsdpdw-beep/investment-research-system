@@ -26,3 +26,11 @@
 
 - The requested bare `node` command could not run because `node` is absent from PATH. The Codex-bundled Node binary was used instead.
 - `vite build` could not complete because the existing Rollup optional native dependency fails macOS code-signature loading (`@rollup/rollup-darwin-x64`); this occurred after TypeScript compilation and is unrelated to this change.
+
+## Review Follow-up
+
+- Fixed mixed legacy HBM payload mapping so every tab independently selects its adapter.
+- Tabs with valid `sections` continue through the section-to-block mapper.
+- Tabs without `sections` now use the existing classic HBM adapter semantics on a single-tab payload, preserving hero, metrics, timelines, ranges, chains, comparisons, and evidence blocks.
+- Added a regression test with one section-based tab and one classic tab; both retain their expected block content.
+- Follow-up verification passed: 14 tests, TypeScript project check, and `git diff --check`.

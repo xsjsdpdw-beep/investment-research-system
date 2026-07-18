@@ -49,6 +49,31 @@ test("mapLegacyHbmDashboardToCanvas upgrades old HBM tabs into block-first tabs"
   assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
 });
 
+test("mapLegacyHbmDashboardToCanvas preserves classic tabs in mixed legacy payloads", () => {
+  const result = mapLegacyHbmDashboardToCanvas({
+    kind: "hbm_draft_dashboard",
+    tabs: [
+      {
+        key: "overview",
+        label: "总览",
+        sections: [{ type: "hero", title: "结构化总览", bullets: ["HBM 维持高景气"] }],
+      },
+      {
+        key: "generation",
+        title: "技术代际",
+        headline: "HBM3E 持续迭代",
+        summary: ["验证范围扩大"],
+        metrics: [{ label: "主线", value: "HBM3E" }],
+        panels: [],
+      },
+    ],
+  });
+
+  assert.equal(result.tabs[0].blocks[0].spec.headline, "结构化总览");
+  assert.equal(result.tabs[1].blocks[0].spec.headline, "HBM3E 持续迭代");
+  assert.equal(result.tabs[1].blocks[1].type, "metric_grid");
+});
+
 test("HBM tab order stays fixed", () => {
   assert.deepEqual(
     data.tabs.map((tab) => tab.key),
