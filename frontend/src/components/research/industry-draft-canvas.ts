@@ -159,16 +159,16 @@ function nextIndustryDraftBlockId(blocks: IndustryDraftBlock[]) {
 }
 
 export function getComparisonTableHeaders(spec: Record<string, unknown>) {
+  const headerRow = Array.isArray(spec.rows)
+    ? spec.rows.find((row) => row && typeof row === "object" && !Array.isArray(row) && row.kind === "header" && Array.isArray(row.cells)) as Record<string, unknown> | undefined
+    : undefined;
+  if (Array.isArray(headerRow?.cells)) return headerRow.cells.map(String);
   const explicitHeaders = Array.isArray(spec.headers)
     ? spec.headers.map(String)
     : Array.isArray(spec.columns)
       ? spec.columns.map(String)
       : [];
-  if (explicitHeaders.length) return explicitHeaders;
-  const headerRow = Array.isArray(spec.rows)
-    ? spec.rows.find((row) => row && typeof row === "object" && !Array.isArray(row) && row.kind === "header" && Array.isArray(row.cells)) as Record<string, unknown> | undefined
-    : undefined;
-  return Array.isArray(headerRow?.cells) ? headerRow.cells.map(String) : [];
+  return explicitHeaders;
 }
 
 export function normalizeComparisonTableRows(value: unknown, headers: string[]) {

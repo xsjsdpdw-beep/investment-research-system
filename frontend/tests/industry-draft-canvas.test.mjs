@@ -93,6 +93,15 @@ test("comparison table helpers preserve an in-row header separately from editabl
   ]);
 });
 
+test("getComparisonTableHeaders keeps the rendered in-row header over conflicting legacy columns", () => {
+  const headers = getComparisonTableHeaders({
+    columns: ["旧项目", "旧代际"],
+    rows: [{ kind: "header", cells: ["项目", "HBM3E"] }],
+  });
+
+  assert.deepEqual(headers, ["项目", "HBM3E"]);
+});
+
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
   const result = migrateCanvasCardsToBlocks({
     kind: "industry_draft_canvas",

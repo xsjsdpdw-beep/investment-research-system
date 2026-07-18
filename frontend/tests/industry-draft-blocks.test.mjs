@@ -126,6 +126,19 @@ test("ComparisonTableBlock renders legacy columns with edited cell rows", async 
   assert.match(html, /<td[^>]*>16Hi<\/td>/);
 });
 
+test("ComparisonTableBlock keeps an in-row header over conflicting legacy columns", async () => {
+  const ComparisonTableBlock = await loadComponent("../src/components/research/industry-draft-blocks/ComparisonTableBlock.tsx", "ComparisonTableBlock");
+  const html = renderToStaticMarkup(ComparisonTableBlock({ block: {
+    id: "table-conflicting-headers", type: "comparison_table", title: "规格对照", spec: {
+      columns: ["旧项目", "旧代际"],
+      rows: [{ cells: ["项目", "HBM3E"], kind: "header" }, { cells: ["层数", "16Hi"], kind: "row" }],
+    },
+  } }));
+
+  assert.match(html, /<th[^>]*>项目<\/th>/);
+  assert.doesNotMatch(html, /旧项目/);
+});
+
 test("non-HBM blocks keep the compatibility renderer", async () => {
   const { renderIndustryDraftBlock } = await loadModule("../src/components/research/IndustryDraftCardRenderer.tsx");
   const html = renderToStaticMarkup(renderIndustryDraftBlock({
