@@ -10,6 +10,8 @@ import {
   getIndustryDraftCanvasSourceKey,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
+  normalizeEvidenceTableRows,
+  normalizeIndustryChainColumns,
   buildComparisonTableRows,
   getComparisonTableHeaders,
   normalizeComparisonTableRows,
@@ -118,6 +120,25 @@ test("equivalent external data does not sync over an editing HBM draft", () => {
   assert.equal(shouldSyncIndustryDraft(sourceKey, sourceKey, true), false);
   assert.equal(shouldSyncIndustryDraft(sourceKey, sourceKey, false), false);
   assert.equal(shouldSyncIndustryDraft(`${sourceKey}-changed`, sourceKey, false), true);
+});
+
+test("normalizeIndustryChainColumns keeps generated nodes editable as columns", () => {
+  const columns = normalizeIndustryChainColumns({
+    nodes: [{ label: "DRAM", detail: "堆叠颗粒" }, { label: "封装", note: "TSV" }],
+  });
+
+  assert.deepEqual(columns, [
+    { title: "DRAM", nodes: ["堆叠颗粒"] },
+    { title: "封装", nodes: ["TSV"] },
+  ]);
+});
+
+test("normalizeEvidenceTableRows keeps legacy items editable as rows", () => {
+  const rows = normalizeEvidenceTableRows({
+    items: [{ title: "供给偏紧", items: ["扩产周期长"], source: "产业访谈" }],
+  });
+
+  assert.deepEqual(rows, [{ conclusion: "供给偏紧", evidence: "扩产周期长", source: "产业访谈" }]);
 });
 
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {

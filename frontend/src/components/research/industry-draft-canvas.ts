@@ -198,6 +198,40 @@ export function buildComparisonTableRows(headers: string[], bodyRows: unknown) {
   return headers.length ? [{ cells: headers, kind: "header" }, ...rows] : rows;
 }
 
+export function normalizeIndustryChainColumns(spec: Record<string, unknown>) {
+  if (Array.isArray(spec.columns)) {
+    return spec.columns.map((column, index) => {
+      const value = column && typeof column === "object" ? column as Record<string, unknown> : {};
+      return {
+        title: String(value.title || value.label || `环节 ${index + 1}`),
+        nodes: Array.isArray(value.nodes) ? value.nodes.map(String) : [],
+      };
+    });
+  }
+  if (!Array.isArray(spec.nodes)) return [];
+  return spec.nodes.map((node, index) => {
+    const value = node && typeof node === "object" ? node as Record<string, unknown> : {};
+    const detail = String(value.detail || value.value || value.note || "");
+    return {
+      title: String(value.label || value.name || node || `环节 ${index + 1}`),
+      nodes: detail ? [detail] : [],
+    };
+  });
+}
+
+export function normalizeEvidenceTableRows(spec: Record<string, unknown>) {
+  const sourceRows = Array.isArray(spec.rows) ? spec.rows : Array.isArray(spec.items) ? spec.items : [];
+  return sourceRows.map((row) => {
+    const value = row && typeof row === "object" ? row as Record<string, unknown> : {};
+    const items = Array.isArray(value.items) ? value.items.map(String).join(" · ") : "";
+    return {
+      conclusion: String(value.conclusion || value.title || value.name || value.label || ""),
+      evidence: String(value.evidence || value.detail || value.value || items),
+      source: String(value.source || value.provider || ""),
+    };
+  });
+}
+
 export function appendIndustryDraftBlock(
   canvas: IndustryDraftCanvasSchema,
   tabId: string,

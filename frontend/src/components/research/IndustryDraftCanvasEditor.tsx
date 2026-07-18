@@ -1,6 +1,6 @@
 import type { IndustryDraftBlock, IndustryDraftCanvasTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { buildComparisonTableRows, getComparisonTableHeaders, normalizeComparisonTableRows } from "./industry-draft-canvas";
+import { buildComparisonTableRows, getComparisonTableHeaders, normalizeComparisonTableRows, normalizeEvidenceTableRows, normalizeIndustryChainColumns } from "./industry-draft-canvas";
 
 function EditorInput({
   value,
@@ -322,23 +322,23 @@ function IndustryChainEditor({
   card: IndustryDraftBlock;
   onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const columns = readSpecArray(card.spec.columns).map((column, index) => {
-    const value = column && typeof column === "object" ? column as Record<string, unknown> : {};
-    return { title: String(value.title || value.label || `环节 ${index + 1}`), nodes: readSpecArray(value.nodes).map(String) };
-  });
+  const columns = normalizeIndustryChainColumns(card.spec);
   return <EditorTextarea
     value={columns.map((column) => `${column.title} | ${column.nodes.join(", ")}`).join("\n")}
     placeholder="每行一个环节：环节名称 | 节点1, 节点2"
-    onChange={(value) => onChange({
-      ...card,
-      spec: {
-        ...card.spec,
-        columns: value.split("\n").filter((line) => line.trim()).map((line, index) => {
-          const [title = `环节 ${index + 1}`, nodes = ""] = line.split("|").map((part) => part.trim());
-          return { title, nodes: nodes.split(",").map((node) => node.trim()).filter(Boolean) };
-        }),
-      },
-    })}
+    onChange={(value) => {
+      const { nodes: _nodes, ...spec } = card.spec;
+      onChange({
+        ...card,
+        spec: {
+          ...spec,
+          columns: value.split("\n").filter((line) => line.trim()).map((line, index) => {
+            const [title = `环节 ${index + 1}`, nodes = ""] = line.split("|").map((part) => part.trim());
+            return { title, nodes: nodes.split(",").map((node) => node.trim()).filter(Boolean) };
+          }),
+        },
+      });
+    }}
   />;
 }
 
@@ -349,20 +349,23 @@ function EvidenceTableEditor({
   card: IndustryDraftBlock;
   onChange: (card: IndustryDraftBlock) => void;
 }) {
-  const rows = readSpecArray(card.spec.rows);
+  const rows = normalizeEvidenceTableRows(card.spec);
   return <EditorTextarea
-    value={rows.map((row) => `${String(row?.conclusion || row?.title || "")} | ${String(row?.evidence || row?.detail || "")} | ${String(row?.source || "")}`).join("\n")}
+    value={rows.map((row) => `${row.conclusion} | ${row.evidence} | ${row.source}`).join("\n")}
     placeholder="每行一条：结论 | 证据 | 来源"
-    onChange={(value) => onChange({
-      ...card,
-      spec: {
-        ...card.spec,
-        rows: value.split("\n").filter((line) => line.trim()).map((line) => {
-          const [conclusion = "", evidence = "", source = ""] = line.split("|").map((part) => part.trim());
-          return { conclusion, evidence, source };
-        }),
-      },
-    })}
+    onChange={(value) => {
+      const { items: _items, ...spec } = card.spec;
+      onChange({
+        ...card,
+        spec: {
+          ...spec,
+          rows: value.split("\n").filter((line) => line.trim()).map((line) => {
+            const [conclusion = "", evidence = "", source = ""] = line.split("|").map((part) => part.trim());
+            return { conclusion, evidence, source };
+          }),
+        },
+      });
+    }}
   />;
 }
 
