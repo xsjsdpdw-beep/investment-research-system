@@ -17,11 +17,52 @@ type LegacyIndustryDraftCanvasSchema = Omit<IndustryDraftCanvasSchema, "tabs"> &
 
 export type IndustryDraftCanvasInput = IndustryDraftCanvasSchema | LegacyIndustryDraftCanvasSchema | HBMDraftDashboardData;
 
+const INDUSTRY_DRAFT_BLOCK_TYPES = new Set<IndustryDraftBlock["type"]>([
+  "summary_hero",
+  "metric_grid",
+  "range_band",
+  "comparison_cards",
+  "timeline",
+  "flow_map",
+  "industry_chain",
+  "comparison_table",
+  "chart_spec",
+  "evidence_table",
+]);
+const INDUSTRY_DRAFT_CHART_TYPES = new Set(["bar", "stacked_bar", "line", "area"]);
+
 function readLegacyField(item: Record<string, unknown> | IndustryDraftBlock, key: string) {
   if (key in item) {
     return item[key as keyof typeof item];
   }
   return undefined;
+}
+
+function normalizeIndustryDraftBlock(item: Record<string, unknown> | IndustryDraftBlock, blockIndex: number): IndustryDraftBlock {
+  const rawType = String(readLegacyField(item, "type") || "summary_hero");
+  const type = INDUSTRY_DRAFT_BLOCK_TYPES.has(rawType as IndustryDraftBlock["type"])
+    ? rawType as IndustryDraftBlock["type"]
+    : "summary_hero";
+  const rawSpec = readLegacyField(item, "spec") || readLegacyField(item, "content") || {};
+  const spec = rawSpec && typeof rawSpec === "object" && !Array.isArray(rawSpec)
+    ? { ...rawSpec as Record<string, unknown> }
+    : {};
+  if (type === "chart_spec") {
+    const rawChartType = String(spec.chart_type || spec.type || "bar");
+    const chartType = INDUSTRY_DRAFT_CHART_TYPES.has(rawChartType) ? rawChartType : "bar";
+    spec.chart_type = chartType;
+    if ("type" in spec) spec.type = chartType;
+  }
+  return {
+    id: String(readLegacyField(item, "id") || `block-${blockIndex + 1}`),
+    type,
+    title: String(readLegacyField(item, "title") || ""),
+    subtitle: String(readLegacyField(item, "subtitle") || ""),
+    spec,
+    sources: Array.isArray(readLegacyField(item, "sources")) ? (readLegacyField(item, "sources") as string[]) : [],
+    footnote: String(readLegacyField(item, "footnote") || ""),
+    style_variant: String(readLegacyField(item, "style_variant") || "dark-report"),
+  };
 }
 
 export function migrateCanvasCardsToBlocks(
@@ -34,16 +75,7 @@ export function migrateCanvasCardsToBlocks(
     tabs: (schema.tabs || []).map((tab, tabIndex) => ({
       id: tab.id || `tab-${tabIndex + 1}`,
       title: tab.title || "未命名栏目",
-      blocks: (tab.blocks || tab.cards || []).map((item, blockIndex) => ({
-        id: String(readLegacyField(item, "id") || `block-${blockIndex + 1}`),
-        type: (readLegacyField(item, "type") as IndustryDraftBlock["type"]) || "summary_hero",
-        title: String(readLegacyField(item, "title") || ""),
-        subtitle: String(readLegacyField(item, "subtitle") || ""),
-        spec: (readLegacyField(item, "spec") || readLegacyField(item, "content") || {}) as Record<string, unknown>,
-        sources: Array.isArray(readLegacyField(item, "sources")) ? (readLegacyField(item, "sources") as string[]) : [],
-        footnote: String(readLegacyField(item, "footnote") || ""),
-        style_variant: String(readLegacyField(item, "style_variant") || "dark-report"),
-      })),
+      blocks: (tab.blocks || tab.cards || []).map(normalizeIndustryDraftBlock),
     })),
   } as IndustryDraftCanvasSchema;
 }

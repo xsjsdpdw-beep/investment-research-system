@@ -38,6 +38,26 @@ test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", ()
   assert.equal(result.tabs[0].blocks[0].spec.headline, "HBM 需求偏强");
 });
 
+test("migrateCanvasCardsToBlocks coerces unsupported block and chart types", () => {
+  const result = migrateCanvasCardsToBlocks({
+    kind: "industry_draft_canvas",
+    scope: "HBM",
+    tabs: [
+      {
+        id: "tab-overview",
+        title: "总览",
+        blocks: [
+          { id: "block-unknown", type: "unknown_block", spec: {} },
+          { id: "block-chart", type: "chart_spec", spec: { chart_type: "pie" } },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.tabs[0].blocks[0].type, "summary_hero");
+  assert.equal(result.tabs[0].blocks[1].spec.chart_type, "bar");
+});
+
 test("normalizeIndustryDraftCanvasInput dispatches legacy HBM dashboards for the runtime", () => {
   const result = normalizeIndustryDraftCanvasInput(legacy);
 
