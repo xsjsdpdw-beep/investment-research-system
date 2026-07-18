@@ -1372,37 +1372,10 @@ def _event_probability_rank_reason(category: str, status: str, probability_label
     return f"因处于{status_label}、概率判断为{probability_label}，且属于{category}，所以优先级靠前。"
 
 
-def _event_probability_verification_status(category: str, status: str, text: str) -> str:
-    text = str(text or "")
-    if any(keyword in text for keyword in ("公告", "财报", "订单", "销量", "政策")):
-        return "验证中"
-    if status == "planned":
-        return "待验证"
-    if category == "个股催化" and status == "active":
-        return "验证中"
-    return "待验证"
-
-
-def _event_probability_follow_up(category: str, status: str, text: str) -> str:
-    text = str(text or "")
-    if category == "宏观窗口":
-        return "跟踪官方日历、政策发布和市场预期差是否继续收敛。"
-    if category == "行业催化":
-        if any(keyword in text for keyword in ("销量", "订单")):
-            return "优先验证销量、订单和行业景气数据是否继续兑现。"
-        return "优先验证政策催化和产业链反馈是否出现增量确认。"
-    if category == "个股催化":
-        if "公告" in text:
-            return "继续跟踪后续公告、电话会和经营数据是否强化当前催化。"
-        return "继续跟踪新闻线索能否落到公告、订单或财报验证。"
-    return "继续补充公开验证线索。"
-
-
 def _decorate_event_probability_item(item: dict) -> dict:
     category = str(item.get("category", ""))
     status = str(item.get("status", ""))
     probability_label = str(item.get("probability_label", ""))
-    note = str(item.get("note", ""))
     rank_score = _event_probability_rank_score(
         category,
         status,
@@ -1414,8 +1387,6 @@ def _decorate_event_probability_item(item: dict) -> dict:
         "rank_score": rank_score,
         "rank_breakdown": _event_probability_rank_breakdown(category, status, probability_label),
         "rank_reason": _event_probability_rank_reason(category, status, probability_label),
-        "verification_status": _event_probability_verification_status(category, status, note),
-        "follow_up": _event_probability_follow_up(category, status, note),
     }
 
 

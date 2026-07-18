@@ -5,6 +5,44 @@ function readSpecArray(value: unknown) {
   return Array.isArray(value) ? value : [];
 }
 
+const TASK_2_COMPATIBILITY_BLOCK_TYPES = new Set<IndustryDraftBlock["type"]>([
+  "summary_hero",
+  "metric_grid",
+  "range_band",
+  "comparison_cards",
+  "timeline",
+  "flow_map",
+  "industry_chain",
+  "comparison_table",
+  "chart_spec",
+  "evidence_table",
+]);
+
+function compatibilityText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(compatibilityText).filter(Boolean).join(" · ");
+  if (value && typeof value === "object") return Object.values(value).map(compatibilityText).filter(Boolean).join(" · ");
+  return String(value || "");
+}
+
+function CompatibilityBlockCard({ card }: { card: IndustryDraftBlock }) {
+  const items = Object.values(card.spec)
+    .flatMap(readSpecArray)
+    .map(compatibilityText)
+    .filter(Boolean);
+
+  return (
+    <section className="rounded-[24px] border border-white/10 bg-[#0b1320] p-4">
+      <h4 className="text-sm font-semibold text-slate-100">{card.title || card.type}</h4>
+      {items.length ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {items.map((item, index) => <p key={`${item}-${index}`} className="rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-slate-300">{item}</p>)}
+        </div>
+      ) : <p className="mt-2 text-sm text-slate-500">暂无结构化内容</p>}
+      {card.sources?.length ? <p className="mt-3 text-xs text-slate-500">来源：{card.sources.join(" · ")}</p> : null}
+    </section>
+  );
+}
+
 function SummaryHeroCard({ card }: { card: IndustryDraftBlock }) {
   const headline = String(card.spec.headline || "");
   const bullets = readSpecArray(card.spec.bullets).map(String);
@@ -171,6 +209,9 @@ export function IndustryDraftCardRenderer({ card }: { card: IndustryDraftBlock }
   }
   if (card.type === "timeline") {
     return <TimelineCard card={card} />;
+  }
+  if (TASK_2_COMPATIBILITY_BLOCK_TYPES.has(card.type)) {
+    return <CompatibilityBlockCard card={card} />;
   }
   return null;
 }
