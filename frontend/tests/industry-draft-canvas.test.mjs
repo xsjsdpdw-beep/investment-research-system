@@ -4,14 +4,45 @@ import { readFileSync } from "node:fs";
 
 import {
   adaptLegacyHBMDashboardToCanvas,
+  appendIndustryDraftBlock,
   createCanvasCard,
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
   migrateCanvasCardsToBlocks,
   normalizeIndustryDraftCanvasInput,
+  removeIndustryDraftBlock,
   moveItem,
   shouldUseIndustryDraftCanvas,
+  updateIndustryDraftBlock,
 } from "../src/components/research/industry-draft-canvas.ts";
+
+test("appendIndustryDraftBlock adds a new editable block to the selected tab", () => {
+  const canvas = {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "HBM",
+    tabs: [{ id: "tab-overview", title: "总览", blocks: [] }],
+  };
+
+  const next = appendIndustryDraftBlock(canvas, "tab-overview", "comparison_table");
+
+  assert.equal(next.tabs[0].blocks.length, 1);
+  assert.equal(next.tabs[0].blocks[0].type, "comparison_table");
+});
+
+test("block helpers update and remove only the selected block", () => {
+  const canvas = {
+    kind: "industry_draft_canvas",
+    version: "v2",
+    scope: "HBM",
+    tabs: [{ id: "tab-overview", title: "总览", blocks: [{ id: "block-1", type: "summary_hero", spec: {} }] }],
+  };
+  const updated = updateIndustryDraftBlock(canvas, "tab-overview", "block-1", { title: "行业总览" });
+  const removed = removeIndustryDraftBlock(updated, "tab-overview", "block-1");
+
+  assert.equal(updated.tabs[0].blocks[0].title, "行业总览");
+  assert.equal(removed.tabs[0].blocks.length, 0);
+});
 
 test("migrateCanvasCardsToBlocks upgrades card payloads into block payloads", () => {
   const result = migrateCanvasCardsToBlocks({
@@ -81,6 +112,13 @@ test("IndustryDraftCanvas requires explicit initial-draft context for HBM polish
   assert.match(source, /<Fragment key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/Fragment>/);
   assert.doesNotMatch(source, /<div key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/div>/);
   assert.match(frameworkSource, /<IndustryDraftCanvas data=\{sectorDraftSchema\} scopeType="sector" scopeId=\{selectedSector \|\| "HBM"\} isInitialDraftCanvas \/>/);
+});
+
+test("IndustryDraftCanvas limits editing to the HBM initial-draft context", () => {
+  const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvas.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /const canEdit = isHbmInitialDraft/);
+  assert.match(source, /\{canEdit \? \(/);
 });
 
 const legacy = {

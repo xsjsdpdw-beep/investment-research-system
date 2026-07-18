@@ -310,7 +310,7 @@ export function IndustryDraftCanvasEditor({
   expandedCardId,
   onSetExpandedCardId,
   onRenameTab,
-  onAddCard,
+  onAddBlock,
   onMoveCard,
   onDeleteCard,
   onUpdateCard,
@@ -319,7 +319,7 @@ export function IndustryDraftCanvasEditor({
   expandedCardId: string | null;
   onSetExpandedCardId: (cardId: string | null) => void;
   onRenameTab: (title: string) => void;
-  onAddCard: (type: IndustryDraftBlock["type"]) => void;
+  onAddBlock: (type: IndustryDraftBlock["type"]) => void;
   onMoveCard: (index: number, delta: number) => void;
   onDeleteCard: (index: number) => void;
   onUpdateCard: (index: number, card: IndustryDraftBlock) => void;
@@ -333,11 +333,13 @@ export function IndustryDraftCanvasEditor({
 
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => onAddCard("summary_hero")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增速览卡</button>
-          <button type="button" onClick={() => onAddCard("metric_grid")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增指标卡</button>
-          <button type="button" onClick={() => onAddCard("range_band")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增分位条</button>
-          <button type="button" onClick={() => onAddCard("comparison_cards")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增对比卡</button>
-          <button type="button" onClick={() => onAddCard("timeline")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增时间线</button>
+          <button type="button" onClick={() => onAddBlock("summary_hero")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增速览卡</button>
+          <button type="button" onClick={() => onAddBlock("metric_grid")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增指标卡</button>
+          <button type="button" onClick={() => onAddBlock("range_band")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增分位条</button>
+          <button type="button" onClick={() => onAddBlock("comparison_cards")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增对比卡</button>
+          <button type="button" onClick={() => onAddBlock("timeline")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增时间线</button>
+          <button type="button" onClick={() => onAddBlock("comparison_table")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增对比表</button>
+          <button type="button" onClick={() => onAddBlock("chart_spec")} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">新增图表</button>
         </div>
 
         <div className="space-y-3">

@@ -138,6 +138,63 @@ function uniqueId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function createEmptyIndustryDraftBlock(id: string, type: IndustryDraftBlock["type"]): IndustryDraftBlock {
+  return {
+    id,
+    type,
+    title: "",
+    subtitle: "",
+    spec: {},
+    sources: [],
+    footnote: "",
+    style_variant: "dark-report",
+  };
+}
+
+export function appendIndustryDraftBlock(
+  canvas: IndustryDraftCanvasSchema,
+  tabId: string,
+  type: IndustryDraftBlock["type"],
+): IndustryDraftCanvasSchema {
+  return {
+    ...canvas,
+    tabs: canvas.tabs.map((tab) => (
+      tab.id === tabId
+        ? { ...tab, blocks: [...tab.blocks, createEmptyIndustryDraftBlock(`block-${tab.blocks.length + 1}`, type)] }
+        : tab
+    )),
+  };
+}
+
+export function updateIndustryDraftBlock(
+  canvas: IndustryDraftCanvasSchema,
+  tabId: string,
+  blockId: string,
+  patch: Partial<IndustryDraftBlock>,
+): IndustryDraftCanvasSchema {
+  return {
+    ...canvas,
+    tabs: canvas.tabs.map((tab) => (
+      tab.id === tabId
+        ? { ...tab, blocks: tab.blocks.map((block) => (block.id === blockId ? { ...block, ...patch } : block)) }
+        : tab
+    )),
+  };
+}
+
+export function removeIndustryDraftBlock(
+  canvas: IndustryDraftCanvasSchema,
+  tabId: string,
+  blockId: string,
+): IndustryDraftCanvasSchema {
+  return {
+    ...canvas,
+    tabs: canvas.tabs.map((tab) => (
+      tab.id === tabId ? { ...tab, blocks: tab.blocks.filter((block) => block.id !== blockId) } : tab
+    )),
+  };
+}
+
 export function createEmptyCanvasTab(): IndustryDraftCanvasTab {
   return {
     id: uniqueId("tab"),

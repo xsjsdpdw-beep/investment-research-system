@@ -7,11 +7,13 @@ import { cn } from "@/lib/utils";
 import { renderIndustryDraftBlock } from "./IndustryDraftCardRenderer";
 import { IndustryDraftCanvasEditor } from "./IndustryDraftCanvasEditor";
 import {
-  createCanvasCard,
   createEmptyCanvasTab,
   getIndustryDraftActiveTab,
   moveItem,
   normalizeIndustryDraftCanvasInput,
+  appendIndustryDraftBlock,
+  removeIndustryDraftBlock,
+  updateIndustryDraftBlock,
   type IndustryDraftCanvasInput,
 } from "./industry-draft-canvas";
 
@@ -36,6 +38,7 @@ export function IndustryDraftCanvas({
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const activeTab = useMemo(() => getIndustryDraftActiveTab(draft, activeTabId), [activeTabId, draft]);
   const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && scopeId === "HBM";
+  const canEdit = isHbmInitialDraft;
 
   useEffect(() => {
     setDraft(normalizedData);
@@ -99,42 +102,44 @@ export function IndustryDraftCanvas({
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (editing) {
-                setDraft(normalizedData);
-                setEditing(false);
-                setExpandedCardId(null);
-                return;
-              }
-              setEditing(true);
-            }}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-sm transition",
-              editing
-                ? "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
-                : "border-[#ff8b2a]/40 bg-[#ff8b2a]/12 text-[#ffd3aa]",
-            )}
-          >
-            {editing ? "取消编辑" : "编辑初稿"}
-          </button>
-          {editing ? (
+        {canEdit ? (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void saveCanvas()}
-              disabled={saving}
-              className="rounded-full border border-emerald-400/35 bg-emerald-400/12 px-3 py-1.5 text-sm text-emerald-200 disabled:opacity-50"
+              onClick={() => {
+                if (editing) {
+                  setDraft(normalizedData);
+                  setEditing(false);
+                  setExpandedCardId(null);
+                  return;
+                }
+                setEditing(true);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-sm transition",
+                editing
+                  ? "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                  : "border-[#ff8b2a]/40 bg-[#ff8b2a]/12 text-[#ffd3aa]",
+              )}
             >
-              {saving ? "保存中..." : "保存画布"}
+              {editing ? "取消编辑" : "编辑初稿"}
             </button>
-          ) : null}
-        </div>
+            {editing ? (
+              <button
+                type="button"
+                onClick={() => void saveCanvas()}
+                disabled={saving}
+                className="rounded-full border border-emerald-400/35 bg-emerald-400/12 px-3 py-1.5 text-sm text-emerald-200 disabled:opacity-50"
+              >
+                {saving ? "保存中..." : "保存画布"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div role="tabpanel" className="mt-4 space-y-4">
-        {editing ? (
+        {canEdit && editing ? (
           <div className="space-y-4">
             <section className="flex flex-wrap gap-2 rounded-[24px] border border-primary/20 bg-primary/5 p-3">
               <button
@@ -192,10 +197,10 @@ export function IndustryDraftCanvas({
                 ...current,
                 tabs: current.tabs.map((tab) => (tab.id === activeTab.id ? { ...tab, title } : tab)),
               }))}
-              onAddCard={(type) => updateCurrentTab((cards) => [...cards, createCanvasCard(type)])}
+              onAddBlock={(type) => setDraft((current) => appendIndustryDraftBlock(current, activeTab.id, type))}
               onMoveCard={(index, delta) => updateCurrentTab((cards) => moveItem(cards, index, delta))}
-              onDeleteCard={(index) => updateCurrentTab((cards) => cards.filter((_, cardIndex) => cardIndex !== index))}
-              onUpdateCard={(index, card) => updateCurrentTab((cards) => cards.map((item, cardIndex) => (cardIndex === index ? card : item)))}
+              onDeleteCard={(index) => setDraft((current) => removeIndustryDraftBlock(current, activeTab.id, activeTab.blocks[index].id))}
+              onUpdateCard={(_index, card) => setDraft((current) => updateIndustryDraftBlock(current, activeTab.id, card.id, card))}
             />
           </div>
         ) : (

@@ -1,5 +1,41 @@
 import knowledge
+from fastapi.testclient import TestClient
+from app import app
 from knowledge import _overview_record_defaults, normalize_industry_draft_canvas
+
+
+client = TestClient(app)
+
+
+def test_save_draft_theme_schema_round_trips_block_edits():
+    payload = {
+        "scope_type": "sector",
+        "scope_id": "HBM-editable-blocks",
+        "schema": {
+            "kind": "industry_draft_canvas",
+            "version": "v2",
+            "scope": "HBM",
+            "tabs": [
+                {
+                    "id": "tab-overview",
+                    "title": "总览",
+                    "blocks": [
+                        {
+                            "id": "block-1",
+                            "type": "comparison_table",
+                            "title": "代际对比",
+                            "spec": {"columns": ["项目", "HBM3E"], "rows": [["层数", "16Hi"]]},
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    response = client.post("/api/research/overview-workbench/draft-theme-schema", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["draft_theme_schema"]["tabs"][0]["blocks"][0]["type"] == "comparison_table"
 
 
 def test_normalize_industry_draft_canvas_migrates_cards_to_blocks():
