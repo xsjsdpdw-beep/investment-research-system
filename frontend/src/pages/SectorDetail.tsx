@@ -1,14 +1,49 @@
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Plus, Wrench } from "lucide-react";
+import { ArrowLeft, Plus, Wrench, LayoutPanelTop } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { IndustryDraftCanvas } from "@/components/research/IndustryDraftCanvas";
+import { api, ApiError, type IndustryDraftCanvasSchema } from "@/lib/api";
 import sectorsData from "@/data/sectors.json";
 
 export function SectorDetail() {
   const { key } = useParams();
   const sector = sectorsData.sectors.find((s) => s.key === key);
+  const [draftSchema, setDraftSchema] = useState<IndustryDraftCanvasSchema | null>(null);
+  const [draftError, setDraftError] = useState("");
+  const [selectedOverviewTabId, setSelectedOverviewTabId] = useState("");
+
+  useEffect(() => {
+    if (!sector) return;
+    let cancelled = false;
+    setDraftError("");
+    setDraftSchema(null);
+    setSelectedOverviewTabId("");
+
+    void api.overviewWorkbench("sector", sector.label)
+      .then((workbench) => {
+        if (cancelled) return;
+        const schema = workbench.draft_theme_schema;
+        if (schema?.kind === "industry_draft_canvas" && Array.isArray(schema.tabs)) {
+          setDraftSchema(schema);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 0) {
+          setDraftError("后端未启动，研究栏目暂时无法读取。");
+          return;
+        }
+        setDraftError("研究栏目读取失败，请稍后再试。");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sector]);
 
   if (!sector) {
     return (
@@ -67,6 +102,41 @@ export function SectorDetail() {
           </div>
         </GlassCard>
       )}
+
+      <GlassCard className="mt-6">
+        <div className="flex items-center gap-2">
+          <LayoutPanelTop className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">研究栏目框架</h3>
+        </div>
+        {draftSchema?.tabs?.length ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {draftSchema.tabs.map((tab, index) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedOverviewTabId(tab.id)}
+                className="rounded-2xl border border-border/60 bg-background/40 p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+              >
+                <p className="text-xs text-muted-foreground">Tag {index + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{tab.title}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {tab.blocks.length ? `已放入 ${tab.blocks.length} 个内容块` : "当前为空，等待逐页填充"}
+                </p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground">
+            {draftError || "该板块的研究栏目尚未初始化。"}
+          </p>
+        )}
+      </GlassCard>
+
+      {draftSchema?.tabs?.length ? (
+        <div className="mt-6">
+          <IndustryDraftCanvas key={selectedOverviewTabId || "default"} data={draftSchema} scopeType="sector" scopeId={sector.label} initialActiveTabId={selectedOverviewTabId || undefined} isInitialDraftCanvas />
+        </div>
+      ) : null}
 
       <Disclaimer />
     </div>

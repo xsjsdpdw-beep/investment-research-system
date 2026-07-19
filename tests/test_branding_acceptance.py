@@ -379,6 +379,63 @@ def test_workspace_intel_children_include_event_probability():
     assert '{ key: "event-probability", label: "事件概率", description: "事件观察、催化清单、数据接口" }' in workspace
 
 
+def test_decision_cockpit_shell_is_registered():
+    router = read("frontend/src/router.tsx")
+    workspace = read("frontend/src/lib/workspace.ts")
+    api_types = read("frontend/src/lib/api.ts")
+    cockpit = read("frontend/src/pages/DecisionCockpit.tsx")
+
+    assert 'path: "/decision-cockpit", element: <DecisionCockpit />' in router
+    assert 'to: "/decision-cockpit"' in workspace
+    assert 'label: "决策驾驶舱"' in workspace
+    assert "DecisionCockpitData" in api_types
+    assert "strategy_engine:" in api_types
+    assert "current_strategy_view:" in api_types
+    assert "framework_basis:" in api_types
+    assert "framework_sources:" in api_types
+    assert "sector_opportunity_map:" in api_types
+    assert "strategy_framework:" in api_types
+    assert "institution_viewpoints:" in api_types
+    assert "daily_iteration:" in api_types
+    assert "recommendation_matrix:" in api_types
+    assert "sector_engine:" in api_types
+    assert "stock_engine:" in api_types
+    assert "open_questions:" in api_types
+    assert "framework_draft:" in api_types
+    assert "framework_revision_queue:" in api_types
+    assert "updateDecisionQuestionStatus" in api_types
+    assert "updateFrameworkRevisionStatus" in api_types
+    assert "approval_state:" in api_types
+    assert "review_note:" in api_types
+    assert "今日决策总览" in cockpit
+    assert "activeEngineTab" in cockpit
+    assert "ENGINE_TABS" in cockpit
+    assert 'aria-pressed={activeEngineTab === tab.key}' in cockpit
+    assert "策略引擎" in cockpit
+    assert "今日策略观点" in cockpit
+    assert "当前市场风格" in cockpit
+    assert "看多板块" in cockpit
+    assert "核心理由" in cockpit
+    assert "框架来源" in cockpit
+    assert "全市场机会地图" in cockpit
+    assert "策略框架" in cockpit
+    assert "主流机构观点映射" in cockpit
+    assert "每日迭代机制" in cockpit
+    assert "建议矩阵" in cockpit
+    assert "layer.label" in cockpit
+    assert "layer.evidence.join" in cockpit
+    assert "layer.decision_implication" in cockpit
+    assert "行业引擎" in cockpit
+    assert "个股引擎" in cockpit
+    assert "未解决问题" in cockpit
+    assert "标记验证中" in cockpit
+    assert "标记已解决" in cockpit
+    assert "框架修订提案" in cockpit
+    assert "批准生效" in cockpit
+    assert "废弃提案" in cockpit
+    assert "resolution_impact" in api_types
+
+
 def test_event_probability_cards_render_probability_and_judgment():
     intel = read("frontend/src/pages/Intel.tsx")
     api_types = read("frontend/src/lib/api.ts")
@@ -389,6 +446,8 @@ def test_event_probability_cards_render_probability_and_judgment():
     assert "rank_score: number;" in api_types
     assert "rank_breakdown:" in api_types
     assert "rank_reason: string;" in api_types
+    assert "verification_status: string;" in api_types
+    assert "follow_up: string;" in api_types
     assert "coverage_count: number;" in api_types
     assert "latest_signal: string;" in api_types
     assert "scenario_snapshot: EventProbabilityScenarioSnapshot;" in api_types
@@ -399,12 +458,50 @@ def test_event_probability_cards_render_probability_and_judgment():
     assert "item.rank_reason" in intel
     assert "状态分 {item.rank_breakdown.status_score}" in intel
     assert "const EVENT_PROBABILITY_SORT_OPTIONS = [" in intel
+    assert "const EVENT_PROBABILITY_QUEUE_OPTIONS = [" in intel
+    assert "setEventQueueView(option.key)" in intel
+    assert "{option.label} ({eventQueueCounts[option.key]})" in intel
     assert "setEventPrioritySort(option.key)" in intel
-    assert "sortedEventProbabilityEvents.map((item) => (" in intel
+    assert "queuedEventProbabilityEvents.map((item) => (" in intel
+    assert "const pinnedEventProbabilityTask = useMemo(" in intel
+    assert "const nextEventProbabilityTask = useMemo(" in intel
+    assert "readJson<string[]>(\"intel-event-completed-keys\", [])" in intel
+    assert "writeJson(\"intel-event-completed-keys\", completedEventTaskKeys)" in intel
+    assert "const markEventTaskComplete = (key: string) => {" in intel
+    assert "const restoreEventTask = (key: string) => {" in intel
     assert "readJson<EventPrioritySortKey>(\"intel-event-priority-sort\", \"rank\")" in intel
     assert "writeJson(\"intel-event-priority-sort\", eventPrioritySort)" in intel
-    assert "eventPrioritySort === \"category\" ? eventProbabilityCategoryGroups.map((group) => (" in intel
+    assert "readJson<EventQueueViewKey>(\"intel-event-queue-view\", \"todo\")" in intel
+    assert "writeJson(\"intel-event-queue-view\", eventQueueView)" in intel
+    assert "readJson<string[]>(\"intel-event-priority-expanded\", [])" in intel
+    assert "writeJson(\"intel-event-priority-expanded\", expandedEventCards)" in intel
+    assert "readJson<boolean>(\"intel-event-archive-expanded\", false)" in intel
+    assert "writeJson(\"intel-event-archive-expanded\", eventArchiveExpanded)" in intel
+    assert "eventPrioritySort === \"category\" ? queuedEventProbabilityCategoryGroups.map((group) => (" in intel
     assert "eventProbabilityCategoryDescription(group.category)" in intel
+    assert "eventProbabilityJudgmentPreview(item.judgment)" in intel
+    assert "eventProbabilityVerificationLabel(item.verification_status)" in intel
+    assert "eventQueueViewLabel(eventQueueView)" in intel
+    assert "toggleExpandedEventCard(item.key)" in intel
+    assert "展开详情" in intel
+    assert "收起详情" in intel
+    assert "已验证归档" in intel
+    assert "展开归档" in intel
+    assert "收起归档" in intel
+    assert "恢复待跟进" in intel
+    assert "下一步：{item.follow_up}" in intel
+    assert "const eventPrioritySummary = useMemo(() => {" in intel
+    assert "const eventPriorityRiskSummary = useMemo(() => {" in intel
+    assert "优先动作：" in intel
+    assert "eventPrioritySortLabel(eventPrioritySort)" in intel
+    assert "扫读摘要" in intel
+    assert "风险提示" in intel
+    assert "eventPriorityRiskSummary" in intel
+    assert "当前首要任务" in intel
+    assert "标记已跟进" in intel
+    assert "今天先做：{pinnedEventProbabilityTask.follow_up}" in intel
+    assert "下一顺位" in intel
+    assert "随后跟进：{nextEventProbabilityTask.follow_up}" in intel
     assert "重点事件总数" in intel
     assert "接口接入概览" in intel
     assert "eventProbabilityStatusLabel(item.status)" in intel

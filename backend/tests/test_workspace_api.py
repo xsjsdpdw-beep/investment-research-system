@@ -164,6 +164,101 @@ def test_research_hub_exposes_event_probability_scaffold(workspace_client: TestC
     assert data["event_probability"]["source_interfaces"][0]["status"] == "active"
 
 
+def test_decision_cockpit_exposes_strategy_sector_and_stock_engines(workspace_client: TestClient):
+    workspace_client.put("/api/watchlist", json={
+        "stocks": [{"code": "000425", "market": "SZ", "name": "徐工机械", "group": "工程机械", "sort_order": 0}],
+        "indicators": [{"key": "cn_cpi", "label": "中国CPI", "category": "宏观", "value": "0.1%", "note": "最新月度"}],
+    })
+    workspace_client.post("/api/knowledge/entries", json={
+        "title": "工程机械行业卡片",
+        "type": "sector_profile",
+        "content": "行业核心跟踪挖机销量、装载机销量、开工率和出口订单。",
+        "related_sectors": ["工程机械"],
+    })
+    workspace_client.post("/api/knowledge/entries", json={
+        "title": "徐工机械周跟踪",
+        "type": "tracking_comment",
+        "content": "出口订单继续增长，但要验证国内更新需求是否接力。",
+        "related_sectors": ["工程机械"],
+        "related_stocks": ["000425.SZ"],
+        "investment_view": "positive",
+    })
+
+    cockpit = workspace_client.get("/api/decision-cockpit")
+    assert cockpit.status_code == 200
+    data = cockpit.json()["data"]
+
+    assert data["summary"]["title"] == "今日决策总览"
+    assert data["strategy_engine"]["summary"]["title"] == "策略引擎"
+    assert data["sector_engine"]["summary"]["title"] == "行业引擎"
+    assert data["stock_engine"]["summary"]["title"] == "个股引擎"
+    assert data["strategy_engine"]["current_strategy_view"]["market_style"]
+    assert data["strategy_engine"]["current_strategy_view"]["bullish_sectors"]
+    assert data["strategy_engine"]["current_strategy_view"]["why"]
+    assert data["strategy_engine"]["framework_sources"]
+    assert data["strategy_engine"]["sector_opportunity_map"]
+    assert "AI应用/算力/半导体" in data["strategy_engine"]["current_strategy_view"]["bullish_sectors"]
+    assert data["strategy_engine"]["current_strategy_view"]["framework_basis"] == "source_backed_full_market"
+    assert [item["key"] for item in data["strategy_engine"]["strategy_framework"]] == ["macro", "meso", "micro", "liquidity_valuation"]
+    assert data["strategy_engine"]["strategy_framework"][0]["label"] == "宏观框架"
+    assert data["strategy_engine"]["institution_viewpoints"]
+    assert data["strategy_engine"]["daily_iteration"]["source_scope"]
+    assert data["strategy_engine"]["recommendation_matrix"]["increase"]
+    assert data["strategy_engine"]["open_questions"]
+    assert data["sector_engine"]["open_questions"]
+    assert data["stock_engine"]["open_questions"]
+    assert data["sector_engine"]["factor_tree"]
+    assert data["stock_engine"]["decision_cards"]
+    assert data["stock_engine"]["decision_cards"][0]["industry_context"]["sector"] == "工程机械"
+    assert data["stock_engine"]["decision_cards"][0]["company_context"]["ticker"] == "000425.SZ"
+    assert data["sector_engine"]["framework_draft"]["source"] in {"institution_generated", "user_fed"}
+
+
+def test_decision_cockpit_question_status_persists_into_next_snapshot(workspace_client: TestClient):
+    cockpit = workspace_client.get("/api/decision-cockpit")
+    assert cockpit.status_code == 200
+    question = cockpit.json()["data"]["strategy_engine"]["open_questions"][0]
+
+    updated = workspace_client.post("/api/decision-cockpit/questions/status", json={
+        "applies_to": question["applies_to"],
+        "question": question["question"],
+        "status": "验证中",
+        "resolution_impact": "已进入宏观数据和市场风格跟踪队列。",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["data"]["status"] == "验证中"
+    assert updated.json()["data"]["resolution_impact"] == "已进入宏观数据和市场风格跟踪队列。"
+
+    refreshed = workspace_client.get("/api/decision-cockpit")
+    assert refreshed.status_code == 200
+    refreshed_question = refreshed.json()["data"]["strategy_engine"]["open_questions"][0]
+    assert refreshed_question["status"] == "验证中"
+    assert refreshed_question["resolution_impact"] == "已进入宏观数据和市场风格跟踪队列。"
+
+
+def test_decision_cockpit_framework_revision_status_persists(workspace_client: TestClient):
+    cockpit = workspace_client.get("/api/decision-cockpit")
+    assert cockpit.status_code == 200
+    proposal = cockpit.json()["data"]["sector_engine"]["framework_revision_queue"][0]
+    assert proposal["approval_state"] == "待审"
+
+    updated = workspace_client.post("/api/decision-cockpit/framework-revisions/status", json={
+        "engine": "sector_engine",
+        "title": proposal["title"],
+        "approval_state": "已批准",
+        "review_note": "行业框架补强方向确认，进入正式跟踪队列。",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["data"]["approval_state"] == "已批准"
+    assert updated.json()["data"]["review_note"] == "行业框架补强方向确认，进入正式跟踪队列。"
+
+    refreshed = workspace_client.get("/api/decision-cockpit")
+    assert refreshed.status_code == 200
+    refreshed_proposal = refreshed.json()["data"]["sector_engine"]["framework_revision_queue"][0]
+    assert refreshed_proposal["approval_state"] == "已批准"
+    assert refreshed_proposal["review_note"] == "行业框架补强方向确认，进入正式跟踪队列。"
+
+
 def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_client: TestClient, monkeypatch):
     import astock
 
@@ -208,6 +303,8 @@ def test_research_hub_priority_events_mix_macro_and_stock_catalysts(workspace_cl
     assert all(item["trigger_window"] for item in events)
     assert all(item["rank_score"] >= 1 for item in events)
     assert all(item["rank_reason"] for item in events)
+    assert all(item["verification_status"] in {"待验证", "验证中", "已验证"} for item in events)
+    assert all(item["follow_up"] for item in events)
     assert all(item["rank_breakdown"]["status_score"] >= 30 for item in events)
     assert all(item["rank_breakdown"]["probability_score"] >= 4 for item in events)
     assert events == sorted(events, key=lambda item: (-item["rank_score"], item["title"]))

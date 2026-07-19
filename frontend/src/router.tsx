@@ -11,6 +11,7 @@ import { Database } from "@/pages/Database";
 import { Template } from "@/pages/Template";
 import { Settings } from "@/pages/Settings";
 import { Portfolio } from "@/pages/Portfolio";
+import { DecisionCockpit } from "@/pages/DecisionCockpit";
 
 export const router = createBrowserRouter([
   {
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
       { path: "/sectors", element: <Sectors /> },
       { path: "/sectors/:key", element: <SectorDetail /> },
       { path: "/intel", element: <Intel /> },
+      { path: "/decision-cockpit", element: <DecisionCockpit /> },
       { path: "/watchlist", element: <Watchlist /> },
       { path: "/memos", element: <Notes /> },
       { path: "/notes", element: <Navigate to="/memos" replace /> },

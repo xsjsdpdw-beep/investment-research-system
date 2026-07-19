@@ -47,6 +47,12 @@ const EVENT_PROBABILITY_SORT_OPTIONS = [
   { key: "category", label: "按类别看" },
 ] as const;
 
+const EVENT_PROBABILITY_QUEUE_OPTIONS = [
+  { key: "todo", label: "待跟进" },
+  { key: "all", label: "全部事件" },
+  { key: "verified", label: "已验证" },
+] as const;
+
 const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIcon }> = [
   { key: "tech", label: "全球科技头条", icon: Globe2 },
   { key: "macro", label: "宏观事件", icon: Lightbulb },
@@ -58,6 +64,7 @@ const FUNDAMENTAL_MODULES: Array<{ key: IntelKind; label: string; icon: LucideIc
 
 type IntelKind = "tech" | "macro" | "industry" | "stock" | "geopolitics" | "hiring";
 type EventPrioritySortKey = (typeof EVENT_PROBABILITY_SORT_OPTIONS)[number]["key"];
+type EventQueueViewKey = (typeof EVENT_PROBABILITY_QUEUE_OPTIONS)[number]["key"];
 
 type ModuleSource = {
   id: string;
@@ -170,6 +177,26 @@ function eventProbabilityCategoryDescription(category: string) {
   if (category === "行业催化") return "集中看景气验证、政策催化和产业变化。";
   if (category === "个股催化") return "最后落到个股公告、订单和电话会信号。";
   return "按当前类别分组展示。";
+}
+
+function eventProbabilityJudgmentPreview(text: string) {
+  const normalized = String(text || "").trim();
+  if (normalized.length <= 34) return normalized;
+  return `${normalized.slice(0, 34)}...`;
+}
+
+function eventPrioritySortLabel(sort: EventPrioritySortKey) {
+  return EVENT_PROBABILITY_SORT_OPTIONS.find((item) => item.key === sort)?.label || "综合优先级";
+}
+
+function eventProbabilityVerificationLabel(status: string) {
+  if (status === "验证中") return "验证中";
+  if (status === "已验证") return "已验证";
+  return "待验证";
+}
+
+function eventQueueViewLabel(view: EventQueueViewKey) {
+  return EVENT_PROBABILITY_QUEUE_OPTIONS.find((item) => item.key === view)?.label || "待跟进";
 }
 
 function buildDefaultSources(hub: ResearchHubData | null): SourceRecord {
@@ -313,6 +340,10 @@ export function Intel() {
   const [liquidityView, setLiquidityView] = useState("daily");
   const [eventProbabilityView, setEventProbabilityView] = useState("overview");
   const [eventPrioritySort, setEventPrioritySort] = useState<EventPrioritySortKey>(() => readJson<EventPrioritySortKey>("intel-event-priority-sort", "rank"));
+  const [eventQueueView, setEventQueueView] = useState<EventQueueViewKey>(() => readJson<EventQueueViewKey>("intel-event-queue-view", "todo"));
+  const [expandedEventCards, setExpandedEventCards] = useState<string[]>(() => readJson<string[]>("intel-event-priority-expanded", []));
+  const [eventArchiveExpanded, setEventArchiveExpanded] = useState<boolean>(() => readJson<boolean>("intel-event-archive-expanded", false));
+  const [completedEventTaskKeys, setCompletedEventTaskKeys] = useState<string[]>(() => readJson<string[]>("intel-event-completed-keys", []));
   const [hub, setHub] = useState<ResearchHubData | null>(null);
   const [marketOverview, setMarketOverview] = useState<MarketOverview | null>(null);
   const [globalIndices, setGlobalIndices] = useState<GlobalIndex[]>([]);
@@ -519,6 +550,22 @@ export function Intel() {
     writeJson("intel-event-priority-sort", eventPrioritySort);
   }, [eventPrioritySort]);
 
+  useEffect(() => {
+    writeJson("intel-event-queue-view", eventQueueView);
+  }, [eventQueueView]);
+
+  useEffect(() => {
+    writeJson("intel-event-priority-expanded", expandedEventCards);
+  }, [expandedEventCards]);
+
+  useEffect(() => {
+    writeJson("intel-event-archive-expanded", eventArchiveExpanded);
+  }, [eventArchiveExpanded]);
+
+  useEffect(() => {
+    writeJson("intel-event-completed-keys", completedEventTaskKeys);
+  }, [completedEventTaskKeys]);
+
   const techHeadlines = hub?.fundamental.global_tech_headlines ?? [];
   const macroEvents = hub?.fundamental.macro_events ?? [];
   const industryDynamics = hub?.fundamental.industry_dynamics ?? [];
@@ -578,16 +625,99 @@ export function Intel() {
       || left.title.localeCompare(right.title, "zh-CN")
     ));
   }, [eventPrioritySort, eventProbability.priority_events]);
-  const eventProbabilityCategoryGroups = useMemo(() => {
+  const archivedEventTaskKeySet = useMemo(
+    () => new Set(completedEventTaskKeys),
+    [completedEventTaskKeys],
+  );
+  const isArchivedEventTask = (key: string, verificationStatus: string) => (
+    verificationStatus === "已验证" || archivedEventTaskKeySet.has(key)
+  );
+  const queuedEventProbabilityEvents = useMemo(() => {
+    if (eventQueueView === "verified") {
+      return sortedEventProbabilityEvents.filter((item) => isArchivedEventTask(item.key, item.verification_status));
+    }
+    if (eventQueueView === "all") {
+      return sortedEventProbabilityEvents;
+    }
+    return sortedEventProbabilityEvents.filter((item) => !isArchivedEventTask(item.key, item.verification_status));
+  }, [eventQueueView, sortedEventProbabilityEvents, archivedEventTaskKeySet]);
+  const queuedEventProbabilityCategoryGroups = useMemo(() => {
     if (eventPrioritySort !== "category") return [];
-    const groups = new Map<string, typeof sortedEventProbabilityEvents>();
-    for (const item of sortedEventProbabilityEvents) {
+    const groups = new Map<string, typeof queuedEventProbabilityEvents>();
+    for (const item of queuedEventProbabilityEvents) {
       const current = groups.get(item.category) ?? [];
       current.push(item);
       groups.set(item.category, current);
     }
     return Array.from(groups.entries()).map(([category, items]) => ({ category, items }));
-  }, [eventPrioritySort, sortedEventProbabilityEvents]);
+  }, [eventPrioritySort, queuedEventProbabilityEvents]);
+  const archivedEventProbabilityEvents = useMemo(
+    () => sortedEventProbabilityEvents.filter((item) => isArchivedEventTask(item.key, item.verification_status)),
+    [sortedEventProbabilityEvents, archivedEventTaskKeySet],
+  );
+  const eventQueueCounts = {
+    todo: sortedEventProbabilityEvents.filter((item) => !isArchivedEventTask(item.key, item.verification_status)).length,
+    all: sortedEventProbabilityEvents.length,
+    verified: archivedEventProbabilityEvents.length,
+  };
+  const pinnedEventProbabilityTask = useMemo(
+    () => queuedEventProbabilityEvents[0] ?? null,
+    [queuedEventProbabilityEvents],
+  );
+  const nextEventProbabilityTask = useMemo(
+    () => queuedEventProbabilityEvents[1] ?? null,
+    [queuedEventProbabilityEvents],
+  );
+  const eventPrioritySummary = useMemo(() => {
+    if (!queuedEventProbabilityEvents.length) {
+      return "当前还没有进入事件流的重点事件，后续接入后这里会自动生成摘要。";
+    }
+    const first = queuedEventProbabilityEvents[0];
+    const topTitles = queuedEventProbabilityEvents.slice(0, 3).map((item) => item.title).join("、");
+    const nextActions = queuedEventProbabilityEvents.slice(0, 2).map((item) => `${item.title}：${item.follow_up}`).join("；");
+    if (eventPrioritySort === "window") {
+      const activeCount = queuedEventProbabilityEvents.filter((item) => item.trigger_window === "近端窗口").length;
+      return `当前按近端窗口优先，排在前面的核心是 ${topTitles}；其中有 ${activeCount} 条已经进入近端交易窗口。优先动作：${nextActions}`;
+    }
+    if (eventPrioritySort === "probability") {
+      const strongCount = queuedEventProbabilityEvents.filter((item) => item.probability_label === "高" || item.probability_label === "中高").length;
+      return `当前按概率强度优先，最值得先看的包括 ${topTitles}；其中 ${strongCount} 条已经落在高或中高概率判断区间。优先动作：${nextActions}`;
+    }
+    if (eventPrioritySort === "category") {
+      return `当前按类别分组展示，优先从 ${first.category} 开始扫读；最前面的事件包括 ${topTitles}。优先动作：${nextActions}`;
+    }
+    return `当前按综合优先级排序，排在前面的重点事件包括 ${topTitles}；排名第一的是 ${first.title}。优先动作：${nextActions}`;
+  }, [eventPrioritySort, queuedEventProbabilityEvents]);
+  const eventPriorityRiskSummary = useMemo(() => {
+    if (!queuedEventProbabilityEvents.length) {
+      return "当前暂无重点事件进入队列，暂时没有需要额外防守的近端扰动。";
+    }
+    const plannedCount = queuedEventProbabilityEvents.filter((item) => item.trigger_window === "远期窗口").length;
+    const mediumCount = queuedEventProbabilityEvents.filter((item) => item.probability_label === "中").length;
+    const first = queuedEventProbabilityEvents[0];
+    if (eventPrioritySort === "window") {
+      return `近端视角下要防止“只盯近端、忽略兑现质量”的误判；尤其要留意 ${first.title} 后续是否真的出现公告、政策或数据验证。`;
+    }
+    if (eventPrioritySort === "probability") {
+      return `概率视角下要防止高概率叙事被反复交易；当前仍有 ${mediumCount} 条只处于中等判断区间，不能把它们当成已兑现结论。`;
+    }
+    if (eventPrioritySort === "category") {
+      return `类别视角下要防止分组阅读后忽略跨类别联动；尤其要留意宏观、行业、个股三层信号是否互相验证。`;
+    }
+    return `综合排序下要防止总分掩盖远期不确定性；当前还有 ${plannedCount} 条远期窗口事件，需要和排在前面的近端催化区分对待。`;
+  }, [eventPrioritySort, queuedEventProbabilityEvents]);
+  const toggleExpandedEventCard = (key: string) => {
+    setExpandedEventCards((current) => (
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    ));
+  };
+  const markEventTaskComplete = (key: string) => {
+    setCompletedEventTaskKeys((current) => (current.includes(key) ? current : [...current, key]));
+    setExpandedEventCards((current) => current.filter((item) => item !== key));
+  };
+  const restoreEventTask = (key: string) => {
+    setCompletedEventTaskKeys((current) => current.filter((item) => item !== key));
+  };
   const defaultSources = useMemo(() => buildDefaultSources(hub), [hub]);
   const moduleTopics = useMemo(() => ({
     tech: (radarConfig?.industries ?? []).filter((item) => item.module === "tech"),
@@ -1575,37 +1705,144 @@ export function Intel() {
                     <h3 className="font-semibold">重点事件</h3>
                     <p className="mt-1 text-sm text-muted-foreground">同一批事件支持从不同视角重排，方便先看近端、先看高概率，或先按类别扫一遍。</p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {EVENT_PROBABILITY_SORT_OPTIONS.map((option) => (
-                      <button
-                        key={option.key}
-                        onClick={() => setEventPrioritySort(option.key)}
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs transition-colors",
-                          eventPrioritySort === option.key
-                            ? "border-primary/50 bg-primary/10 text-primary"
-                            : "border-border/50 text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {EVENT_PROBABILITY_QUEUE_OPTIONS.map((option) => (
+                        <button
+                          key={option.key}
+                          onClick={() => setEventQueueView(option.key)}
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-xs transition-colors",
+                            eventQueueView === option.key
+                              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                              : "border-border/50 text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {option.label} ({eventQueueCounts[option.key]})
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {EVENT_PROBABILITY_SORT_OPTIONS.map((option) => (
+                        <button
+                          key={option.key}
+                          onClick={() => setEventPrioritySort(option.key)}
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-xs transition-colors",
+                            eventPrioritySort === option.key
+                              ? "border-primary/50 bg-primary/10 text-primary"
+                              : "border-border/50 text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+                <div className="mb-3 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
+                    <p className="text-sm font-medium">{eventQueueViewLabel(eventQueueView)} · {eventPrioritySortLabel(eventPrioritySort)}扫读摘要</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{eventPrioritySummary}</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                    <p className="text-sm font-medium">风险提示</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{eventPriorityRiskSummary}</p>
+                  </div>
+                </div>
+                {eventQueueView !== "verified" && pinnedEventProbabilityTask && (
+                  <div className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-primary">当前首要任务</p>
+                        <p className="mt-1 font-medium">{pinnedEventProbabilityTask.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {pinnedEventProbabilityTask.category} · {pinnedEventProbabilityTask.trigger_window} · {eventProbabilityVerificationLabel(pinnedEventProbabilityTask.verification_status)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => markEventTaskComplete(pinnedEventProbabilityTask.key)}
+                          className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/20"
+                        >
+                          标记已跟进
+                        </button>
+                        <span className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground">评分 {pinnedEventProbabilityTask.rank_score}</span>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{pinnedEventProbabilityTask.probability_label}</span>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm">{pinnedEventProbabilityTask.judgment}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">今天先做：{pinnedEventProbabilityTask.follow_up}</p>
+                    {nextEventProbabilityTask && (
+                      <div className="mt-3 rounded-lg border border-border/40 bg-background/30 px-3 py-3">
+                        <p className="text-xs text-muted-foreground">下一顺位</p>
+                        <p className="mt-1 text-sm font-medium">{nextEventProbabilityTask.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {nextEventProbabilityTask.category} · {nextEventProbabilityTask.trigger_window} · {eventProbabilityVerificationLabel(nextEventProbabilityTask.verification_status)}
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">随后跟进：{nextEventProbabilityTask.follow_up}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {eventQueueView === "todo" && archivedEventProbabilityEvents.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-border/40 bg-muted/15 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">已验证归档</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          当前有 {archivedEventProbabilityEvents.length} 条事件已归入已验证队列，默认不占用待跟进视野。
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setEventArchiveExpanded((current) => !current)}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        {eventArchiveExpanded ? "收起归档" : "展开归档"}
+                      </button>
+                    </div>
+                    {eventArchiveExpanded && (
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {archivedEventProbabilityEvents.map((item) => (
+                          <div key={item.key} className="rounded-lg border border-border/40 px-3 py-3 opacity-70">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium">{item.title}</p>
+                              <div className="flex items-center gap-2">
+                                {completedEventTaskKeys.includes(item.key) && (
+                                  <button
+                                    onClick={() => restoreEventTask(item.key)}
+                                    className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground transition hover:text-foreground"
+                                  >
+                                    恢复待跟进
+                                  </button>
+                                )}
+                                <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 text-[11px] text-emerald-200">
+                                  {eventProbabilityVerificationLabel(item.verification_status)}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">{item.category} · {item.trigger_window}</p>
+                            <p className="mt-2 text-sm text-muted-foreground">{eventProbabilityJudgmentPreview(item.judgment)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-3">
-                  {!sortedEventProbabilityEvents.length && (
+                  {!queuedEventProbabilityEvents.length && (
                     <div className="rounded-xl border border-dashed border-border/50 p-4 text-sm text-muted-foreground">
-                      当前还没有可展示的重点事件，等宏观日历、行业条目或关注列表催化进入事件流后会自动出现在这里。
+                      当前视图下还没有可展示的重点事件，等宏观日历、行业条目或关注列表催化进入事件流后会自动出现在这里。
                     </div>
                   )}
-                  {eventPrioritySort === "category" ? eventProbabilityCategoryGroups.map((group) => (
+                  {eventPrioritySort === "category" ? queuedEventProbabilityCategoryGroups.map((group) => (
                     <div key={group.category} className="space-y-3">
                       <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
                         <p className="text-sm font-medium">{group.category}</p>
                         <p className="mt-1 text-sm text-muted-foreground">{eventProbabilityCategoryDescription(group.category)}</p>
                       </div>
                       {group.items.map((item) => (
-                        <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                        <div key={item.key} className={cn("rounded-xl border border-border/40 p-4", isArchivedEventTask(item.key, item.verification_status) && "opacity-60")}>
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className="font-medium">{item.title}</p>
@@ -1614,23 +1851,46 @@ export function Intel() {
                             <div className="flex items-center gap-2">
                               <span className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground">评分 {item.rank_score}</span>
                               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.probability_label}</span>
+                              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 text-[11px] text-emerald-200">{eventProbabilityVerificationLabel(item.verification_status)}</span>
+                              {!isArchivedEventTask(item.key, item.verification_status) && (
+                                <button
+                                  onClick={() => markEventTaskComplete(item.key)}
+                                  className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200 transition hover:bg-emerald-500/20"
+                                >
+                                  标记已跟进
+                                </button>
+                              )}
                               <span className="text-xs text-primary">{eventProbabilityStatusLabel(item.status)}</span>
                             </div>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
-                          <p className="mt-2 text-sm text-muted-foreground">{item.rank_reason}</p>
-                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                            <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
-                            <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
-                            <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                          <p className="mt-2 text-sm">{eventProbabilityJudgmentPreview(item.judgment)}</p>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-muted-foreground">{item.rank_reason}</p>
+                            <button
+                              onClick={() => toggleExpandedEventCard(item.key)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              {expandedEventCards.includes(item.key) ? "收起详情" : "展开详情"}
+                            </button>
                           </div>
-                          <p className="mt-2 text-sm">{item.judgment}</p>
-                          <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
+                          {expandedEventCards.includes(item.key) && (
+                            <div className="mt-3 space-y-3 border-t border-border/40 pt-3">
+                              <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                                <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
+                                <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
+                                <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                              </div>
+                              <p className="text-sm text-muted-foreground">下一步：{item.follow_up}</p>
+                              <p className="text-sm">{item.judgment}</p>
+                              <p className="text-sm text-muted-foreground">{item.note}</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  )) : sortedEventProbabilityEvents.map((item) => (
-                    <div key={item.key} className="rounded-xl border border-border/40 p-4">
+                  )) : queuedEventProbabilityEvents.map((item) => (
+                    <div key={item.key} className={cn("rounded-xl border border-border/40 p-4", isArchivedEventTask(item.key, item.verification_status) && "opacity-60")}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="font-medium">{item.title}</p>
@@ -1639,18 +1899,41 @@ export function Intel() {
                         <div className="flex items-center gap-2">
                           <span className="rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground">评分 {item.rank_score}</span>
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.probability_label}</span>
+                          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 text-[11px] text-emerald-200">{eventProbabilityVerificationLabel(item.verification_status)}</span>
+                          {!isArchivedEventTask(item.key, item.verification_status) && (
+                            <button
+                              onClick={() => markEventTaskComplete(item.key)}
+                              className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200 transition hover:bg-emerald-500/20"
+                            >
+                              标记已跟进
+                            </button>
+                          )}
                           <span className="text-xs text-primary">{eventProbabilityStatusLabel(item.status)}</span>
                         </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{item.category}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{item.rank_reason}</p>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                        <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
-                        <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
-                        <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                      <p className="mt-2 text-sm">{eventProbabilityJudgmentPreview(item.judgment)}</p>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">{item.rank_reason}</p>
+                        <button
+                          onClick={() => toggleExpandedEventCard(item.key)}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          {expandedEventCards.includes(item.key) ? "收起详情" : "展开详情"}
+                        </button>
                       </div>
-                      <p className="mt-2 text-sm">{item.judgment}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
+                      {expandedEventCards.includes(item.key) && (
+                        <div className="mt-3 space-y-3 border-t border-border/40 pt-3">
+                          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">状态分 {item.rank_breakdown.status_score}</span>
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">概率分 {item.rank_breakdown.probability_score}</span>
+                            <span className="rounded-full border border-border/50 px-2 py-0.5">类别分 {item.rank_breakdown.category_score}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">下一步：{item.follow_up}</p>
+                          <p className="text-sm">{item.judgment}</p>
+                          <p className="text-sm text-muted-foreground">{item.note}</p>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

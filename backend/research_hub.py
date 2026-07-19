@@ -21,6 +21,9 @@ import newsradar
 MODULE_ORDER = ("tech", "macro", "industry", "stock", "geopolitics", "hiring")
 AUTO_OVERVIEW_SOURCE = "auto_overview_builder"
 MARKET_REPORT_DIR = Path(os.environ.get("VR_DATA_DIR") or Path.home() / ".vibe-research") / "market_reports"
+DECISION_COCKPIT_STATE_FILE = Path(os.environ.get("VR_DATA_DIR") or Path.home() / ".vibe-research") / "decision_cockpit" / "state.json"
+DECISION_QUESTION_STATUSES = {"待验证", "验证中", "已解决", "已失效"}
+FRAMEWORK_REVISION_STATES = {"待审", "已批准", "已废弃"}
 MAX_REPORT_TEXT_CHARS = 8000
 MAX_REPORT_PDF_PAGES = 8
 HBM_DRAFT_TABS = (
@@ -209,6 +212,83 @@ def _sector_relevance_score(sector: str, text: str) -> int:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _load_decision_cockpit_state() -> dict[str, Any]:
+    if not DECISION_COCKPIT_STATE_FILE.exists():
+        return {"question_status": {}, "framework_revision_status": {}, "updated_at": ""}
+    try:
+        data = json.loads(DECISION_COCKPIT_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"question_status": {}, "framework_revision_status": {}, "updated_at": ""}
+    if not isinstance(data, dict):
+        return {"question_status": {}, "framework_revision_status": {}, "updated_at": ""}
+    data.setdefault("question_status", {})
+    data.setdefault("framework_revision_status", {})
+    data.setdefault("updated_at", "")
+    return data
+
+
+def _save_decision_cockpit_state(data: dict[str, Any]) -> None:
+    DECISION_COCKPIT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data["updated_at"] = _utc_now_iso()
+    tmp = DECISION_COCKPIT_STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(DECISION_COCKPIT_STATE_FILE)
+
+
+def _decision_question_key(applies_to: str, question: str) -> str:
+    return f"{(applies_to or '').strip()}::{(question or '').strip()}"
+
+
+def _framework_revision_key(engine: str, title: str) -> str:
+    return f"{(engine or '').strip()}::{(title or '').strip()}"
+
+
+def update_decision_question_status(applies_to: str, question: str, status: str, resolution_impact: str = "") -> dict[str, Any]:
+    applies_to = (applies_to or "").strip()
+    question = (question or "").strip()
+    status = (status or "").strip()
+    if not applies_to:
+        raise ValueError("applies_to 不能为空")
+    if not question:
+        raise ValueError("question 不能为空")
+    if status not in DECISION_QUESTION_STATUSES:
+        raise ValueError("status 仅支持 待验证、验证中、已解决、已失效")
+    state = _load_decision_cockpit_state()
+    row = {
+        "applies_to": applies_to,
+        "question": question,
+        "status": status,
+        "resolution_impact": (resolution_impact or "").strip(),
+        "updated_at": _utc_now_iso(),
+    }
+    state["question_status"][_decision_question_key(applies_to, question)] = row
+    _save_decision_cockpit_state(state)
+    return row
+
+
+def update_framework_revision_status(engine: str, title: str, approval_state: str, review_note: str = "") -> dict[str, Any]:
+    engine = (engine or "").strip()
+    title = (title or "").strip()
+    approval_state = (approval_state or "").strip()
+    if engine not in {"sector_engine", "stock_engine"}:
+        raise ValueError("engine 仅支持 sector_engine 或 stock_engine")
+    if not title:
+        raise ValueError("title 不能为空")
+    if approval_state not in FRAMEWORK_REVISION_STATES:
+        raise ValueError("approval_state 仅支持 待审、已批准、已废弃")
+    state = _load_decision_cockpit_state()
+    row = {
+        "engine": engine,
+        "title": title,
+        "approval_state": approval_state,
+        "review_note": (review_note or "").strip(),
+        "updated_at": _utc_now_iso(),
+    }
+    state["framework_revision_status"][_framework_revision_key(engine, title)] = row
+    _save_decision_cockpit_state(state)
+    return row
 
 
 def is_hbm_sector(sector: str) -> bool:
@@ -1743,6 +1823,795 @@ def get_research_hub() -> dict:
             "weekly_reviews": weekly_reviews[:8],
         },
     }
+
+
+def _decision_factor_node(
+    node_id: str,
+    label: str,
+    node_type: str,
+    *,
+    description: str = "",
+    parent_id: str = "",
+    thesis_role: str = "验证项",
+    judgment: str = "待确认",
+    impact_on_thesis: str = "待观察",
+    evidence_refs: list[str] | None = None,
+    next_watchpoint: str = "",
+    indicator_rows: list[dict[str, Any]] | None = None,
+    sort_order: int = 0,
+) -> dict[str, Any]:
+    return {
+        "node_id": node_id,
+        "node_type": node_type,
+        "label": label,
+        "description": description,
+        "parent_id": parent_id,
+        "thesis_role": thesis_role,
+        "judgment": judgment,
+        "impact_on_thesis": impact_on_thesis,
+        "evidence_refs": evidence_refs or [],
+        "next_watchpoint": next_watchpoint,
+        "indicator_rows": indicator_rows or [],
+        "sort_order": sort_order,
+    }
+
+
+def _decision_indicator_row(
+    label: str,
+    current_value: str,
+    conclusion: str,
+    *,
+    frequency: str = "",
+    danger_line: str = "",
+    safety_line: str = "",
+    previous_value: str = "",
+    trend: str = "",
+    data_source: str = "",
+) -> dict[str, str]:
+    return {
+        "label": label,
+        "frequency": frequency,
+        "danger_line": danger_line,
+        "safety_line": safety_line,
+        "current_value": current_value,
+        "previous_value": previous_value,
+        "trend": trend,
+        "conclusion": conclusion,
+        "data_source": data_source,
+    }
+
+
+def _decision_question(
+    question: str,
+    applies_to: str,
+    priority: str,
+    uncertainty_type: str,
+    why_it_matters: str,
+    validation_path: str,
+    source_targets: list[str],
+    due_window: str,
+    status: str,
+    resolution_impact: str,
+) -> dict[str, Any]:
+    return {
+        "question": question,
+        "applies_to": applies_to,
+        "priority": priority,
+        "uncertainty_type": uncertainty_type,
+        "why_it_matters": why_it_matters,
+        "validation_path": validation_path,
+        "source_targets": source_targets,
+        "due_window": due_window,
+        "status": status,
+        "resolution_impact": resolution_impact,
+    }
+
+
+def _apply_decision_question_state(payload: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    overrides = state.get("question_status", {})
+    if not isinstance(overrides, dict):
+        return payload
+    for engine_key in ("strategy_engine", "sector_engine", "stock_engine"):
+        engine = payload.get(engine_key)
+        if not isinstance(engine, dict):
+            continue
+        for question in engine.get("open_questions", []) or []:
+            key = _decision_question_key(str(question.get("applies_to") or ""), str(question.get("question") or ""))
+            override = overrides.get(key)
+            if not isinstance(override, dict):
+                continue
+            question["status"] = override.get("status") or question.get("status", "待验证")
+            if override.get("resolution_impact"):
+                question["resolution_impact"] = override["resolution_impact"]
+    return payload
+
+
+def _apply_framework_revision_state(payload: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    overrides = state.get("framework_revision_status", {})
+    if not isinstance(overrides, dict):
+        return payload
+    for engine_key in ("sector_engine", "stock_engine"):
+        engine = payload.get(engine_key)
+        if not isinstance(engine, dict):
+            continue
+        for proposal in engine.get("framework_revision_queue", []) or []:
+            proposal.setdefault("approval_state", "待审")
+            proposal.setdefault("review_note", "")
+            key = _framework_revision_key(engine_key, str(proposal.get("title") or ""))
+            override = overrides.get(key)
+            if not isinstance(override, dict):
+                continue
+            proposal["approval_state"] = override.get("approval_state") or proposal["approval_state"]
+            proposal["review_note"] = override.get("review_note") or proposal["review_note"]
+    return payload
+
+
+def _decision_history(
+    title: str,
+    trigger: str,
+    old_conclusion: str,
+    new_conclusion: str,
+    logic_change: str,
+    applies_to: str,
+) -> dict[str, str]:
+    return {
+        "title": title,
+        "trigger": trigger,
+        "old_conclusion": old_conclusion,
+        "new_conclusion": new_conclusion,
+        "logic_change": logic_change,
+        "applies_to": applies_to,
+        "changed_at": _utc_now_iso(),
+        "approval_state": "live",
+    }
+
+
+def _group_watch_sectors(watch_stocks: list[dict[str, Any]], sector_entries: list[dict[str, Any]]) -> list[str]:
+    rows: list[str] = []
+    for item in watch_stocks:
+        group = str(item.get("group") or "").strip()
+        if group:
+            rows.append(group)
+    for entry in sector_entries:
+        for sector in entry.get("related_sectors", []) or []:
+            if sector:
+                rows.append(str(sector).strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row and row not in seen:
+            deduped.append(row)
+            seen.add(row)
+    return deduped[:8]
+
+
+def _strategy_layer(
+    key: str,
+    label: str,
+    status: str,
+    logic_state: str,
+    summary: str,
+    evidence: list[str],
+    watchpoints: list[str],
+    decision_implication: str,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "logic_state": logic_state,
+        "summary": summary,
+        "evidence": evidence,
+        "watchpoints": watchpoints,
+        "decision_implication": decision_implication,
+    }
+
+
+def _strategy_institution_viewpoints(sectors: list[str]) -> list[dict[str, str]]:
+    entries = []
+    for kind in ("research_note", "attachment_link", "weekly_review", "memo"):
+        entries.extend(knowledge.list_entries(kind=kind)[:8])
+    viewpoints = []
+    seen: set[str] = set()
+    for entry in entries:
+        title = str(entry.get("title") or "未命名观点")
+        if title in seen:
+            continue
+        seen.add(title)
+        related_sectors = entry.get("related_sectors") or []
+        mapped_layer = "中观框架" if related_sectors else "宏观框架"
+        text = " ".join([str(entry.get("summary_text") or ""), str(entry.get("content_preview") or ""), str(entry.get("content") or "")]).strip()
+        stance = "偏多" if any(keyword in text for keyword in ("积极", "增长", "上修", "改善", "受益")) else "待确认"
+        viewpoints.append({
+            "source": str(entry.get("type") or "knowledge"),
+            "title": title,
+            "stance": stance,
+            "mapped_layer": mapped_layer,
+            "summary": (str(entry.get("summary_text") or entry.get("content_preview") or entry.get("content") or "观点待补充")[:140]),
+            "evidence_date": str(entry.get("date") or ""),
+        })
+        if len(viewpoints) >= 5:
+            break
+    if viewpoints:
+        return viewpoints
+    return [{
+        "source": "institution_ingest_placeholder",
+        "title": "主流机构观点待接入",
+        "stance": "待确认",
+        "mapped_layer": "宏观框架",
+        "summary": "后续每日爬取券商策略、海外投行、行业研报和宏观数据库更新，并映射到宏观/中观/微观框架节点。",
+        "evidence_date": _utc_now_iso()[:10],
+    }]
+
+
+def _strategy_framework_sources() -> list[dict[str, str]]:
+    return [
+        {
+            "institution": "BlackRock Investment Institute",
+            "framework": "市场新范式、AI abundance/scarcity、利率中枢、组合再思考",
+            "url": "https://www.blackrock.com/corporate/insights/blackrock-investment-institute/publications/outlook",
+        },
+        {
+            "institution": "J.P. Morgan Asset Management",
+            "framework": "Guide to the Markets：宏观、利率、盈利、估值、风格和资产配置图谱",
+            "url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/guide-to-the-markets/",
+        },
+        {
+            "institution": "Goldman Sachs Asset Management",
+            "framework": "宏观复杂性、央行政策、贸易秩序、AI与组合再平衡",
+            "url": "https://am.gs.com/cms-assets/gsam-app/documents/insights/en/2025/Investment-Outlook-2026.pdf?view=true",
+        },
+        {
+            "institution": "Morgan Stanley Research",
+            "framework": "Tech Diffusion、Future of Energy、Multipolar World、Societal Shifts",
+            "url": "https://www.morganstanley.com/insights/articles/investment-outlook-shaping-markets-2026",
+        },
+        {
+            "institution": "中信证券策略",
+            "framework": "全球需求视角、低波市、制造业定价权、出海、AI商业化",
+            "url": "https://www.cls.cn/detail/2196689",
+        },
+        {
+            "institution": "招商证券策略框架",
+            "framework": "主线识别：宏观时代主题、中观结构转型、微观产业趋势与渗透率S曲线",
+            "url": "https://wallstreetcn.com/articles/3773831",
+        },
+    ]
+
+
+def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "sector": "AI应用/算力/半导体",
+            "stance": "看多",
+            "framework_driver": "技术扩散 + AI商业化 + 产业趋势渗透率",
+            "why": "海外和国内主流策略都把AI扩散/商业化作为跨年度主线，需用订单、Capex、盈利兑现继续验证。",
+            "source_refs": ["BlackRock", "Morgan Stanley", "Goldman Sachs", "中信证券", "招商证券"],
+        },
+        {
+            "sector": "电力设备/能源基础设施",
+            "stance": "看多",
+            "framework_driver": "AI电力约束 + 能源转型 + 稀缺资源",
+            "why": "AI和再工业化提高电力、能源和基础设施约束的重要性，适合作为中观景气和资本开支主线。",
+            "source_refs": ["BlackRock", "Morgan Stanley"],
+        },
+        {
+            "sector": "高端制造/出海链",
+            "stance": "看多",
+            "framework_driver": "全球需求重估 + 中国制造竞争力 + 利润天花板抬升",
+            "why": "国内策略强调A股基本面要从全球营收敞口和出海竞争力重新定价，不应只看本土需求。",
+            "source_refs": ["中信证券", "国泰海通"],
+        },
+        {
+            "sector": "资源品/传统制造提质",
+            "stance": "关注",
+            "framework_driver": "定价权 + 供给约束 + 稀缺性",
+            "why": "资源和传统制造若能把份额优势转化为定价权和利润率，需要纳入全市场机会池。",
+            "source_refs": ["中信证券", "BlackRock"],
+        },
+        {
+            "sector": "大金融/券商",
+            "stance": "关注",
+            "framework_driver": "资本市场改革 + 风险偏好 + 交易活跃度",
+            "why": "若市场进入低波慢牛或转型牛，金融和券商可能受益于交易活跃、资本市场改革和权益中枢上移。",
+            "source_refs": ["国泰海通", "中信建投观点汇总"],
+        },
+        {
+            "sector": "创新药/医疗科技",
+            "stance": "观察",
+            "framework_driver": "Societal Shifts + 产业创新 + 出海",
+            "why": "适合作为技术和社会结构变化的卫星方向，但需要管线、出海授权和商业化数据验证。",
+            "source_refs": ["Morgan Stanley", "国泰海通"],
+        },
+        {
+            "sector": "当前关注池映射",
+            "stance": "组合校验",
+            "framework_driver": "把你的持仓/关注放到全市场框架里验顺逆风",
+            "why": f"当前关注行业仅作为映射层：{('、'.join(preferred_directions[:3]) or '待映射')}，不作为策略框架本身的来源。",
+            "source_refs": ["portfolio_alignment"],
+        },
+    ]
+
+
+def _strategy_engine_payload(hub: dict[str, Any], watch_stocks: list[dict[str, Any]], holdings: list[dict[str, Any]], sectors: list[str]) -> dict[str, Any]:
+    macro_count = sum(len(group.get("items", [])) for group in hub["fundamental"]["macro_events"])
+    tech_count = len(hub["fundamental"]["global_tech_headlines"])
+    event_rows = hub["event_probability"]["priority_events"]
+    active_events = [item for item in event_rows if item.get("status") == "active"]
+    overall_wind = "中性偏多" if active_events else "中性"
+    preferred_directions = sectors[:3] or ["高景气行业", "政策受益方向"]
+    avoid_directions = ["高估值脆弱方向", "验证不足的短线叙事"]
+    tailwind_positions = [f"{item.get('name')}({item.get('ticker')})" for item in watch_stocks if item.get("group") in preferred_directions][:6]
+    holding_codes = {str(item.get("code") or "") for item in holdings}
+    headwind_positions = [
+        f"{item.get('name')}({item.get('ticker')})"
+        for item in watch_stocks
+        if item.get("group") not in preferred_directions and str(item.get("ticker", "")).split(".")[0] in holding_codes
+    ][:6]
+    factor_tree = [
+        _decision_factor_node(
+            "strategy-root",
+            "策略框架",
+            "pillar",
+            description="信息驱动预期，预期驱动估值，估值驱动供求，供求驱动股价。",
+            thesis_role="核心驱动",
+            judgment=overall_wind,
+            impact_on_thesis="支持",
+            next_watchpoint="继续跟踪宏观窗口、流动性边际和风格拥挤度。",
+            sort_order=0,
+        ),
+        _decision_factor_node(
+            "strategy-macro",
+            "宏观与政策预期",
+            "factor",
+            parent_id="strategy-root",
+            thesis_role="核心驱动",
+            judgment="中性",
+            impact_on_thesis="待观察",
+            evidence_refs=["Intel/宏观事件", "Database/中国宏观数据库"],
+            next_watchpoint="关注下一批宏观数据和政策表述。",
+            indicator_rows=[
+                _decision_indicator_row("宏观事件条数", str(macro_count), "有持续跟踪", frequency="日度", data_source="research_hub"),
+                _decision_indicator_row("事件概率活跃事件", str(len(active_events)), "活跃事件越多越需重算", frequency="日度", data_source="event_probability"),
+            ],
+            sort_order=1,
+        ),
+        _decision_factor_node(
+            "strategy-liquidity",
+            "流动性与风险偏好",
+            "factor",
+            parent_id="strategy-root",
+            thesis_role="核心驱动",
+            judgment="中性偏多" if tech_count >= 1 else "中性",
+            impact_on_thesis="支持",
+            evidence_refs=["Intel/流动性", "DailyReview/大盘复盘"],
+            next_watchpoint="继续跟踪全球利率中枢和风格拥挤。",
+            indicator_rows=[
+                _decision_indicator_row("科技头条数量", str(tech_count), "风险偏好仍在", frequency="日度", data_source="newsradar"),
+                _decision_indicator_row("重点行业数量", str(len(preferred_directions)), "有结构性主线", frequency="日度", data_source="framework"),
+            ],
+            sort_order=2,
+        ),
+    ]
+    strategy_framework = [
+        _strategy_layer(
+            "macro",
+            "宏观框架",
+            "中性",
+            "待确认",
+            "增长、通胀、政策与海外利率共同决定组合风险预算。",
+            [f"宏观事件 {macro_count} 条", f"活跃事件概率 {len(active_events)} 个"],
+            ["下一批宏观数据", "政策会议和海外利率窗口"],
+            "宏观未明显转弱前，策略层可维持结构性进攻，但避免总仓位过度激进。",
+        ),
+        _strategy_layer(
+            "meso",
+            "中观框架",
+            "中性偏多" if preferred_directions else "待确认",
+            "强化" if preferred_directions else "待确认",
+            "行业景气、产业趋势和政策方向决定当前可重点跟踪的主线。",
+            preferred_directions or ["重点行业仍待筛选"],
+            ["行业数据、研报框架、产业链订单与价格变化"],
+            f"优先把研究资源放在 {('、'.join(preferred_directions) or '高景气主线')}，并持续和个股层联动。",
+        ),
+        _strategy_layer(
+            "micro",
+            "微观框架",
+            "待确认",
+            "待确认",
+            "公司订单、盈利、管理层和估值兑现决定行业逻辑能否落到持仓收益。",
+            tailwind_positions or ["持仓顺风证据仍待补强"],
+            ["持仓公司跟踪点评", "公告、财报、调研和盈利预期变化"],
+            "个股动作必须继承行业判断，同时用公司自身数据验证是否存在强阿尔法或证伪。",
+        ),
+        _strategy_layer(
+            "liquidity_valuation",
+            "资金与估值框架",
+            "中性偏热" if tech_count >= 1 else "中性",
+            "部分强化",
+            "流动性、风险偏好、估值分位和交易拥挤度决定胜率之外的赔率。",
+            [f"科技头条 {tech_count} 条", "估值和拥挤度需要继续接入高频数据"],
+            ["成交额、风格拥挤、外资和卖方预期变化"],
+            "若资金温度继续升高但基本面证据不足，应提高止盈和验证要求。",
+        ),
+    ]
+    recommendation_matrix = {
+        "increase": preferred_directions[:3] or ["已有证据强化的行业"],
+        "reduce": avoid_directions,
+        "observe": ["宏观变量切换", "风格拥挤度", "行业到个股的传导强度"],
+        "do_not_buy": ["只有主题叙事、缺少因子验证的方向"],
+    }
+    sector_opportunity_map = _strategy_sector_opportunity_map(preferred_directions)
+    bullish_sectors = [item["sector"] for item in sector_opportunity_map if item["stance"] == "看多"][:3]
+    current_strategy_view = {
+        "framework_basis": "source_backed_full_market",
+        "market_style": "成长占优但需防拥挤" if tech_count >= 1 else "均衡偏结构",
+        "bullish_sectors": bullish_sectors,
+        "why": [
+            "主流机构框架共同指向：AI扩散/商业化、能源与电力约束、全球制造竞争力是当前全市场优先主线。",
+            f"宏观层活跃事件 {len(active_events)} 个，尚未触发明显防守切换。",
+            "资金与估值层提示风险偏好仍在，但高估值方向必须用行业和个股因子继续验证，不能只买主题。",
+        ],
+        "positioning_advice": "围绕顺风行业做组合倾斜，但不追只有主题、缺少因子验证的方向。",
+    }
+    return {
+        "summary": {
+            "title": "策略引擎",
+            "one_line_view": f"当前策略层判断为{overall_wind}，优先围绕 {('、'.join(preferred_directions) or '重点主线')} 做配置，避免验证不足的高估值叙事。",
+            "updated_at": _utc_now_iso(),
+        },
+        "market_temperature": {
+            "macro_judgment": "中性",
+            "index_judgment": "中性偏多",
+            "style_judgment": "成长占优但需防拥挤",
+            "overall_wind": overall_wind,
+        },
+        "factor_tree": factor_tree,
+        "current_strategy_view": current_strategy_view,
+        "framework_sources": _strategy_framework_sources(),
+        "sector_opportunity_map": sector_opportunity_map,
+        "strategy_framework": strategy_framework,
+        "institution_viewpoints": _strategy_institution_viewpoints(sectors),
+        "daily_iteration": {
+            "refresh_cadence": "每日盘前/盘后更新",
+            "source_scope": ["券商策略报告", "海外投行观点", "行业研报", "宏观数据库", "DailyReview", "Intel"],
+            "mapping_rule": "新信息先映射到宏观/中观/微观/资金估值框架，再判断强化、削弱、证伪或推翻。",
+            "next_refresh": "下一次资讯刷新后自动重算策略框架。",
+        },
+        "recommendation_matrix": recommendation_matrix,
+        "allocation_view": {
+            "should_focus": f"优先聚焦 {('、'.join(preferred_directions) or '已跟踪主线')}",
+            "should_avoid": "避免只靠短期情绪驱动、缺少中长期验证的方向。",
+            "preferred_directions": preferred_directions,
+            "avoid_directions": avoid_directions,
+        },
+        "portfolio_alignment": {
+            "is_tailwind": bool(tailwind_positions),
+            "alignment_summary": "当前持仓和关注池已有部分顺风方向，但仍需靠行业和个股层继续验证。",
+            "tailwind_positions": tailwind_positions,
+            "headwind_positions": headwind_positions,
+        },
+        "risks": [
+            "若宏观预期转弱但市场仍高估值，策略层需要快速下修。",
+            "若风格过度拥挤，行业与个股层要把交易风险和逻辑风险拆开看。",
+        ],
+        "next_watchpoints": [
+            "下一批宏观数据和政策窗口",
+            "流动性与风险偏好的边际变化",
+        ],
+        "open_questions": [
+            _decision_question(
+                "当前最重要的宏观变量究竟是增长预期还是流动性预期？",
+                "strategy",
+                "高",
+                "市场分歧",
+                "会影响策略层对高估值主线的容忍度。",
+                "继续跟踪宏观数据、政策表述和市场风格反馈。",
+                ["中国宏观数据库", "宏观策略框架", "DailyReview"],
+                "未来1-2周",
+                "待验证",
+                "可能导致策略层从中性偏多转为均衡或防守。",
+            ),
+        ],
+        "history": [
+            _decision_history("策略层初始判断", "V1 驾驶舱首次生成", "待形成", overall_wind, "建立初始框架", "strategy"),
+        ],
+    }
+
+
+def _sector_card_payload(sector: str) -> dict[str, Any]:
+    indicators = knowledge.list_sector_indicators(sector=sector).get("items", [])
+    modules = knowledge.list_sector_modules(sector=sector).get("items", [])
+    entries = knowledge.list_entries(sector=sector)
+    factor_tree = [
+        _decision_factor_node(
+            f"{sector}-root",
+            f"{sector}框架",
+            "pillar",
+            description="行业判断由框架树持续驱动，需求决定方向，供给决定弹性。",
+            thesis_role="核心驱动",
+            judgment="中性偏多" if entries else "待确认",
+            impact_on_thesis="支持" if entries else "待观察",
+            next_watchpoint="继续补关键景气、供需、价格和政策验证。",
+            sort_order=0,
+        ),
+        _decision_factor_node(
+            f"{sector}-commodity",
+            "商品/产业属性",
+            "factor",
+            parent_id=f"{sector}-root",
+            thesis_role="核心驱动",
+            judgment="中性偏多" if indicators else "待确认",
+            impact_on_thesis="支持" if indicators else "待观察",
+            evidence_refs=[item.get("name", "") for item in indicators[:3]],
+            next_watchpoint="跟踪需求方向、供给弹性和库存变化。",
+            indicator_rows=[
+                _decision_indicator_row(
+                    item.get("name", "未命名指标"),
+                    item.get("viewpoint", "待更新")[:24] or "待更新",
+                    "已纳入跟踪",
+                    frequency=item.get("freq", ""),
+                    data_source=item.get("data_source", ""),
+                )
+                for item in indicators[:3]
+            ],
+            sort_order=1,
+        ),
+        _decision_factor_node(
+            f"{sector}-policy",
+            "政策/交易结构",
+            "factor",
+            parent_id=f"{sector}-root",
+            thesis_role="风险约束",
+            judgment="待观察",
+            impact_on_thesis="待观察",
+            evidence_refs=[item.get("title", "") for item in entries[:2]],
+            next_watchpoint="跟踪政策表述、市场拥挤和关键催化验证。",
+            indicator_rows=[
+                _decision_indicator_row("框架模块数", str(len(modules)), "框架可继续补强", frequency="不定期", data_source="framework"),
+                _decision_indicator_row("相关条目数", str(len(entries)), "已有基础沉淀", frequency="不定期", data_source="knowledge"),
+            ],
+            sort_order=2,
+        ),
+    ]
+    action = "focus" if indicators or entries else "watch"
+    return {
+        "sector": sector,
+        "one_line_judgment": f"{sector} 当前处于{ '持续跟踪并等待更多验证' if action == 'watch' else '可继续跟踪并择优配置' }阶段。",
+        "action": action,
+        "confidence": "中" if action == "focus" else "中低",
+        "key_factor_changes": [item.get("name", "") for item in indicators[:3]] or ["行业框架待继续补强"],
+        "supporting_signals": [item.get("title", "") for item in entries[:2]] or ["已有行业沉淀条目"],
+        "risk_signals": ["若核心景气指标缺失，行业判断只能保持中等置信度。"] if not indicators else ["继续验证需求方向和供给弹性是否同步。"],
+        "scenario_base": f"{sector} 基准情景下维持当前景气判断，等待关键指标进一步确认。",
+        "scenario_upside": f"{sector} 若需求与订单同步改善，行业逻辑可从跟踪升级为更积极配置。",
+        "scenario_downside": f"{sector} 若关键指标走弱或政策扰动增强，行业动作应快速降为观察。",
+        "last_material_change_at": _utc_now_iso(),
+        "factor_tree": factor_tree,
+    }
+
+
+def _sector_engine_payload(hub: dict[str, Any], watch_stocks: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    sector_entries = knowledge.list_entries(kind="sector_profile")
+    sectors = _group_watch_sectors(watch_stocks, sector_entries) or ["重点行业"]
+    sector_cards = [_sector_card_payload(sector) for sector in sectors]
+    sector_state_map = {
+        item["sector"]: {
+            "sector": item["sector"],
+            "action": item["action"],
+            "judgment": item["one_line_judgment"],
+            "confidence": item["confidence"],
+        }
+        for item in sector_cards
+    }
+    factor_tree = []
+    for card in sector_cards:
+        factor_tree.extend(card["factor_tree"])
+    alerts = [
+        {
+            "title": f"{card['sector']} 仍有关键验证缺口",
+            "severity": "medium",
+            "logic_change": "框架未完成",
+            "next_action": "继续补行业指标、模块和周度验证。",
+        }
+        for card in sector_cards[:2]
+    ]
+    payload = {
+        "summary": {
+            "title": "行业引擎",
+            "one_line_view": f"当前重点行业先围绕 {('、'.join(sectors[:3]))} 展开，行业动作先以框架验证和景气确认优先。",
+            "updated_at": _utc_now_iso(),
+        },
+        "sector_cards": sector_cards,
+        "factor_tree": factor_tree,
+        "alerts": alerts,
+        "sector_state_map": sector_state_map,
+        "framework_draft": {
+            "source": "institution_generated",
+            "title": "行业框架草稿",
+            "summary": "系统会结合主流机构框架和你的投喂内容，持续生成行业框架草稿。",
+            "updated_at": _utc_now_iso(),
+        },
+        "framework_revision_queue": [
+            {
+                "title": f"{sectors[0]} 框架待补强",
+                "reason": "当前仍缺更多供需、价格和政策验证。",
+                "updated_at": _utc_now_iso(),
+                "approval_state": "待审",
+                "review_note": "",
+            },
+        ],
+        "open_questions": [
+            _decision_question(
+                f"{sectors[0]} 的核心景气变量究竟是需求方向还是供给弹性？",
+                f"sector:{sectors[0]}",
+                "高",
+                "框架缺口",
+                "会直接影响行业动作是继续 focus 还是降回 watch。",
+                "补充行业指标、研报框架和周度跟踪评论。",
+                ["行业中心/跟踪指标", "行业框架草稿", "周度复盘"],
+                "未来1-2周",
+                "待验证",
+                "可能推动行业框架修订和个股层整体重算。",
+            ),
+        ],
+        "history": [
+            _decision_history("行业层初始判断", "V1 驾驶舱首次生成", "待形成", "行业框架已初始化", "建立初始框架", "sector"),
+        ],
+    }
+    return payload, sector_state_map
+
+
+def _stock_engine_payload(
+    watch_stocks: list[dict[str, Any]],
+    holdings: list[dict[str, Any]],
+    sector_state_map: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    holding_map = {str(item.get("code") or ""): item for item in holdings}
+    tracked: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in watch_stocks:
+        ticker = str(item.get("ticker") or "")
+        if ticker and ticker not in seen:
+            tracked.append({
+                "ticker": ticker,
+                "name": str(item.get("name") or ticker),
+                "sector": str(item.get("group") or "未分组"),
+            })
+            seen.add(ticker)
+    for code, row in holding_map.items():
+        ticker = next((item["ticker"] for item in tracked if item["ticker"].split(".")[0] == code), "")
+        if ticker:
+            continue
+        tracked.append({
+            "ticker": f"{code}.SZ",
+            "name": str(row.get("name") or code),
+            "sector": "未分组",
+        })
+    decision_cards = []
+    for item in tracked[:12]:
+        ticker = item["ticker"]
+        sector = item["sector"]
+        sector_state = sector_state_map.get(sector, {"sector": sector, "action": "watch", "judgment": "行业信息仍待补强", "confidence": "中低"})
+        comments = knowledge.list_entries(kind="tracking_comment", stock=ticker)
+        modules = knowledge.list_stock_modules(ticker=ticker).get("items", [])
+        in_portfolio = ticker.split(".")[0] in holding_map
+        sector_action = sector_state["action"]
+        has_company_signal = bool(comments or modules)
+        if sector_action == "focus" and has_company_signal:
+            action = "hold" if in_portfolio else "buy"
+            confidence = "中高"
+            logic_state = "强化"
+        elif sector_action == "avoid":
+            action = "sell" if in_portfolio else "watch"
+            confidence = "中"
+            logic_state = "削弱"
+        else:
+            action = "hold" if in_portfolio else "watch"
+            confidence = "中"
+            logic_state = "待确认"
+        decision_cards.append({
+            "ticker": ticker,
+            "name": item["name"],
+            "sector": sector,
+            "one_line_judgment": f"{item['name']} 当前先按{action}处理，核心取决于行业顺逆风与公司跟踪信号是否共振。",
+            "action": action,
+            "confidence": confidence,
+            "logic_state": logic_state,
+            "industry_context": {
+                "sector": sector,
+                "action": sector_state["action"],
+                "judgment": sector_state["judgment"],
+                "transmission": "行业变化已纳入个股判断链路。",
+            },
+            "company_context": {
+                "ticker": ticker,
+                "has_tracking_comment": bool(comments),
+                "has_custom_modules": bool(modules),
+                "latest_comment": comments[0]["title"] if comments else "暂无最新跟踪点评",
+            },
+            "factor_changes": [comment["title"] for comment in comments[:2]] or [module.get("title", "") for module in modules[:2]] or ["公司层跟踪信号仍待补强"],
+            "next_watchpoints": [
+                "跟踪行业变化是否继续传导到公司",
+                "补强订单、价格、盈利或管理层验证",
+            ],
+            "last_material_change_at": _utc_now_iso(),
+        })
+    alerts = [
+        {
+            "title": f"{card['name']} 需要继续验证行业与公司逻辑是否同向",
+            "severity": "medium",
+            "logic_change": card["logic_state"],
+            "next_action": "优先补跟踪点评和个股模块。",
+        }
+        for card in decision_cards[:2]
+    ]
+    return {
+        "summary": {
+            "title": "个股引擎",
+            "one_line_view": "个股层只对现有持仓和自选股给动作建议，并显式继承行业层变化。",
+            "updated_at": _utc_now_iso(),
+        },
+        "decision_cards": decision_cards,
+        "alerts": alerts,
+        "framework_draft": {
+            "source": "institution_generated",
+            "title": "个股框架草稿",
+            "summary": "系统会结合主流机构框架、个股中心与用户投喂内容，持续生成个股框架草稿。",
+            "updated_at": _utc_now_iso(),
+        },
+        "framework_revision_queue": [
+            {
+                "title": "个股层待补行业传导验证",
+                "reason": "需要继续确认行业变化是否真实传导到个股盈利和估值。",
+                "updated_at": _utc_now_iso(),
+                "approval_state": "待审",
+                "review_note": "",
+            },
+        ],
+        "open_questions": [
+            _decision_question(
+                "当前个股判断里，哪些变化来自行业顺逆风，哪些变化来自公司自身？",
+                "stock",
+                "高",
+                "逻辑冲突",
+                "会直接影响买卖不动建议的置信度。",
+                "继续补跟踪点评、订单验证、盈利和估值拆解。",
+                ["个股中心/跟踪点评", "个股中心/自定义模块", "周度复盘"],
+                "未来1周",
+                "待验证",
+                "可能导致个股动作从 watch/hold 切换为 buy/sell。",
+            ),
+        ],
+        "history": [
+            _decision_history("个股层初始判断", "V1 驾驶舱首次生成", "待形成", "个股动作队列已初始化", "建立初始框架", "stock"),
+        ],
+    }
+
+
+def get_decision_cockpit() -> dict[str, Any]:
+    import portfolio as pf
+
+    hub = get_research_hub()
+    watch_stocks = _watch_stock_items()
+    holdings = pf.get_portfolio().get("holdings", [])
+    sectors = _group_watch_sectors(watch_stocks, knowledge.list_entries(kind="sector_profile"))
+    strategy_engine = _strategy_engine_payload(hub, watch_stocks, holdings, sectors)
+    sector_engine, sector_state_map = _sector_engine_payload(hub, watch_stocks)
+    stock_engine = _stock_engine_payload(watch_stocks, holdings, sector_state_map)
+    payload = {
+        "summary": {
+            "title": "今日决策总览",
+            "one_line_view": "把新信息持续映射到策略、行业和个股逻辑上，优先减少漏看和旧逻辑失效后的反应迟缓。",
+            "updated_at": _utc_now_iso(),
+        },
+        "strategy_engine": strategy_engine,
+        "sector_engine": sector_engine,
+        "stock_engine": stock_engine,
+    }
+    state = _load_decision_cockpit_state()
+    payload = _apply_decision_question_state(payload, state)
+    return _apply_framework_revision_state(payload, state)
 
 
 def _intel_kind_label(kind: str) -> str:

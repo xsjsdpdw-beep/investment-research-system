@@ -231,14 +231,15 @@ test("IndustryDraftCanvas normalizes persisted schemas before reading HBM tabs",
   assert.match(source, /normalizeIndustryDraftCanvasInput\(data\)/);
 });
 
-test("IndustryDraftCanvas requires explicit initial-draft context for HBM polish", () => {
+test("IndustryDraftCanvas renders rich blocks for sector initial-draft canvases while keeping HBM-specific edit context", () => {
   const source = readFileSync(new URL("../src/components/research/IndustryDraftCanvas.tsx", import.meta.url), "utf8");
   const frameworkSource = readFileSync(new URL("../src/pages/Framework.tsx", import.meta.url), "utf8");
 
   assert.match(source, /isInitialDraftCanvas = false/);
-  assert.match(source, /const isHbmInitialDraft = isInitialDraftCanvas && scopeType === "sector" && isHbmSectorName\(scopeId\)/);
-  assert.match(source, /<Fragment key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/Fragment>/);
-  assert.doesNotMatch(source, /<div key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft \}\)\}<\/div>/);
+  assert.match(source, /const isIndustryInitialDraft = isInitialDraftCanvas && scopeType === "sector"/);
+  assert.match(source, /const isHbmInitialDraft = isIndustryInitialDraft && isHbmSectorName\(scopeId\)/);
+  assert.match(source, /<Fragment key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft: isIndustryInitialDraft \}\)\}<\/Fragment>/);
+  assert.doesNotMatch(source, /<div key=\{block\.id\}>\{renderIndustryDraftBlock\(block, \{ isHbmInitialDraft: isIndustryInitialDraft \}\)\}<\/div>/);
   assert.match(frameworkSource, /<IndustryDraftCanvas data=\{sectorDraftSchema\} scopeType="sector" scopeId=\{selectedSector \|\| "HBM"\} isInitialDraftCanvas \/>/);
 });
 
@@ -302,10 +303,11 @@ test("getIndustryDraftActiveTab resolves requested tab and falls back to first t
   assert.equal(getIndustryDraftActiveTab(canvas, "missing")?.title, "总览");
 });
 
-test("shouldUseIndustryDraftCanvas is HBM-only and requires matching schema", () => {
+test("shouldUseIndustryDraftCanvas supports HBM and humanoid sectors when schema matches", () => {
   const canvas = adaptLegacyHBMDashboardToCanvas(legacy);
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: canvas }), true);
   assert.equal(shouldUseIndustryDraftCanvas("HBM存储", { draft_theme_schema: canvas }), true);
+  assert.equal(shouldUseIndustryDraftCanvas("人形机器人", { draft_theme_schema: canvas }), true);
   assert.equal(shouldUseIndustryDraftCanvas("光互联", { draft_theme_schema: canvas }), false);
   assert.equal(shouldUseIndustryDraftCanvas("HBM", { draft_theme_schema: null }), false);
 });

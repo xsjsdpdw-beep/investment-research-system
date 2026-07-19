@@ -185,6 +185,20 @@ class MarketReportIngestIn(BaseModel):
     max_reports_per_stock: int = 5
 
 
+class DecisionQuestionStatusIn(BaseModel):
+    applies_to: str
+    question: str
+    status: Literal["待验证", "验证中", "已解决", "已失效"]
+    resolution_impact: str = ""
+
+
+class FrameworkRevisionStatusIn(BaseModel):
+    engine: Literal["sector_engine", "stock_engine"]
+    title: str
+    approval_state: Literal["待审", "已批准", "已废弃"]
+    review_note: str = ""
+
+
 class SectorReportIngestIn(BaseModel):
     sector: str
     days: int = 365
@@ -655,6 +669,37 @@ def framework_stock_module_order(payload: StockModuleOrderIn):
 @app.get("/api/research/hub")
 def research_hub_data():
     return {"data": research_hub.get_research_hub()}
+
+
+@app.get("/api/decision-cockpit")
+def decision_cockpit_data():
+    return {"data": research_hub.get_decision_cockpit()}
+
+
+@app.post("/api/decision-cockpit/questions/status")
+def decision_cockpit_question_status(payload: DecisionQuestionStatusIn):
+    try:
+        return {"data": research_hub.update_decision_question_status(
+            payload.applies_to,
+            payload.question,
+            payload.status,
+            payload.resolution_impact,
+        )}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/decision-cockpit/framework-revisions/status")
+def decision_cockpit_framework_revision_status(payload: FrameworkRevisionStatusIn):
+    try:
+        return {"data": research_hub.update_framework_revision_status(
+            payload.engine,
+            payload.title,
+            payload.approval_state,
+            payload.review_note,
+        )}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.get("/api/research/stock-center")

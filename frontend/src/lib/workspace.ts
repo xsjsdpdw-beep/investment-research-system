@@ -3,6 +3,7 @@ import {
   Database,
   LayoutGrid,
   LayoutTemplate,
+  LineChart,
   NotebookPen,
   Radar,
   Settings,
@@ -119,6 +120,12 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
       { key: "liquidity", label: "流动性" },
       { key: "event-probability", label: "事件概率" },
     ],
+  },
+  {
+    to: "/decision-cockpit",
+    label: "决策驾驶舱",
+    icon: LineChart,
+    description: "把框架、因子和动作建议收敛成闭环",
   },
   {
     to: "/sectors",

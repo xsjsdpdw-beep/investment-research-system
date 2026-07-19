@@ -366,6 +366,8 @@ export interface EventProbabilityItem {
     category_score: number;
   };
   rank_reason: string;
+  verification_status: string;
+  follow_up: string;
 }
 
 export interface EventProbabilitySource {
@@ -471,6 +473,246 @@ export interface ResearchHubData {
     stock_focus: { ticker: string; name: string; group: string }[];
     weekly_reviews: KnowledgeEntry[];
   };
+}
+
+export interface DecisionIndicatorRow {
+  label: string;
+  frequency: string;
+  danger_line: string;
+  safety_line: string;
+  current_value: string;
+  previous_value: string;
+  trend: string;
+  conclusion: string;
+  data_source: string;
+}
+
+export interface DecisionFrameworkNode {
+  node_id: string;
+  node_type: string;
+  label: string;
+  description: string;
+  parent_id: string;
+  thesis_role: string;
+  judgment: string;
+  impact_on_thesis: string;
+  evidence_refs: string[];
+  next_watchpoint: string;
+  indicator_rows: DecisionIndicatorRow[];
+  sort_order: number;
+}
+
+export interface DecisionQuestion {
+  question: string;
+  applies_to: string;
+  priority: string;
+  uncertainty_type: string;
+  why_it_matters: string;
+  validation_path: string;
+  source_targets: string[];
+  due_window: string;
+  status: string;
+  resolution_impact: string;
+}
+
+export interface DecisionQuestionStatusPayload {
+  applies_to: string;
+  question: string;
+  status: "待验证" | "验证中" | "已解决" | "已失效";
+  resolution_impact?: string;
+}
+
+export interface DecisionHistoryEntry {
+  title: string;
+  trigger: string;
+  old_conclusion: string;
+  new_conclusion: string;
+  logic_change: string;
+  applies_to: string;
+  changed_at: string;
+  approval_state: string;
+}
+
+export interface FrameworkDraft {
+  source: string;
+  title: string;
+  summary: string;
+  updated_at: string;
+}
+
+export interface FrameworkRevisionProposal {
+  title: string;
+  reason: string;
+  updated_at: string;
+  approval_state: string;
+  review_note: string;
+}
+
+export interface FrameworkRevisionStatusPayload {
+  engine: "sector_engine" | "stock_engine";
+  title: string;
+  approval_state: "待审" | "已批准" | "已废弃";
+  review_note?: string;
+}
+
+export interface StrategyFrameworkLayer {
+  key: string;
+  label: string;
+  status: string;
+  logic_state: string;
+  summary: string;
+  evidence: string[];
+  watchpoints: string[];
+  decision_implication: string;
+}
+
+export interface StrategyInstitutionViewpoint {
+  source: string;
+  title: string;
+  stance: string;
+  mapped_layer: string;
+  summary: string;
+  evidence_date: string;
+}
+
+export interface StrategyEngineData {
+  summary: { title: string; one_line_view: string; updated_at: string };
+  current_strategy_view: {
+    framework_basis: string;
+    market_style: string;
+    bullish_sectors: string[];
+    why: string[];
+    positioning_advice: string;
+  };
+  market_temperature: {
+    macro_judgment: string;
+    index_judgment: string;
+    style_judgment: string;
+    overall_wind: string;
+  };
+  framework_sources: {
+    institution: string;
+    framework: string;
+    url: string;
+  }[];
+  sector_opportunity_map: {
+    sector: string;
+    stance: string;
+    framework_driver: string;
+    why: string;
+    source_refs: string[];
+  }[];
+  factor_tree: DecisionFrameworkNode[];
+  strategy_framework: StrategyFrameworkLayer[];
+  institution_viewpoints: StrategyInstitutionViewpoint[];
+  daily_iteration: {
+    refresh_cadence: string;
+    source_scope: string[];
+    mapping_rule: string;
+    next_refresh: string;
+  };
+  recommendation_matrix: {
+    increase: string[];
+    reduce: string[];
+    observe: string[];
+    do_not_buy: string[];
+  };
+  allocation_view: {
+    should_focus: string;
+    should_avoid: string;
+    preferred_directions: string[];
+    avoid_directions: string[];
+  };
+  portfolio_alignment: {
+    is_tailwind: boolean;
+    alignment_summary: string;
+    tailwind_positions: string[];
+    headwind_positions: string[];
+  };
+  risks: string[];
+  next_watchpoints: string[];
+  open_questions: DecisionQuestion[];
+  history: DecisionHistoryEntry[];
+}
+
+export interface SectorEngineCard {
+  sector: string;
+  one_line_judgment: string;
+  action: string;
+  confidence: string;
+  key_factor_changes: string[];
+  supporting_signals: string[];
+  risk_signals: string[];
+  scenario_base: string;
+  scenario_upside: string;
+  scenario_downside: string;
+  last_material_change_at: string;
+  factor_tree: DecisionFrameworkNode[];
+}
+
+export interface DecisionAlert {
+  title: string;
+  severity: string;
+  logic_change: string;
+  next_action: string;
+}
+
+export interface SectorEngineData {
+  summary: { title: string; one_line_view: string; updated_at: string };
+  sector_cards: SectorEngineCard[];
+  factor_tree: DecisionFrameworkNode[];
+  alerts: DecisionAlert[];
+  sector_state_map: Record<string, { sector: string; action: string; judgment: string; confidence: string }>;
+  framework_draft: FrameworkDraft;
+  framework_revision_queue: FrameworkRevisionProposal[];
+  open_questions: DecisionQuestion[];
+  history: DecisionHistoryEntry[];
+}
+
+export interface IndustryContext {
+  sector: string;
+  action: string;
+  judgment: string;
+  transmission: string;
+}
+
+export interface CompanyContext {
+  ticker: string;
+  has_tracking_comment: boolean;
+  has_custom_modules: boolean;
+  latest_comment: string;
+}
+
+export interface StockDecisionCard {
+  ticker: string;
+  name: string;
+  sector: string;
+  one_line_judgment: string;
+  action: "buy" | "sell" | "hold" | "watch";
+  confidence: string;
+  logic_state: string;
+  industry_context: IndustryContext;
+  company_context: CompanyContext;
+  factor_changes: string[];
+  next_watchpoints: string[];
+  last_material_change_at: string;
+}
+
+export interface StockEngineData {
+  summary: { title: string; one_line_view: string; updated_at: string };
+  decision_cards: StockDecisionCard[];
+  alerts: DecisionAlert[];
+  framework_draft: FrameworkDraft;
+  framework_revision_queue: FrameworkRevisionProposal[];
+  open_questions: DecisionQuestion[];
+  history: DecisionHistoryEntry[];
+}
+
+export interface DecisionCockpitData {
+  summary: { title: string; one_line_view: string; updated_at: string };
+  strategy_engine: StrategyEngineData;
+  sector_engine: SectorEngineData;
+  stock_engine: StockEngineData;
 }
 
 export interface MacroOverviewData {
@@ -1091,6 +1333,11 @@ export const api = {
   saveStockModuleOrder: (payload: { ticker: string; ids: string[] }) =>
     request<StockModuleData>("/framework/stock-modules/order", "PUT", payload),
   researchHub: () => get<ResearchHubData>("/research/hub"),
+  decisionCockpit: () => get<DecisionCockpitData>("/decision-cockpit"),
+  updateDecisionQuestionStatus: (payload: DecisionQuestionStatusPayload) =>
+    request<DecisionQuestion>("/decision-cockpit/questions/status", "POST", payload),
+  updateFrameworkRevisionStatus: (payload: FrameworkRevisionStatusPayload) =>
+    request<FrameworkRevisionProposal>("/decision-cockpit/framework-revisions/status", "POST", payload),
   newsSourcesConfig: () => get<NewsRadarConfig>("/research/news-sources-config"),
   saveNewsSourcesConfig: (payload: NewsRadarConfig) => request<NewsRadarConfig>("/research/news-sources-config", "PUT", payload),
   stockCenter: (ticker: string) => get<StockCenterData>(`/research/stock-center?ticker=${encodeURIComponent(ticker)}`),
