@@ -228,13 +228,7 @@ def _load_tradingagents_runner() -> Runner:
 
     def runner(task: TaskState, publish_log: Callable[[str, str | None], None]) -> dict[str, Any]:
         provider = _resolve_provider(task.cfg["provider"])
-        config = {
-            "llm_provider": provider,
-            "backend_url": task.cfg["baseURL"],
-            "deep_think_llm": task.cfg["deepModel"],
-            "quick_think_llm": task.cfg["quickModel"],
-            "output_language": "Chinese",
-        }
+        config = _build_graph_config(task.cfg)
         publish_log("任务初始化", "已加载 TradingAgents 运行时，开始执行多 Agent 分析")
         env_var = _PROVIDER_API_KEY_ENV.get(provider)
         if not env_var and provider != "ollama":
@@ -245,6 +239,27 @@ def _load_tradingagents_runner() -> Runner:
         return _normalize_result(task, final_state or {}, decision)
 
     return runner
+
+
+def _build_graph_config(cfg: dict[str, str]) -> dict[str, Any]:
+    repo_path = _find_local_repo_path()
+    try:
+        with _prepend_sys_path(repo_path):
+            from tradingagents.default_config import DEFAULT_CONFIG
+    except Exception as exc:  # noqa: BLE001
+        hint = (
+            f"；如未安装，请先执行 `pip install -e <TradingAgents-astock目录>` "
+            f"或设置环境变量 `VR_TRADINGAGENTS_DIR` 指向源码目录"
+        )
+        raise RuntimeError(f"TradingAgents 运行时未安装或不可用{hint}") from exc
+    return {
+        **DEFAULT_CONFIG,
+        "llm_provider": _resolve_provider(cfg["provider"]),
+        "backend_url": cfg["baseURL"],
+        "deep_think_llm": cfg["deepModel"],
+        "quick_think_llm": cfg["quickModel"],
+        "output_language": "Chinese",
+    }
 
 
 def _run_task(task: TaskState) -> None:

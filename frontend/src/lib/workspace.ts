@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarRange,
   Database,
   LayoutGrid,
@@ -167,6 +168,7 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
     ],
   },
   { to: "/portfolio", label: "我的持仓", icon: Wallet, description: "本地维护持仓与盈亏跟踪" },
+  { to: "/tradingagents", label: "TradingAgents", icon: Bot, description: "A 股多 Agent 深度分析工作台" },
   { to: "/settings", label: "接入 AI", icon: Settings, description: "配置你自己的模型与访问密钥" },
 ];
 

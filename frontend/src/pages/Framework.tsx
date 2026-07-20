@@ -1401,7 +1401,7 @@ const DEFAULT_OVERVIEW_SOURCES: Record<"sector" | "stock", OverviewSourceInterfa
       id: "sector-alphaengine-placeholder",
       label: "AlphaEngine 行业专家纪要接口",
       provider: "alphaengine_placeholder",
-      note: "未来接入专家会、电话会、渠道纪要等高价值行业源。",
+      note: "已支持导入行业专家会、电话会、渠道纪要等高价值行业源。",
       enabled: true,
     },
   ],
@@ -1417,7 +1417,7 @@ const DEFAULT_OVERVIEW_SOURCES: Record<"sector" | "stock", OverviewSourceInterfa
       id: "stock-alphaengine-placeholder",
       label: "AlphaEngine 个股专家纪要接口",
       provider: "alphaengine_placeholder",
-      note: "未来接入公司电话会、专家访谈、渠道反馈等高价值个股源。",
+      note: "已支持导入公司电话会、专家访谈、渠道反馈等高价值个股源。",
       enabled: true,
     },
   ],
@@ -1654,6 +1654,11 @@ export function Framework() {
   const [sectorKind, setSectorKind] = useState<"sector_profile" | "research_note" | "tracking_comment" | "attachment_link">("sector_profile");
   const [stockKind, setStockKind] = useState<"research_note" | "tracking_comment" | "attachment_link">("research_note");
   const [ingestingReports, setIngestingReports] = useState(false);
+  const [importingAlphaEngine, setImportingAlphaEngine] = useState<"" | "industry" | "stock">("");
+  const [alphaEngineImportStatus, setAlphaEngineImportStatus] = useState<Record<"industry" | "stock", { tone: "muted" | "success" | "error"; text: string } | null>>({
+    industry: null,
+    stock: null,
+  });
   const [buildingOverview, setBuildingOverview] = useState<"" | "sector" | "stock">("");
   const [generatingPack, setGeneratingPack] = useState(false);
   const [importingSectorKey, setImportingSectorKey] = useState("");
@@ -2110,6 +2115,70 @@ export function Framework() {
       if (scope === "stock" && selectedTicker) await loadStockCenter(selectedTicker);
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "高价值纪要沉淀失败");
+    }
+  };
+
+  const ingestAlphaEngineNotes = async (scope: "industry" | "stock") => {
+    if (scope === "industry" && !selectedSector) {
+      toast.error("先选择一个行业中心");
+      return;
+    }
+    if (scope === "stock" && !selectedTicker) {
+      toast.error("先选择一个个股中心");
+      return;
+    }
+    const selectedStockName = orderedWatchStocks.find((item) => `${item.code}.${item.market}` === selectedTicker)?.name || "";
+    const query = premiumNoteForm.title.trim() || (scope === "industry" ? selectedSector : selectedStockName || selectedTicker);
+    try {
+      setImportingAlphaEngine(scope);
+      setAlphaEngineImportStatus((prev) => ({ ...prev, [scope]: { tone: "muted", text: `正在用「${query}」查询 AlphaEngine...` } }));
+      const result = await api.ingestAlphaEngineNotes({
+        sector: scope === "industry" ? selectedSector : undefined,
+        ticker: scope === "stock" ? selectedTicker : undefined,
+        query,
+        limit: 3,
+        source_name: "alphaengine",
+        source_type: "expert_transcript",
+        note_kind: "research_note",
+      });
+      for (const entry of result.items) {
+        const scopeType = scope === "industry" ? "sector" : "stock";
+        const scopeId = scope === "industry" ? selectedSector : selectedTicker;
+        if (!scopeId) continue;
+        await api.appendOverviewCandidates({
+          scope_type: scopeType,
+          scope_id: scopeId,
+          source_type: "expert_call",
+          candidates: [{
+            id: `${entry.id}-candidate`,
+            source_type: "expert_call",
+            title: entry.title,
+            summary: entry.summary_text || entry.content_preview || "",
+            source_title: entry.title,
+            source_entry_id: entry.id,
+          }],
+        }).catch(() => null);
+      }
+      if (scope === "industry") await loadSectorWorkbench(selectedSector).catch(() => null);
+      if (scope === "stock" && selectedTicker) {
+        await loadStockCenter(selectedTicker).catch(() => null);
+        await loadStockWorkbench(selectedTicker).catch(() => null);
+      }
+      const label = scope === "industry" ? "行业" : "个股";
+      if (result.created > 0) {
+        setAlphaEngineImportStatus((prev) => ({ ...prev, [scope]: { tone: "success", text: `已导入 ${result.created} 条${label}纪要，查询词：${result.query}` } }));
+        toast.success(`AlphaEngine 已导入 ${result.created} 条${label}纪要`);
+      } else {
+        setAlphaEngineImportStatus((prev) => ({ ...prev, [scope]: { tone: "muted", text: `AlphaEngine 返回 0 条，查询词：${result.query}。可以在左侧纪要标题里换更具体的公司/主题词再试。` } }));
+        toast.info("AlphaEngine 本次没有返回可导入纪要");
+      }
+      setPremiumNoteForm((prev) => ({ ...prev, source_name: "alphaengine" }));
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "AlphaEngine 导入失败";
+      setAlphaEngineImportStatus((prev) => ({ ...prev, [scope]: { tone: "error", text: message } }));
+      toast.error(message);
+    } finally {
+      setImportingAlphaEngine("");
     }
   };
 
@@ -5183,8 +5252,13 @@ export function Framework() {
                 <p className="text-sm font-medium">高价值纪要接入口</p>
                 <input value={premiumNoteForm.title} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, title: event.target.value }))} placeholder="纪要标题：工程机械专家会纪要 / 渠道会纪要" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
                 <input value={premiumNoteForm.source_name} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, source_name: event.target.value }))} placeholder="来源标识：alphaengine / expert_network / 渠道库" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                <AutoResizeTextarea value={premiumNoteForm.content} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, content: event.target.value }))} placeholder="未来这里可以直接接专家会议纪要、渠道会纪要等高价值接口；当前也支持先手动贴入正文沉淀。" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                <button onClick={() => void ingestPremiumNote("industry")} className={primaryButtonClass}>沉淀进行业中心</button>
+                <AutoResizeTextarea value={premiumNoteForm.content} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, content: event.target.value }))} placeholder="这里支持两种方式：1）直接手动贴入正文沉淀；2）点下面按钮，从 AlphaEngine 按标题/行业名自动抓纪要。" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <button onClick={() => void ingestPremiumNote("industry")} className={primaryButtonClass}>沉淀进行业中心</button>
+                  <button onClick={() => void ingestAlphaEngineNotes("industry")} disabled={importingAlphaEngine === "industry"} className={secondaryButtonWideClass}>
+                    <Sparkles className="h-4 w-4" /> {importingAlphaEngine === "industry" ? "正在导入 AlphaEngine..." : "从 AlphaEngine 导入"}
+                  </button>
+                </div>
               </div>
               <button
                 onClick={() => reportInputRef.current?.click()}
@@ -5301,8 +5375,13 @@ export function Framework() {
                 <p className="text-sm font-medium">高价值纪要接入口</p>
                 <input value={premiumNoteForm.title} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, title: event.target.value }))} placeholder="纪要标题：公司专家会 / 渠道反馈 / 电话会补充" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
                 <input value={premiumNoteForm.source_name} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, source_name: event.target.value }))} placeholder="来源标识：alphaengine / expert_network / 买方纪要库" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                <AutoResizeTextarea value={premiumNoteForm.content} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, content: event.target.value }))} placeholder="未来这里可以直接接专家纪要、会议纪要和渠道反馈接口；当前也支持先手动贴入正文沉淀。" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-                <button onClick={() => void ingestPremiumNote("stock")} className={primaryButtonClass}>沉淀进个股中心</button>
+                <AutoResizeTextarea value={premiumNoteForm.content} onChange={(event) => setPremiumNoteForm((prev) => ({ ...prev, content: event.target.value }))} placeholder="这里支持两种方式：1）直接手动贴入正文沉淀；2）点下面按钮，从 AlphaEngine 按标题/公司名自动抓纪要。" className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <button onClick={() => void ingestPremiumNote("stock")} className={primaryButtonClass}>沉淀进个股中心</button>
+                  <button onClick={() => void ingestAlphaEngineNotes("stock")} disabled={importingAlphaEngine === "stock"} className={secondaryButtonWideClass}>
+                    <Sparkles className="h-4 w-4" /> {importingAlphaEngine === "stock" ? "正在导入 AlphaEngine..." : "从 AlphaEngine 导入"}
+                  </button>
+                </div>
               </div>
               <button
                 onClick={() => reportInputRef.current?.click()}
@@ -5977,6 +6056,26 @@ export function Framework() {
                     <p className="text-sm text-muted-foreground">
                       行业概览现在是这条赛道的总框架页。你投喂的研报、纪要、附件和自定义模块都会不断沉淀进来，AI 也会基于这套材料持续更新。
                     </p>
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
+                      <span className="text-xs text-muted-foreground">AlphaEngine 纪要导入</span>
+                      <button
+                        onClick={() => void ingestAlphaEngineNotes("industry")}
+                        disabled={importingAlphaEngine === "industry"}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {importingAlphaEngine === "industry" ? "正在导入..." : "从 AlphaEngine 导入到当前行业"}
+                      </button>
+                      <span className="text-[11px] text-muted-foreground/70">默认按当前行业名抓取；如果你先在左侧“高价值纪要接入口”里填了标题，会优先按标题查询。</span>
+                      {alphaEngineImportStatus.industry && (
+                        <span className={cn(
+                          "basis-full text-[11px]",
+                          alphaEngineImportStatus.industry.tone === "error" ? "text-destructive" : alphaEngineImportStatus.industry.tone === "success" ? "text-primary" : "text-muted-foreground/80",
+                        )}>
+                          {alphaEngineImportStatus.industry.text}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6371,6 +6470,26 @@ export function Framework() {
                     <p className="text-sm text-muted-foreground">
                       公司概览现在是这只股票的总框架页。公开信息、调研纪要、跟踪点评、附件和自定义模块都会持续汇总到这里，方便 AI 和你一起迭代认知。
                     </p>
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
+                      <span className="text-xs text-muted-foreground">AlphaEngine 纪要导入</span>
+                      <button
+                        onClick={() => void ingestAlphaEngineNotes("stock")}
+                        disabled={importingAlphaEngine === "stock"}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {importingAlphaEngine === "stock" ? "正在导入..." : "从 AlphaEngine 导入到当前个股"}
+                      </button>
+                      <span className="text-[11px] text-muted-foreground/70">默认按当前公司名抓取；如果你先在左侧“高价值纪要接入口”里填了标题，会优先按标题查询。</span>
+                      {alphaEngineImportStatus.stock && (
+                        <span className={cn(
+                          "basis-full text-[11px]",
+                          alphaEngineImportStatus.stock.tone === "error" ? "text-destructive" : alphaEngineImportStatus.stock.tone === "success" ? "text-primary" : "text-muted-foreground/80",
+                        )}>
+                          {alphaEngineImportStatus.stock.text}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">

@@ -219,6 +219,18 @@ class PremiumNoteIn(BaseModel):
     summary_text: str = ""
 
 
+class AlphaEngineIngestIn(BaseModel):
+    sector: str = ""
+    ticker: str = ""
+    query: str = ""
+    limit: int = 3
+    page_size: int = 5
+    max_pages: int = 1
+    source_name: str = "alphaengine"
+    source_type: str = "expert_transcript"
+    note_kind: str = "research_note"
+
+
 class SectorOverviewBuildIn(BaseModel):
     sector: str
 
@@ -729,6 +741,16 @@ def research_sector_reports_ingest(payload: SectorReportIngestIn):
 def research_premium_notes_ingest(payload: PremiumNoteIn):
     try:
         return {"data": research_hub.ingest_premium_note(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/research/alphaengine/ingest")
+def research_alphaengine_ingest(payload: AlphaEngineIngestIn):
+    try:
+        return {"data": research_hub.ingest_alphaengine_notes(payload.model_dump())}
+    except (FileNotFoundError, RuntimeError) as e:
+        raise HTTPException(502, f"AlphaEngine 抓取失败：{e}") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

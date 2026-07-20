@@ -196,12 +196,18 @@ def test_decision_cockpit_exposes_strategy_sector_and_stock_engines(workspace_cl
     assert data["strategy_engine"]["current_strategy_view"]["bullish_sectors"]
     assert data["strategy_engine"]["current_strategy_view"]["why"]
     assert data["strategy_engine"]["framework_sources"]
+    assert {item["source_type"] for item in data["strategy_engine"]["framework_sources"]} >= {"user_fed", "institution_extracted", "analyst_tracked"}
+    assert all(item["url"] for item in data["strategy_engine"]["framework_sources"] if item["source_type"] != "user_fed")
+    assert all(item["logic"] for item in data["strategy_engine"]["framework_sources"])
+    assert all(item["information_inputs"] for item in data["strategy_engine"]["framework_sources"])
     assert data["strategy_engine"]["sector_opportunity_map"]
+    assert all("x" in item and "y" in item and "heat" in item for item in data["strategy_engine"]["sector_opportunity_map"])
     assert "AI应用/算力/半导体" in data["strategy_engine"]["current_strategy_view"]["bullish_sectors"]
     assert data["strategy_engine"]["current_strategy_view"]["framework_basis"] == "source_backed_full_market"
     assert [item["key"] for item in data["strategy_engine"]["strategy_framework"]] == ["macro", "meso", "micro", "liquidity_valuation"]
     assert data["strategy_engine"]["strategy_framework"][0]["label"] == "宏观框架"
     assert data["strategy_engine"]["institution_viewpoints"]
+    assert "url" in data["strategy_engine"]["institution_viewpoints"][0]
     assert data["strategy_engine"]["daily_iteration"]["source_scope"]
     assert data["strategy_engine"]["recommendation_matrix"]["increase"]
     assert data["strategy_engine"]["open_questions"]
@@ -457,6 +463,54 @@ def test_premium_note_ingest_can_sink_into_industry_and_stock_centers(workspace_
     stock_notes = workspace_client.get("/api/knowledge/entries?kind=research_note&stock=000425.SZ")
     assert stock_notes.status_code == 200
     assert stock_notes.json()["data"][0]["title"] == "徐工机械专家会纪要"
+
+
+def test_alphaengine_ingest_can_sink_into_industry_and_stock_centers(workspace_client: TestClient, monkeypatch):
+    import alphaengine
+
+    def fake_search(query: str, *, page_size: int = 5, max_pages: int = 1):
+        title = "徐工机械 AlphaEngine 纪要" if "徐工" in query else "工程机械 AlphaEngine 纪要"
+        companies = "徐工机械" if "徐工" in query else ""
+        return [
+            {
+                "id": title,
+                "title": title,
+                "publish_time": "2026-07-19 10:30:00",
+                "institution": "Alpha",
+                "document_type": "专家纪要",
+                "companies": companies,
+                "summary": "本周新增渠道反馈和专家交流要点。",
+                "query": query,
+            }
+        ]
+
+    monkeypatch.setattr(alphaengine, "search_notes", fake_search)
+
+    industry_note = workspace_client.post("/api/research/alphaengine/ingest", json={
+        "sector": "工程机械",
+        "query": "工程机械",
+        "limit": 1,
+    })
+    assert industry_note.status_code == 200
+    created = industry_note.json()["data"]
+    assert created["scope"] == "industry"
+    assert created["items"][0]["title"] == "工程机械 AlphaEngine 纪要"
+
+    stock_note = workspace_client.post("/api/research/alphaengine/ingest", json={
+        "ticker": "000425.SZ",
+        "query": "徐工机械",
+        "limit": 1,
+    })
+    assert stock_note.status_code == 200
+    assert stock_note.json()["data"]["scope"] == "stock"
+
+    sector_notes = workspace_client.get("/api/knowledge/entries?kind=research_note&sector=工程机械")
+    assert sector_notes.status_code == 200
+    assert sector_notes.json()["data"][0]["title"] == "工程机械 AlphaEngine 纪要"
+
+    stock_notes = workspace_client.get("/api/knowledge/entries?kind=research_note&stock=000425.SZ")
+    assert stock_notes.status_code == 200
+    assert stock_notes.json()["data"][0]["title"] == "徐工机械 AlphaEngine 纪要"
 
 
 def test_market_report_ingest_dedupes_and_attaches_to_stock_center(workspace_client: TestClient, monkeypatch):

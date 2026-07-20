@@ -573,6 +573,7 @@ export interface StrategyInstitutionViewpoint {
   mapped_layer: string;
   summary: string;
   evidence_date: string;
+  url: string;
 }
 
 export interface StrategyEngineData {
@@ -591,13 +592,19 @@ export interface StrategyEngineData {
     overall_wind: string;
   };
   framework_sources: {
+    source_type: string;
     institution: string;
     framework: string;
+    logic: string;
+    information_inputs: string[];
     url: string;
   }[];
   sector_opportunity_map: {
     sector: string;
     stance: string;
+    x: number;
+    y: number;
+    heat: number;
     framework_driver: string;
     why: string;
     source_refs: string[];
@@ -817,6 +824,16 @@ export interface PremiumNoteIngestResult {
   scope: "industry" | "stock";
   source_name: string;
   source_type: string;
+}
+
+export interface AlphaEngineIngestResult {
+  scope: "industry" | "stock";
+  target: string;
+  query: string;
+  source_name: string;
+  source_type: string;
+  created: number;
+  items: KnowledgeEntry[];
 }
 
 export interface OverviewSourceInterface {
@@ -1357,6 +1374,17 @@ export const api = {
     tags?: string[];
     summary_text?: string;
   }) => request<PremiumNoteIngestResult>("/research/premium-notes", "POST", payload),
+  ingestAlphaEngineNotes: (payload: {
+    sector?: string;
+    ticker?: string;
+    query?: string;
+    limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    source_name?: string;
+    source_type?: string;
+    note_kind?: string;
+  }) => request<AlphaEngineIngestResult>("/research/alphaengine/ingest", "POST", payload),
   overviewWorkbench: (scopeType: "sector" | "stock", scopeId: string) =>
     get<OverviewWorkbench>(
       `/research/overview-workbench?scope_type=${encodeURIComponent(scopeType)}&scope_id=${encodeURIComponent(scopeId)}`,

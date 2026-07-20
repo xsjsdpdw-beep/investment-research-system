@@ -12,6 +12,7 @@ import { Template } from "@/pages/Template";
 import { Settings } from "@/pages/Settings";
 import { Portfolio } from "@/pages/Portfolio";
 import { DecisionCockpit } from "@/pages/DecisionCockpit";
+import { TradingAgents } from "@/pages/TradingAgents";
 
 export const router = createBrowserRouter([
   {
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
       { path: "/framework", element: <Framework /> },
       { path: "/database", element: <Database /> },
       { path: "/templates", element: <Template /> },
+      { path: "/tradingagents", element: <TradingAgents /> },
       { path: "/settings", element: <Settings /> },
     ],
   },

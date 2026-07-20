@@ -2,7 +2,7 @@
 
 import { ApiError, authHeaders } from "./api";
 import { APP_CONFIG } from "./app-config";
-import { isCliProvider, type ProviderId } from "./ai-models";
+import { isCliProvider, normalizeModelId, type ProviderId } from "./ai-models";
 
 export interface LlmConfig {
   provider: ProviderId;
@@ -29,16 +29,17 @@ export function loadLlm(): LlmConfig | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const c = JSON.parse(raw) as LlmConfig;
+    const normalized = { ...c, model: normalizeModelId(c.model) };
     // 订阅(CLI)：有 model 即可，免 key；API：需 baseURL + key + model。
-    const ok = c.model && (isCliProvider(c.provider) || (c.baseURL && c.apiKey));
-    return ok ? c : null;
+    const ok = normalized.model && (isCliProvider(normalized.provider) || (normalized.baseURL && normalized.apiKey));
+    return ok ? normalized : null;
   } catch {
     return null;
   }
 }
 
 export function saveLlm(cfg: LlmConfig) {
-  localStorage.setItem(KEY, JSON.stringify(cfg));
+  localStorage.setItem(KEY, JSON.stringify({ ...cfg, model: normalizeModelId(cfg.model) }));
 }
 
 export function clearLlm() {

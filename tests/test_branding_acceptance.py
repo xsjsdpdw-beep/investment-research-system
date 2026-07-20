@@ -158,18 +158,71 @@ def test_tradingagents_deep_analysis_is_wired_through_settings_stock_page_and_ru
     assert "test_run_task_emits_result_with_fake_runner" in runtime_tests
 
 
+def test_tradingagents_has_top_level_workspace_and_full_page_flow():
+    workspace = read("frontend/src/lib/workspace.ts")
+    router = read("frontend/src/router.tsx")
+    page = read("frontend/src/pages/TradingAgents.tsx")
+
+    assert 'to: "/tradingagents"' in workspace
+    assert 'label: "TradingAgents"' in workspace
+    assert workspace.index('to: "/tradingagents"') < workspace.index('to: "/settings"')
+
+    assert 'import { TradingAgents } from "@/pages/TradingAgents";' in router
+    assert 'path: "/tradingagents", element: <TradingAgents />' in router
+
+    assert "startTradingAgentsRun" in page
+    assert "streamTradingAgentsRun" in page
+    assert "cancelTradingAgentsRun" in page
+    assert "resolveTradingAgentsConfig" in page
+    assert "api.watchlist()" in page
+    assert "分析师报告" in page
+    assert "运行进度" in page
+
+
+def test_alphaengine_ingest_is_wired_through_framework_and_runtime():
+    framework = read("frontend/src/pages/Framework.tsx")
+    api = read("frontend/src/lib/api.ts")
+    app_py = read("backend/app.py")
+    hub = read("backend/research_hub.py")
+    alphaengine = read("backend/alphaengine.py")
+    workspace_tests = read("backend/tests/test_workspace_api.py")
+
+    assert "AlphaEngine 行业专家纪要接口" in framework
+    assert "AlphaEngine 个股专家纪要接口" in framework
+    assert "从 AlphaEngine 导入" in framework
+    assert "alphaEngineImportStatus" in framework
+    assert "AlphaEngine 返回 0 条" in framework
+    assert "ingestAlphaEngineNotes" in framework
+
+    assert 'ingestAlphaEngineNotes: (payload:' in api
+    assert '"/research/alphaengine/ingest"' in api
+
+    assert 'class AlphaEngineIngestIn(BaseModel):' in app_py
+    assert '@app.post("/api/research/alphaengine/ingest")' in app_py
+
+    assert "def ingest_alphaengine_notes(payload: dict) -> dict:" in hub
+    assert "alphaengine.search_notes" in hub
+
+    assert "def search_notes(query: str" in alphaengine
+    assert "summary-search" in alphaengine
+    assert 'data.get("success") is False' in alphaengine
+
+    assert "test_alphaengine_ingest_can_sink_into_industry_and_stock_centers" in workspace_tests
+
+
 def test_sidebar_prioritizes_high_frequency_pages():
     workspace = read("frontend/src/lib/workspace.ts")
 
     calendar = workspace.index('label: "投资日历"')
     memos = workspace.index('label: "投资备忘"')
     watchlist = workspace.index('label: "关注列表"')
-    intel = workspace.index('label: "资讯雷达"')
+    intel = workspace.index('label: "投研资讯"')
     framework = workspace.index('label: "框架沉淀"')
     database = workspace.index('label: "数据库"')
+    tradingagents = workspace.index('label: "TradingAgents"')
     settings = workspace.index('label: "接入 AI"')
 
-    assert calendar < memos < watchlist < intel < framework < database < settings
+    assert calendar < memos < watchlist < intel < framework < database < tradingagents < settings
 
 
 def test_daily_review_exposes_quick_links_to_core_workflows():
@@ -393,6 +446,8 @@ def test_decision_cockpit_shell_is_registered():
     assert "current_strategy_view:" in api_types
     assert "framework_basis:" in api_types
     assert "framework_sources:" in api_types
+    assert "source_type:" in api_types
+    assert "information_inputs:" in api_types
     assert "sector_opportunity_map:" in api_types
     assert "strategy_framework:" in api_types
     assert "institution_viewpoints:" in api_types
@@ -417,9 +472,16 @@ def test_decision_cockpit_shell_is_registered():
     assert "看多板块" in cockpit
     assert "核心理由" in cockpit
     assert "框架来源" in cockpit
+    assert "source.url" in cockpit
+    assert "打开来源" in cockpit
     assert "全市场机会地图" in cockpit
+    assert "<svg" in cockpit
+    assert "item.x" in cockpit
+    assert "item.y" in cockpit
     assert "策略框架" in cockpit
     assert "主流机构观点映射" in cockpit
+    assert "viewpoint.url" in cockpit
+    assert "打开观点来源" in cockpit
     assert "每日迭代机制" in cockpit
     assert "建议矩阵" in cockpit
     assert "layer.label" in cockpit

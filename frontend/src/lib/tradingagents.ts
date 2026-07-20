@@ -1,5 +1,5 @@
 import { ApiError, authHeaders } from "./api";
-import { isCliProvider } from "./ai-models";
+import { isCliProvider, normalizeModelId } from "./ai-models";
 import { loadLlm } from "./llm";
 
 export interface TradingAgentsConfig {
@@ -45,7 +45,12 @@ export function loadTradingAgentsConfig(): TradingAgentsConfig | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const cfg = JSON.parse(raw) as TradingAgentsConfig;
+    const parsed = JSON.parse(raw) as TradingAgentsConfig;
+    const cfg = {
+      ...parsed,
+      deepModel: normalizeModelId(parsed.deepModel),
+      quickModel: normalizeModelId(parsed.quickModel),
+    };
     if (!cfg.enabled) return null;
     if (!cfg.provider || !cfg.baseURL || !cfg.apiKey || !cfg.deepModel || !cfg.quickModel) return null;
     return cfg;
@@ -72,7 +77,11 @@ export function resolveTradingAgentsConfig(): TradingAgentsConfig | null {
 }
 
 export function saveTradingAgentsConfig(cfg: TradingAgentsConfig) {
-  localStorage.setItem(KEY, JSON.stringify(cfg));
+  localStorage.setItem(KEY, JSON.stringify({
+    ...cfg,
+    deepModel: normalizeModelId(cfg.deepModel),
+    quickModel: normalizeModelId(cfg.quickModel),
+  }));
 }
 
 export function clearTradingAgentsConfig() {

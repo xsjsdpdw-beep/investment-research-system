@@ -388,26 +388,39 @@ export function DecisionCockpit() {
                   </div>
                 </div>
               </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-border/40 bg-muted/15 p-4">
-                  <p className="text-sm font-medium">框架来源</p>
-                  <div className="mt-3 space-y-3">
-                    {data.strategy_engine.framework_sources.map((source) => (
-                      <div key={source.institution} className="rounded-lg border border-border/30 bg-background/20 p-3">
-                        <p className="text-sm font-medium">{source.institution}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{source.framework}</p>
-                      </div>
-                    ))}
+              <div className="rounded-xl border border-border/40 bg-muted/15 p-4">
+                <p className="text-sm font-medium">全市场机会地图</p>
+                <div className="mt-3 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+                  <div className="relative min-h-[320px] overflow-hidden rounded-xl border border-border/30 bg-background/20 p-4">
+                    <div className="absolute left-4 top-4 text-[11px] text-muted-foreground">景气强度</div>
+                    <div className="absolute bottom-4 right-4 text-[11px] text-muted-foreground">框架共振</div>
+                    <svg viewBox="0 0 100 100" className="h-72 w-full">
+                      <line x1="10" y1="90" x2="95" y2="90" className="stroke-border" strokeWidth="0.6" />
+                      <line x1="10" y1="90" x2="10" y2="8" className="stroke-border" strokeWidth="0.6" />
+                      <line x1="10" y1="50" x2="95" y2="50" className="stroke-border/60" strokeDasharray="2 2" strokeWidth="0.4" />
+                      <line x1="50" y1="90" x2="50" y2="8" className="stroke-border/60" strokeDasharray="2 2" strokeWidth="0.4" />
+                      {data.strategy_engine.sector_opportunity_map.map((item) => (
+                        <g key={item.sector}>
+                          <circle
+                            cx={item.x}
+                            cy={100 - item.y}
+                            r={Math.max(4, item.heat / 10)}
+                            className={item.stance === "看多" ? "fill-primary/70" : "fill-muted-foreground/45"}
+                          />
+                          <text x={item.x + 3} y={100 - item.y - 2} className="fill-current text-[3px]">
+                            {item.sector}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
                   </div>
-                </div>
-                <div className="rounded-xl border border-border/40 bg-muted/15 p-4">
-                  <p className="text-sm font-medium">全市场机会地图</p>
-                  <div className="mt-3 space-y-3">
+                  <div className="space-y-3">
                     {data.strategy_engine.sector_opportunity_map.map((item) => (
                       <div key={item.sector} className="rounded-lg border border-border/30 bg-background/20 p-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-medium">{item.sector}</p>
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{item.stance}</span>
+                          <span className="rounded-full border border-border/40 px-2 py-0.5 text-[11px] text-muted-foreground">热度 {item.heat}</span>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">{item.framework_driver}</p>
                         <p className="mt-2 text-xs text-muted-foreground">{item.why}</p>
@@ -461,6 +474,16 @@ export function DecisionCockpit() {
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground">{viewpoint.summary}</p>
                         <p className="mt-1 text-[11px] text-muted-foreground">{viewpoint.source} · {viewpoint.evidence_date || "日期待补"}</p>
+                        {viewpoint.url && (
+                          <a
+                            href={viewpoint.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex text-xs text-primary hover:underline"
+                          >
+                            打开观点来源
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -499,6 +522,32 @@ export function DecisionCockpit() {
                 <p className="text-sm font-medium">未解决问题</p>
                 <div className="mt-3">
                   <QuestionList questions={data.strategy_engine.open_questions} updatingKey={updatingQuestionKey} onStatusChange={updateQuestionStatus} />
+                </div>
+              </div>
+              <div className="rounded-xl border border-border/40 bg-muted/15 p-4">
+                <p className="text-sm font-medium">框架来源</p>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {data.strategy_engine.framework_sources.map((source) => (
+                    <div key={source.institution} className="rounded-lg border border-border/30 bg-background/20 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{source.institution}</p>
+                        <span className="rounded-full border border-border/40 px-2 py-0.5 text-[11px] text-muted-foreground">{source.source_type}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">{source.framework}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">框架逻辑：{source.logic}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">依赖信息：{source.information_inputs.join(" / ")}</p>
+                      {source.url && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-flex text-xs text-primary hover:underline"
+                        >
+                          打开来源
+                        </a>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
               </section>

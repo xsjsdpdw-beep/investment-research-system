@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+import alphaengine
 import astock
 import data_adapters
 import hiringradar
@@ -540,6 +541,77 @@ def ingest_premium_note(payload: dict) -> dict:
         "scope": "stock" if ticker else "industry",
         "source_name": source_name,
         "source_type": source_type,
+    }
+
+
+def _safe_entry_id(prefix: str, value: str) -> str:
+    slug = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_.-]+", "-", (value or "").strip()).strip("-")
+    return f"{prefix}-{slug or 'item'}"
+
+
+def ingest_alphaengine_notes(payload: dict) -> dict:
+    sector = (payload.get("sector") or "").strip()
+    ticker = (payload.get("ticker") or "").strip().upper()
+    query = (payload.get("query") or "").strip() or sector or ticker
+    if not query:
+        raise ValueError("AlphaEngine 查询词不能为空")
+    if not sector and not ticker:
+        raise ValueError("AlphaEngine 至少要关联一个行业或个股")
+
+    limit = min(max(int(payload.get("limit") or 3), 1), 10)
+    page_size = min(max(int(payload.get("page_size") or limit), 1), 20)
+    max_pages = min(max(int(payload.get("max_pages") or 1), 1), 3)
+    note_kind = (payload.get("note_kind") or "research_note").strip() or "research_note"
+    source_type = (payload.get("source_type") or "expert_transcript").strip() or "expert_transcript"
+    source_name = (payload.get("source_name") or "alphaengine").strip() or "alphaengine"
+
+    records = alphaengine.search_notes(query, page_size=page_size, max_pages=max_pages)[:limit]
+    scope = "stock" if ticker else "industry"
+    target = ticker or sector
+    created: list[dict[str, Any]] = []
+    for item in records:
+        publish_time = str(item.get("publish_time") or "").strip()
+        publish_date = publish_time[:10] if publish_time else datetime.now().strftime("%Y-%m-%d")
+        title = (item.get("title") or "").strip() or f"{query} AlphaEngine 纪要"
+        summary = (item.get("summary") or "").strip()
+        body = "\n".join(
+            part for part in [
+                f"premium-note:{source_name}",
+                f"kind:{source_type}",
+                f"查询词：{query}",
+                f"发布时间：{publish_time}" if publish_time else "",
+                f"机构：{item.get('institution')}" if item.get("institution") else "",
+                f"类型：{item.get('document_type')}" if item.get("document_type") else "",
+                f"公司：{item.get('companies')}" if item.get("companies") else "",
+                "",
+                summary,
+            ] if part
+        ).strip()
+        created.append(
+            ingest_premium_note(
+                {
+                    "id": _safe_entry_id(f"alphaengine-{scope}-{target}", str(item.get("id") or title)),
+                    "title": title,
+                    "content": body,
+                    "sector": sector,
+                    "ticker": ticker,
+                    "source_name": source_name,
+                    "source_type": source_type,
+                    "note_kind": note_kind,
+                    "date": publish_date,
+                    "tags": [str(item.get("document_type") or "专家纪要"), query],
+                    "summary_text": summary,
+                }
+            )["entry"]
+        )
+    return {
+        "scope": scope,
+        "target": target,
+        "query": query,
+        "source_name": source_name,
+        "source_type": source_type,
+        "created": len(created),
+        "items": created,
     }
 
 
@@ -2022,6 +2094,9 @@ def _strategy_institution_viewpoints(sectors: list[str]) -> list[dict[str, str]]
         mapped_layer = "中观框架" if related_sectors else "宏观框架"
         text = " ".join([str(entry.get("summary_text") or ""), str(entry.get("content_preview") or ""), str(entry.get("content") or "")]).strip()
         stance = "偏多" if any(keyword in text for keyword in ("积极", "增长", "上修", "改善", "受益")) else "待确认"
+        entry_url = str(entry.get("url") or entry.get("source_url") or "")
+        if not entry_url and entry.get("id"):
+            entry_url = f"/framework?source={entry.get('id')}"
         viewpoints.append({
             "source": str(entry.get("type") or "knowledge"),
             "title": title,
@@ -2029,6 +2104,7 @@ def _strategy_institution_viewpoints(sectors: list[str]) -> list[dict[str, str]]
             "mapped_layer": mapped_layer,
             "summary": (str(entry.get("summary_text") or entry.get("content_preview") or entry.get("content") or "观点待补充")[:140]),
             "evidence_date": str(entry.get("date") or ""),
+            "url": entry_url,
         })
         if len(viewpoints) >= 5:
             break
@@ -2041,40 +2117,75 @@ def _strategy_institution_viewpoints(sectors: list[str]) -> list[dict[str, str]]
         "mapped_layer": "宏观框架",
         "summary": "后续每日爬取券商策略、海外投行、行业研报和宏观数据库更新，并映射到宏观/中观/微观框架节点。",
         "evidence_date": _utc_now_iso()[:10],
+        "url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/guide-to-the-markets/",
     }]
 
 
 def _strategy_framework_sources() -> list[dict[str, str]]:
     return [
         {
+            "source_type": "user_fed",
+            "institution": "用户投喂框架",
+            "framework": "吸收你提供的投资哲学、研究规范、图片、笔记和后续手动标注的优秀框架。",
+            "logic": "把用户认可的框架沉淀为高优先级规则，先审后生效，并用于校准机构框架的适用性。",
+            "information_inputs": ["用户PDF", "图片/思维导图", "手动标签", "复盘修正"],
+            "url": "",
+        },
+        {
+            "source_type": "institution_extracted",
             "institution": "BlackRock Investment Institute",
             "framework": "市场新范式、AI abundance/scarcity、利率中枢、组合再思考",
+            "logic": "先判断宏观 regime 和长期资本约束，再寻找被新范式强化的稀缺资产与产业链。",
+            "information_inputs": ["全球增长", "通胀和利率", "AI资本开支", "能源和资源约束"],
             "url": "https://www.blackrock.com/corporate/insights/blackrock-investment-institute/publications/outlook",
         },
         {
+            "source_type": "institution_extracted",
             "institution": "J.P. Morgan Asset Management",
             "framework": "Guide to the Markets：宏观、利率、盈利、估值、风格和资产配置图谱",
+            "logic": "用宏观、盈利、估值、资金和风格图谱做交叉验证，避免单一叙事驱动配置。",
+            "information_inputs": ["PMI/就业/通胀", "利率", "盈利预期", "估值分位", "风格表现"],
             "url": "https://am.jpmorgan.com/us/en/asset-management/adv/insights/market-insights/guide-to-the-markets/",
         },
         {
+            "source_type": "institution_extracted",
             "institution": "Goldman Sachs Asset Management",
             "framework": "宏观复杂性、央行政策、贸易秩序、AI与组合再平衡",
+            "logic": "在政策、贸易和技术变化中识别确定性增长与组合再平衡方向。",
+            "information_inputs": ["央行政策", "贸易秩序", "AI扩散", "盈利修正", "资产相关性"],
             "url": "https://am.gs.com/cms-assets/gsam-app/documents/insights/en/2025/Investment-Outlook-2026.pdf?view=true",
         },
         {
+            "source_type": "institution_extracted",
             "institution": "Morgan Stanley Research",
             "framework": "Tech Diffusion、Future of Energy、Multipolar World、Societal Shifts",
+            "logic": "用跨年度主题识别产业扩散阶段，再映射到行业景气和资产价格。",
+            "information_inputs": ["科技扩散", "能源需求", "地缘格局", "人口和消费结构"],
             "url": "https://www.morganstanley.com/insights/articles/investment-outlook-shaping-markets-2026",
         },
         {
+            "source_type": "institution_extracted",
             "institution": "中信证券策略",
             "framework": "全球需求视角、低波市、制造业定价权、出海、AI商业化",
+            "logic": "从全球需求和中国企业出海竞争力重估A股盈利天花板，寻找低波慢牛中的结构主线。",
+            "information_inputs": ["全球营收敞口", "出海订单", "利润率", "AI商业化", "低波市特征"],
             "url": "https://www.cls.cn/detail/2196689",
         },
         {
+            "source_type": "analyst_tracked",
             "institution": "招商证券策略框架",
-            "framework": "主线识别：宏观时代主题、中观结构转型、微观产业趋势与渗透率S曲线",
+            "framework": "张夏团队：主线识别、宏观时代主题、中观结构转型、微观产业趋势与渗透率S曲线",
+            "logic": "从时代主题到产业趋势，再用渗透率S曲线和景气验证判断主线持续性。",
+            "information_inputs": ["时代主题", "产业渗透率", "景气指标", "政策催化", "估值阶段"],
             "url": "https://wallstreetcn.com/articles/3773831",
+        },
+        {
+            "source_type": "analyst_tracked",
+            "institution": "国金证券牟一凌",
+            "framework": "定期策略跟踪：宏观环境、资产定价、产业趋势、风格轮动和风险补偿。",
+            "logic": "跟踪宏观和资产定价变化，寻找风格轮动中的高赔率结构机会。",
+            "information_inputs": ["宏观数据", "利率和信用", "资金流", "估值和风险溢价", "行业景气"],
+            "url": "https://www.gjzq.com.cn/",
         },
     ]
 
@@ -2084,6 +2195,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "AI应用/算力/半导体",
             "stance": "看多",
+            "x": 82,
+            "y": 78,
+            "heat": 92,
             "framework_driver": "技术扩散 + AI商业化 + 产业趋势渗透率",
             "why": "海外和国内主流策略都把AI扩散/商业化作为跨年度主线，需用订单、Capex、盈利兑现继续验证。",
             "source_refs": ["BlackRock", "Morgan Stanley", "Goldman Sachs", "中信证券", "招商证券"],
@@ -2091,6 +2205,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "电力设备/能源基础设施",
             "stance": "看多",
+            "x": 72,
+            "y": 70,
+            "heat": 84,
             "framework_driver": "AI电力约束 + 能源转型 + 稀缺资源",
             "why": "AI和再工业化提高电力、能源和基础设施约束的重要性，适合作为中观景气和资本开支主线。",
             "source_refs": ["BlackRock", "Morgan Stanley"],
@@ -2098,6 +2215,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "高端制造/出海链",
             "stance": "看多",
+            "x": 78,
+            "y": 62,
+            "heat": 80,
             "framework_driver": "全球需求重估 + 中国制造竞争力 + 利润天花板抬升",
             "why": "国内策略强调A股基本面要从全球营收敞口和出海竞争力重新定价，不应只看本土需求。",
             "source_refs": ["中信证券", "国泰海通"],
@@ -2105,6 +2225,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "资源品/传统制造提质",
             "stance": "关注",
+            "x": 58,
+            "y": 58,
+            "heat": 64,
             "framework_driver": "定价权 + 供给约束 + 稀缺性",
             "why": "资源和传统制造若能把份额优势转化为定价权和利润率，需要纳入全市场机会池。",
             "source_refs": ["中信证券", "BlackRock"],
@@ -2112,6 +2235,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "大金融/券商",
             "stance": "关注",
+            "x": 54,
+            "y": 50,
+            "heat": 58,
             "framework_driver": "资本市场改革 + 风险偏好 + 交易活跃度",
             "why": "若市场进入低波慢牛或转型牛，金融和券商可能受益于交易活跃、资本市场改革和权益中枢上移。",
             "source_refs": ["国泰海通", "中信建投观点汇总"],
@@ -2119,6 +2245,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "创新药/医疗科技",
             "stance": "观察",
+            "x": 44,
+            "y": 66,
+            "heat": 52,
             "framework_driver": "Societal Shifts + 产业创新 + 出海",
             "why": "适合作为技术和社会结构变化的卫星方向，但需要管线、出海授权和商业化数据验证。",
             "source_refs": ["Morgan Stanley", "国泰海通"],
@@ -2126,6 +2255,9 @@ def _strategy_sector_opportunity_map(preferred_directions: list[str]) -> list[di
         {
             "sector": "当前关注池映射",
             "stance": "组合校验",
+            "x": 62,
+            "y": 42,
+            "heat": 48,
             "framework_driver": "把你的持仓/关注放到全市场框架里验顺逆风",
             "why": f"当前关注行业仅作为映射层：{('、'.join(preferred_directions[:3]) or '待映射')}，不作为策略框架本身的来源。",
             "source_refs": ["portfolio_alignment"],

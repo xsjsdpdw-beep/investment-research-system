@@ -69,6 +69,27 @@ def test_find_local_repo_path_from_env(monkeypatch, tmp_path):
     assert runtime._find_local_repo_path() == repo.resolve()
 
 
+def test_build_graph_config_merges_required_defaults():
+    cfg = runtime._build_graph_config(
+        {
+            "provider": "openai-compatible",
+            "baseURL": "https://example.com",
+            "apiKey": "sk-test",
+            "deepModel": "deep-test",
+            "quickModel": "quick-test",
+        }
+    )
+    assert cfg["llm_provider"] == "openai"
+    assert cfg["backend_url"] == "https://example.com"
+    assert cfg["deep_think_llm"] == "deep-test"
+    assert cfg["quick_think_llm"] == "quick-test"
+    assert cfg["output_language"] == "Chinese"
+    assert cfg["data_cache_dir"]
+    assert cfg["results_dir"]
+    assert "max_debate_rounds" in cfg
+    assert "max_risk_discuss_rounds" in cfg
+
+
 def test_run_task_emits_result_with_fake_runner(monkeypatch):
     def fake_runner(task, publish_log):
         publish_log("任务初始化", "fake runner started")

@@ -70,8 +70,31 @@ export const aiModels: ModelConfig[] = [
 ];
 
 export function getModelById(id: string): ModelConfig | undefined {
-  return aiModels.find((model) => model.id === id);
+  const normalized = normalizeModelId(id);
+  return aiModels.find((model) => model.id === normalized);
 }
 
 export const subscriptionModels = aiModels.filter((m) => isCliProvider(m.provider));
 export const apiModels = aiModels.filter((m) => !isCliProvider(m.provider));
+
+function foldModelToken(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_/]+/g, "-");
+}
+
+export function normalizeModelId(id: string): string {
+  const raw = String(id || "").trim();
+  if (!raw) return "";
+
+  const direct = aiModels.find((model) => model.id === raw);
+  if (direct) return direct.id;
+
+  const folded = foldModelToken(raw);
+  const byName = aiModels.find((model) => foldModelToken(model.name) === folded);
+  if (byName) return byName.id;
+
+  const byId = aiModels.find((model) => foldModelToken(model.id) === folded);
+  return byId?.id || raw;
+}
