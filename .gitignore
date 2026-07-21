@@ -38,3 +38,6 @@ frontend/tsconfig.tsbuildinfo
 *.log
 .vscode/
 .idea/
+
+# ── 本地隔离工作区 ────────────────────────────────────────────────
+.worktrees/
