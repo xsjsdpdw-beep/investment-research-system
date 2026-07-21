@@ -64,7 +64,7 @@ class LiquidCoolingReportTest(unittest.TestCase):
         self.assertNotIn("║", self.markdown)
         self.assertIn("2023—2025财务对比", self.markdown)
         self.assertIn("订单金额不看验收回款", self.markdown)
-        self.assertEqual(self.markdown.count("assets/"), 6)
+        self.assertEqual(self.markdown.count("assets/"), 9)
 
     def test_html_is_standalone_and_visual(self):
         self.assertIn("THERMAL CARTOGRAPHY", self.html)
@@ -78,8 +78,11 @@ class LiquidCoolingReportTest(unittest.TestCase):
             "MANUFACTURING RIBBON",
             "BUSINESS MODEL LOOP",
             "CATALYST TIMELINE",
+            "FINANCIAL DASHBOARD",
         ]:
             self.assertIn(visual_label, self.html)
+        self.assertIn("HARDWARE BOARD", self.html)
+        self.assertGreaterEqual(self.html.count("data:image/jpeg;base64"), 6)
         self.assertNotRegex(self.html, r"<link[^>]+https?://")
         self.assertNotRegex(self.html, r"<script[^>]+src=")
         self.assertNotRegex(self.html, r"<img[^>]+src=\"https?://")

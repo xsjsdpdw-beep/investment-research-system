@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import html
 import json
+import mimetypes
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -29,7 +31,7 @@ def inline_markdown(value: str) -> str:
         return token
 
     text = re.sub(
-        r"!\[([^\]]+)\]\((assets/[^\s)]+\.svg)\)",
+        r"!\[([^\]]+)\]\((assets/[^\s)]+\.(?:svg|png|jpg|jpeg|webp))\)",
         lambda match: hold(
             f'<span class="asset-ref" data-asset="{esc(match.group(2))}" data-alt="{esc(match.group(1))}"></span>'
         ),
@@ -86,20 +88,24 @@ def render_table(lines: Sequence[str]) -> str:
     )
 
 
-def replace_asset_refs(body: str, asset_svgs: Dict[str, str]) -> str:
+def replace_asset_refs(body: str, asset_svgs: Dict[str, str], asset_images: Optional[Dict[str, str]] = None) -> str:
     pattern = re.compile(r'<span class="asset-ref" data-asset="([^"]+)" data-alt="([^"]+)"></span>')
+    asset_images = asset_images or {}
 
     def replace(match: re.Match[str]) -> str:
         asset_path, alt = match.group(1), match.group(2)
         svg = asset_svgs.get(asset_path)
         if svg:
             return f'<figure class="figure-card editorial-plate md-figure"><div class="md-figure-svg">{svg}</div><figcaption>{esc(alt)}</figcaption></figure>'
+        image_data = asset_images.get(asset_path)
+        if image_data:
+            return f'<figure class="figure-card editorial-plate md-figure md-image-figure"><img src="{image_data}" alt="{esc(alt)}"><figcaption>{esc(alt)}</figcaption></figure>'
         return f'<figure class="figure-card editorial-plate md-figure"><img src="{esc(asset_path)}" alt="{esc(alt)}"><figcaption>{esc(alt)}</figcaption></figure>'
 
     return pattern.sub(replace, body)
 
 
-def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None) -> Tuple[str, List[Tuple[str, str]]]:
+def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None, asset_images: Optional[Dict[str, str]] = None) -> Tuple[str, List[Tuple[str, str]]]:
     lines = markdown.splitlines()
     blocks: List[str] = []
     navigation: List[Tuple[str, str]] = []
@@ -112,6 +118,7 @@ def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None) 
             or current.startswith(">")
             or current.strip() in {"---", "***"}
             or ("|" in current and is_table_separator(next_line))
+            or re.fullmatch(r"!\[[^\]]+\]\(assets/[^\s)]+\.(?:svg|png|jpg|jpeg|webp)\)", current)
         )
 
     while index < len(lines):
@@ -139,7 +146,7 @@ def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None) 
             index += 1
             continue
 
-        if re.fullmatch(r"!\[[^\]]+\]\(assets/[^\s)]+\.svg\)", stripped):
+        if re.fullmatch(r"!\[[^\]]+\]\(assets/[^\s)]+\.(?:svg|png|jpg|jpeg|webp)\)", stripped):
             blocks.append(inline_markdown(stripped))
             index += 1
             continue
@@ -199,7 +206,7 @@ def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None) 
             index += 1
         blocks.append("<p>" + inline_markdown(" ".join(paragraph)) + "</p>")
 
-    return replace_asset_refs("\n".join(blocks), asset_svgs or {}), navigation
+    return replace_asset_refs("\n".join(blocks), asset_svgs or {}, asset_images or {}), navigation
 
 
 def bar(value: float, maximum: float, color: str) -> str:
@@ -318,23 +325,96 @@ def competition_figure(data: Dict[str, Any]) -> str:
 
 
 def financial_figure(data: Dict[str, Any]) -> str:
-    focus = ["英维克", "中石科技", "申菱环境", "高澜股份"]
-    rows: List[str] = []
-    for index, name in enumerate(focus):
-        values = [item for item in data["charts"]["financials"] if item["name"] == name and item.get("year") in {2023, 2025}]
-        by_year = {item["year"]: item for item in values}
-        x = 198 + index * 154
-        rev23 = by_year.get(2023, {}).get("revenue") or 0
-        rev25 = by_year.get(2025, {}).get("revenue") or 0
-        max_rev = max(70, rev23, rev25)
-        h23 = rev23 / max_rev * 132
-        h25 = rev25 / max_rev * 132
-        rows.append(f'<g><rect x="{x}" y="{204-h23:.1f}" width="28" height="{h23:.1f}" rx="6" fill="#72cfff"/><rect x="{x+38}" y="{204-h25:.1f}" width="28" height="{h25:.1f}" rx="6" fill="#f2783f"/><text x="{x+33}" y="235" text-anchor="middle" class="label">{esc(name)}</text><text x="{x+14}" y="{197-h23:.1f}" text-anchor="middle" class="value-label">{rev23:.1f}</text><text x="{x+52}" y="{197-h25:.1f}" text-anchor="middle" class="value-label">{rev25:.1f}</text></g>')
+    focus = ["英维克", "高澜股份", "申菱环境", "中石科技", "思泉新材"]
+    records = {(item["name"], item.get("year")): item for item in data["charts"]["financials"]}
+
+    def value(name: str, year: int, key: str) -> Optional[float]:
+        raw = records.get((name, year), {}).get(key)
+        return float(raw) if isinstance(raw, (int, float)) else None
+
+    def label_value(raw: Optional[float]) -> str:
+        return "—" if raw is None else f"{raw:.1f}"
+
+    def mini_grouped(title: str, key: str, years: Sequence[int], x: int, y: int, width: int, height: int, unit: str) -> str:
+        plot_left, plot_top = x + 54, y + 52
+        plot_width, plot_height = width - 76, height - 104
+        raw_values = [value(name, year, key) for name in focus for year in years]
+        maximum = max([item for item in raw_values if item is not None] or [1])
+        if key == "gross_margin":
+            maximum = max(40.0, maximum)
+        maximum *= 1.12
+        parts = [f'<g><rect x="{x}" y="{y}" width="{width}" height="{height}" rx="14" fill="#0d2332" stroke="#24485b"/><text x="{x+18}" y="{y+27}" class="chart-title">{title}</text><text x="{x+width-18}" y="{y+27}" text-anchor="end" class="chart-unit">{unit}</text>']
+        for grid_index in range(4):
+            gy = plot_top + plot_height - grid_index * plot_height / 3
+            grid_value = maximum * grid_index / 3
+            parts.append(f'<path d="M{plot_left} {gy:.1f}H{plot_left+plot_width}" class="grid"/><text x="{plot_left-8}" y="{gy+4:.1f}" text-anchor="end" class="chart-axis">{grid_value:.0f}</text>')
+        group_width = plot_width / len(focus)
+        bar_width = min(18, group_width / (len(years) + 1))
+        for index, name in enumerate(focus):
+            center = plot_left + group_width * (index + .5)
+            for year_index, year in enumerate(years):
+                raw = value(name, year, key)
+                if raw is None:
+                    continue
+                bar_height = max(2, raw / maximum * plot_height)
+                bx = center + (year_index - (len(years)-1)/2) * (bar_width + 4) - bar_width / 2
+                by = plot_top + plot_height - bar_height
+                color = "#72cfff" if year == 2023 else "#f2783f" if year == 2025 else "#f05a67"
+                parts.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="4" fill="{color}"/><text x="{bx+bar_width/2:.1f}" y="{max(plot_top+11, by-5):.1f}" text-anchor="middle" class="chart-value">{label_value(raw)}</text>')
+            parts.append(f'<text x="{center:.1f}" y="{plot_top+plot_height+20}" text-anchor="middle" class="chart-label">{esc(name)}</text>')
+        if len(years) > 1:
+            legend_x = x + width - 116
+            for index, year in enumerate(years):
+                color = "#72cfff" if year == 2023 else "#f2783f" if year == 2025 else "#f05a67"
+                parts.append(f'<rect x="{legend_x+index*47}" y="{y+40}" width="8" height="8" rx="2" fill="{color}"/><text x="{legend_x+index*47+12}" y="{y+48}" class="chart-legend">{year}</text>')
+        parts.append('</g>')
+        return "".join(parts)
+
+    def mini_positive(title: str, key: str, x: int, y: int, width: int, height: int, unit: str, signed: bool = False) -> str:
+        plot_left, plot_top = x + 54, y + 52
+        plot_width, plot_height = width - 76, height - 104
+        raw_values = [value(name, 2025, key) for name in focus]
+        visible = [item for item in raw_values if item is not None]
+        maximum = max(1.0, max(visible or [1]))
+        if key in {"gross_margin", "net_margin", "rd_rate"}:
+            maximum = max(40.0, maximum)
+        maximum *= 1.12
+        zero_y = plot_top + plot_height if not signed else plot_top + plot_height / 2
+        scale_height = plot_height if not signed else plot_height / 2
+        parts = [f'<g><rect x="{x}" y="{y}" width="{width}" height="{height}" rx="14" fill="#0d2332" stroke="#24485b"/><text x="{x+18}" y="{y+27}" class="chart-title">{title}</text><text x="{x+width-18}" y="{y+27}" text-anchor="end" class="chart-unit">{unit}</text>']
+        for grid_index in range(4):
+            gy = zero_y - grid_index * scale_height / 3
+            grid_value = maximum * grid_index / 3
+            parts.append(f'<path d="M{plot_left} {gy:.1f}H{plot_left+plot_width}" class="grid"/><text x="{plot_left-8}" y="{gy+4:.1f}" text-anchor="end" class="chart-axis">{grid_value:.0f}</text>')
+        if signed:
+            parts.append(f'<path d="M{plot_left} {zero_y:.1f}H{plot_left+plot_width}" stroke="#f5f7f9" stroke-opacity=".35"/>')
+        group_width = plot_width / len(focus)
+        bar_width = min(24, group_width * .46)
+        for index, name in enumerate(focus):
+            raw = value(name, 2025, key)
+            if raw is None:
+                continue
+            center = plot_left + group_width * (index + .5)
+            magnitude = abs(raw) / maximum * scale_height
+            if signed and raw < 0:
+                by, fill = zero_y, "#f05a67"
+            else:
+                by, fill = zero_y - magnitude if signed else zero_y - magnitude, "#f2783f" if key != "rd_rate" else "#72cfff"
+            parts.append(f'<rect x="{center-bar_width/2:.1f}" y="{by:.1f}" width="{bar_width:.1f}" height="{max(2,magnitude):.1f}" rx="4" fill="{fill}"/><text x="{center:.1f}" y="{max(plot_top+11, by-5):.1f}" text-anchor="middle" class="chart-value">{label_value(raw)}</text><text x="{center:.1f}" y="{plot_top+plot_height+20}" text-anchor="middle" class="chart-label">{esc(name)}</text>')
+        parts.append('</g>')
+        return "".join(parts)
+
+    svg = '<svg class="financial-dashboard" viewBox="0 0 1120 610" role="img" aria-label="重点公司多维度财务柱状图对比">'
+    svg += '<text x="20" y="25" class="axis">FINANCIAL DASHBOARD / 同口径比较公司整体财务表现</text>'
+    svg += mini_grouped("营业收入：2023 vs 2025", "revenue", [2023, 2025], 20, 42, 530, 255, "亿元")
+    svg += mini_positive("归母净利：2025", "net_profit", 570, 42, 530, 255, "亿元", signed=True)
+    svg += mini_grouped("毛利率：2025", "gross_margin", [2025], 20, 320, 530, 255, "%")
+    svg += mini_positive("经营现金流：2025", "ocf", 570, 320, 530, 255, "亿元", signed=True)
+    svg += '</svg>'
     return (
-        '<figure class="figure-card"><div class="figure-heading"><span>05 / FINANCIAL LENS</span><strong>营收增长必须和利润、现金流一起看</strong></div>'
-        '<svg viewBox="0 0 850 280" role="img" aria-label="重点公司2023与2025营业收入对比图"><path d="M84 204H790M84 138H790M84 72H790" class="grid"/><g fill="#a9b7c5" font-size="12"><text x="78" y="208" text-anchor="end">0</text><text x="78" y="142" text-anchor="end">35</text><text x="78" y="76" text-anchor="end">70</text><text x="770" y="260" text-anchor="end">单位：亿元；蓝色=2023，橙色=2025</text></g>'
-        + "".join(rows)
-        + '</svg><figcaption>图中只比较公司整体营业收入，不能替代液冷分部收入；正文财务表同时列示毛利率、净利率、ROE、研发率、OCF和周转指标。来源：<code>ifind-a-financials-2026-07-21</code>。</figcaption></figure>'
+        '<figure class="figure-card editorial-plate financial-plate"><div class="figure-heading"><span>05 / FINANCIAL DASHBOARD</span><strong>不同公司放在同一组柱状图里，增长、利润与现金流同时验证</strong></div>'
+        + svg
+        + '<figcaption>图中统一比较英维克、高澜股份、申菱环境、中石科技、思泉新材的公司整体财务；柱顶为对应年度数值。财务数据来自iFinD，不能替代液冷分部口径；高澜股份2023年异常值按台账保留并在正文标注。</figcaption></figure>'
     )
 
 
@@ -347,29 +427,32 @@ def editorial_figure(kicker: str, title: str, svg: str, caption: str, classes: s
 
 
 def chain_atlas_figure(data: Dict[str, Any]) -> str:
-    lanes = [
-        ("UPSTREAM", "上游材料", "铜 / 铝 · TIM · 工质 · 密封", "巨化 · 新宙邦 · 中石 · 思泉", "#72cfff"),
-        ("CORE PARTS", "中游部件", "冷板 · CDU · UQD · Manifold", "英维克 · 高澜 · 申菱 · 中航光电", "#f2783f"),
-        ("INTEGRATION", "系统交付", "机柜级液冷 · 一次/二次侧 · 监控运维", "英维克 · 曙光数创 · Vertiv", "#f05a67"),
-        ("APPLICATION", "下游应用", "AI数据中心 · 超算 · 储能 · 汽车热管理", "NVIDIA生态 · 云厂商 · ODM/OEM", "#a9b7c5"),
+    cards = [
+        ("01", "材料与工质", "铜 / 铝 / TIM / 工质", "巨化 · 新宙邦 · 中石 · 思泉", "成本变量", "#72cfff"),
+        ("02", "芯片侧部件", "冷板 / 微通道 / UQD", "中石 · 思泉 · 中航光电", "价值量 30–45%", "#f2783f"),
+        ("03", "机柜级系统", "CDU / Manifold / 泵控", "英维克 · 高澜 · 申菱", "价值量 25–40%", "#f05a67"),
+        ("04", "客户应用", "AI机柜 / 超算 / 云数据中心", "NVIDIA生态 · 云厂商 · ODM/OEM", "采购权与验收", "#a9b7c5"),
     ]
-    parts = ['<svg viewBox="0 0 1120 430" role="img" aria-label="液冷产业链四层泳道图">', '<defs><linearGradient id="chainFlow" x1="0" x2="1"><stop stop-color="#72cfff"/><stop offset=".55" stop-color="#f2783f"/><stop offset="1" stop-color="#f05a67"/></linearGradient><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="#f2783f"/></marker></defs>']
-    parts.append('<path d="M186 75H1042" stroke="#23485b" stroke-width="2" stroke-dasharray="5 8"/>')
-    parts.append('<text x="20" y="31" class="axis">SUPPLY CHAIN ATLAS / 从原料到算力机柜</text><text x="1044" y="31" text-anchor="end" class="axis">价值流向 →</text>')
-    for index, (eyebrow, title, products, companies, color) in enumerate(lanes):
-        y = 78 + index * 80
-        parts.append(f'<line x1="184" y1="{y+27}" x2="1045" y2="{y+27}" stroke="#17394b" stroke-width="52" stroke-linecap="round"/>')
-        parts.append(f'<rect x="20" y="{y}" width="144" height="54" rx="10" fill="#102c3c" stroke="{color}"/><text x="34" y="{y+17}" class="eyebrow">{eyebrow}</text><text x="34" y="{y+39}" class="lane-title">{title}</text>')
-        products_list = [part.strip() for part in products.split("·")]
-        for col, product in enumerate(products_list):
-            x = 208 + col * 188
-            width = 166
-            parts.append(f'<rect x="{x}" y="{y+5}" width="{width}" height="44" rx="9" fill="#14394c" stroke="{color}" stroke-opacity=".42"/><text x="{x+12}" y="{y+25}" class="node-title">{esc(product)}</text><text x="{x+12}" y="{y+41}" class="node-sub">{esc(companies.split(" · ")[min(col, len(companies.split(" · "))-1)])}</text>')
-            if col < len(products_list) - 1:
-                parts.append(f'<path d="M{x+width+6} {y+27}h10" stroke="{color}" stroke-width="2" marker-end="url(#arrow)"/>')
-        parts.append(f'<circle cx="1050" cy="{y+27}" r="7" fill="{color}"/>')
-    parts.append('<text x="20" y="408" class="note">研究重点：价值量、认证权、交付边界和现金回款分别落在不同层，不把产业链整体收入直接等同液冷收入。</text></svg>')
-    return editorial_figure("06 / SUPPLY CHAIN ATLAS", "从材料、部件到客户采购权的四层价值链", "".join(parts), "图示采用泳道与节点表达，重点显示环节之间的采购和价值传递关系；公司名称为研究池，不代表完整市场份额。", "figure-chain")
+    parts = ['<svg viewBox="0 0 1120 510" role="img" aria-label="液冷产业链类实物节点图">', '<defs><linearGradient id="chainFlow" x1="0" x2="1"><stop stop-color="#72cfff"/><stop offset=".48" stop-color="#f2783f"/><stop offset="1" stop-color="#f05a67"/></linearGradient><marker id="chainAtlasArrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0L7 4L0 8" fill="#f2783f"/></marker></defs>']
+    parts.append('<text x="20" y="31" class="axis">SUPPLY CHAIN ATLAS / 不是四层概念，而是四类可采购硬件</text><text x="1100" y="31" text-anchor="end" class="axis">材料 → 部件 → 系统 → 客户</text>')
+    parts.append('<path d="M105 115H1016" stroke="#21465a" stroke-width="15" stroke-linecap="round"/><path d="M105 115H1016" stroke="url(#chainFlow)" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#chainAtlasArrow)"/>')
+    for index, (number, title, products, companies, value_note, color) in enumerate(cards):
+        x = 20 + index * 275
+        center = x + 127
+        parts.append(f'<g><rect x="{x}" y="160" width="245" height="246" rx="14" fill="#0d2332" stroke="#24485b"/><rect x="{x}" y="160" width="245" height="7" rx="3" fill="{color}"/><text x="{x+18}" y="193" class="eyebrow">{number} / VALUE NODE</text><text x="{x+18}" y="222" class="route-title">{title}</text>')
+        if index == 0:
+            parts.append(f'<g transform="translate({center-62} 242)"><rect width="124" height="63" rx="7" fill="#b66b48" stroke="#f1a27b"/><path d="M16 17H108M16 31H108M16 45H108" stroke="#6d342b" stroke-width="4"/><circle cx="19" cy="54" r="4" fill="#f0c1a3"/><circle cx="105" cy="54" r="4" fill="#f0c1a3"/></g>')
+        elif index == 1:
+            parts.append(f'<g transform="translate({center-62} 242)"><rect width="124" height="63" rx="7" fill="#a96342" stroke="#f1a27b"/><path d="M16 18 C40 6 84 30 108 17 M16 31 C40 19 84 43 108 30 M16 44 C40 32 84 56 108 43" fill="none" stroke="#f2c0a3" stroke-width="3"/><circle cx="20" cy="54" r="5" fill="#14394c"/><circle cx="104" cy="54" r="5" fill="#14394c"/></g>')
+        elif index == 2:
+            parts.append(f'<g transform="translate({center-58} 232)"><rect width="116" height="84" rx="8" fill="#172a37" stroke="#72cfff"/><circle cx="33" cy="42" r="17" fill="none" stroke="#72cfff" stroke-width="5"/><path d="M33 25V59M16 42H50" stroke="#72cfff" stroke-width="3"/><path d="M78 25H101M78 42H101M78 59H101" stroke="#f2783f" stroke-width="6"/></g>')
+        else:
+            parts.append(f'<g transform="translate({center-48} 220)"><rect width="96" height="108" rx="8" fill="#111d27" stroke="#a9b7c5"/><path d="M17 26H79M17 48H79M17 70H79M17 92H79" stroke="#72cfff" stroke-width="6"/><circle cx="17" cy="26" r="3" fill="#f2783f"/><circle cx="17" cy="48" r="3" fill="#f2783f"/><circle cx="17" cy="70" r="3" fill="#f2783f"/><circle cx="17" cy="92" r="3" fill="#f2783f"/></g>')
+        parts.append(f'<text x="{x+18}" y="346" class="node-title">{esc(products)}</text><text x="{x+18}" y="371" class="node-sub">重点公司：{esc(companies)}</text><rect x="{x+18}" y="382" width="209" height="20" rx="6" fill="#14394c"/><text x="{x+28}" y="396" class="check-label">{esc(value_note)}</text></g>')
+        if index < len(cards)-1:
+            parts.append(f'<path d="M{x+247} 283h24" stroke="{color}" stroke-width="3" marker-end="url(#chainAtlasArrow)"/>')
+    parts.append('<rect x="20" y="435" width="1080" height="45" rx="9" fill="#102c3c" stroke="#24485b"/><text x="38" y="462" class="note">研究跟踪：材料成本看毛利传导；冷板/UQD看平台认证与良率；CDU看订单、验收与应收；下游看机柜kW、客户资本开支与液冷渗透。</text></svg>')
+    return editorial_figure("06 / SUPPLY CHAIN ATLAS", "把产业链画成可触摸的四类硬件：价值量、采购权与验证变量", "".join(parts), "图示把产业链从抽象分层改为四类可采购对象；价值量区间仅为机构研究常见口径，需按项目边界和是否含工程服务核验。", "figure-chain")
 
 
 def technology_routes_figure() -> str:
@@ -475,6 +558,50 @@ def write_figure_assets(asset_svgs: Dict[str, str], asset_dir: Path) -> None:
         (asset_dir / Path(relative_path).name).write_text(svg, encoding="utf-8")
 
 
+def read_image_assets(asset_dir: Path) -> Dict[str, str]:
+    """Inline local raster assets so the generated HTML remains standalone."""
+    assets: Dict[str, str] = {}
+    for name in ("01_rack_cutaway.jpg", "02_component_board.jpg", "03_datacenter_scene.jpg"):
+        path = asset_dir / name
+        if not path.exists():
+            continue
+        mime = mimetypes.guess_type(path.name)[0] or "image/png"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        assets[f"assets/{name}"] = f"data:{mime};base64,{encoded}"
+    return assets
+
+
+def hardware_board(asset_images: Dict[str, str]) -> str:
+    def image(path: str, alt: str) -> str:
+        source = asset_images.get(path, path)
+        return f'<img src="{source}" alt="{esc(alt)}">'
+
+    return f'''
+    <section class="hardware-board" aria-label="液冷硬件实物视角图板">
+      <div class="board-head"><div><span class="section-kicker">HARDWARE BOARD / 类实物视角</span><h3>先看设备，再看价值量：液冷系统的采购边界</h3></div><p>生成图用于建立硬件直觉；产品标签、环节归属和公司映射以正文数据与来源台账为准。</p></div>
+      <div class="hardware-grid">
+        <figure class="hardware-card hardware-rack">
+          <div class="hardware-media">{image("assets/01_rack_cutaway.jpg", "液冷AI服务器机柜剖视示意")}
+            <span class="hardware-callout callout-heat">芯片热源</span><span class="hardware-callout callout-plate">冷板 / TIM</span><span class="hardware-callout callout-uqd">UQD / 快接</span><span class="hardware-callout callout-cdu">CDU</span>
+          </div>
+          <div class="hardware-caption"><strong>01 / 机柜剖视</strong><span>热量路径从芯片侧延伸至设施侧，系统价值集中在“接热、带热、换热、维护”四个动作。</span></div>
+        </figure>
+        <figure class="hardware-card hardware-components">
+          <div class="hardware-media">{image("assets/02_component_board.jpg", "液冷核心部件产品图板")}</div>
+          <div class="hardware-caption"><strong>02 / 核心部件</strong><span>冷板看热阻与良率；CDU看系统交付；UQD看认证与可靠性；歧管看流量均匀性。</span></div>
+          <div class="component-tags"><span>冷板 / 价值量高</span><span>CDU / 订单前置</span><span>UQD / 失效代价高</span><span>Manifold / 系统一致性</span></div>
+        </figure>
+      </div>
+      <figure class="hardware-card hardware-facility">
+        <div class="hardware-media">{image("assets/03_datacenter_scene.jpg", "液冷数据中心应用场景")}
+          <span class="facility-label facility-left">一次侧 / 二次侧</span><span class="facility-label facility-right">机柜级交付与运维</span>
+        </div>
+        <div class="hardware-caption"><strong>03 / 数据中心现场</strong><span>下游客户买的不是单一零件，而是可验收、可维护、可扩容的热管理基础设施。</span></div>
+      </figure>
+    </section>
+    '''
+
+
 def source_drawer(data: Dict[str, Any]) -> str:
     entries = []
     for source in data["sources"]:
@@ -490,8 +617,8 @@ def stat_card(label: str, value: str, detail: str, tone: str = "orange") -> str:
     return f'<div class="stat-card tone-{tone}"><span>{esc(label)}</span><strong>{esc(value)}</strong><small>{esc(detail)}</small></div>'
 
 
-def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[str, str]] = None) -> str:
-    body, navigation = render_markdown(markdown, asset_svgs)
+def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[str, str]] = None, asset_images: Optional[Dict[str, str]] = None) -> str:
+    body, navigation = render_markdown(markdown, asset_svgs, asset_images)
     thesis = data["thesis"]
     best = thesis["best_segments"]
     priorities = thesis["company_priorities"]
@@ -512,7 +639,7 @@ def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[st
   <meta name="description" content="液冷行业研究框架：投资结论、产业链、商业模式、财务与跟踪体系">
   <title>液冷行业研究框架 v3 · Thermal Cartography</title>
   <style>
-    :root {{ --ink:#071522; --ink-2:#0d2332; --panel:#102c3c; --panel-2:#14394c; --line:#24485b; --text:#f5f7f9; --muted:#a9b7c5; --orange:#f2783f; --coral:#f05a67; --cyan:#72cfff; --cream:#f0eee8; --shadow:0 20px 60px rgba(0,0,0,.25); }}
+    :root {{ --ink:#071522; --ink-2:#0d2332; --panel:#102c3c; --panel-2:#14394c; --line:#24485b; --text:#f5f7f9; --muted:#a9b7c5; --orange:#f2783f; --coral:#f05a67; --cyan:#72cfff; --cream:#f0eee8; --paper:#e8e3d9; --shadow:0 20px 60px rgba(0,0,0,.25); }}
     * {{ box-sizing:border-box; }}
     html {{ scroll-behavior:smooth; }}
     body {{ margin:0; background:var(--ink); color:var(--text); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; line-height:1.68; }}
@@ -546,15 +673,17 @@ def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[st
     .segment-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0 30px; }} .segment-card {{ display:grid; grid-template-columns:42px 1fr; gap:12px; padding:19px; background:linear-gradient(150deg,rgba(20,57,76,.95),rgba(13,35,50,.95)); border:1px solid #235269; border-radius:14px; min-height:210px; }} .segment-rank {{ display:flex; align-items:flex-start; justify-content:center; color:var(--orange); font:24px Georgia,serif; }} .segment-card h3 {{ margin:6px 0 6px; font-size:19px; }} .segment-card p {{ margin:0; color:var(--muted); font-size:12px; line-height:1.65; }} .company-tags {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }} .company-tags span {{ color:#d8e2e7; background:rgba(114,207,255,.08); border:1px solid rgba(114,207,255,.2); padding:3px 7px; border-radius:99px; font-size:10px; }}
     .priority-panel {{ padding:17px 20px; border-left:3px solid var(--orange); background:rgba(242,120,63,.06); margin:20px 0 35px; }} .priority-row {{ display:grid; grid-template-columns:90px minmax(180px,260px) 1fr; gap:14px; padding:10px 0; border-bottom:1px solid rgba(169,183,197,.12); align-items:start; }} .priority-row:last-child {{ border-bottom:0; }} .priority-row span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .priority-row strong {{ font-size:14px; }} .priority-row em {{ font-style:normal; color:var(--muted); font-size:12px; }}
     .signal-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:25px 0 46px; }} .signal-card {{ padding:17px; background:#0d2332; border:1px solid var(--line); border-radius:12px; }} .signal-card h3 {{ margin:0 0 8px; font-size:14px; }} .signal-card ul {{ margin:0; padding-left:17px; color:var(--muted); font-size:12px; }} .signal-card li::marker {{ color:var(--orange); }}
+    .hardware-board {{ margin:36px 0 52px; padding:24px; background:linear-gradient(145deg,#0b1d2a,#102c3c); border:1px solid #2b5264; border-top:3px solid var(--orange); box-shadow:var(--shadow); }} .board-head {{ display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:18px; }} .board-head h3 {{ margin:4px 0 0; font:700 24px/1.25 Georgia,"Noto Serif SC",serif; }} .board-head p {{ max-width:430px; margin:0; color:var(--muted); font-size:11px; line-height:1.65; }} .hardware-grid {{ display:grid; grid-template-columns:1.22fr .78fr; gap:14px; }} .hardware-card {{ margin:0; min-width:0; overflow:hidden; background:#071522; border:1px solid #2a5368; border-radius:5px; }} .hardware-media {{ position:relative; overflow:hidden; background:#071522; }} .hardware-media img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; filter:saturate(.88) contrast(1.04); }} .hardware-caption {{ display:grid; grid-template-columns:130px 1fr; gap:13px; padding:13px 15px 15px; border-top:1px solid rgba(114,207,255,.16); }} .hardware-caption strong {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .hardware-caption span {{ color:#c4d3d9; font-size:12px; line-height:1.6; }} .hardware-callout, .facility-label {{ position:absolute; padding:5px 8px; color:#071522; background:var(--cream); border-left:3px solid var(--orange); font:700 10px ui-monospace,monospace; box-shadow:0 7px 20px rgba(0,0,0,.28); }} .callout-heat {{ left:8%; top:17%; }} .callout-plate {{ right:26%; top:28%; }} .callout-uqd {{ right:30%; top:45%; border-left-color:var(--cyan); }} .callout-cdu {{ left:9%; bottom:20%; border-left-color:var(--cyan); }} .facility-label {{ bottom:10%; }} .facility-left {{ left:5%; border-left-color:var(--cyan); }} .facility-right {{ right:5%; border-left-color:var(--coral); }} .component-tags {{ display:flex; flex-wrap:wrap; gap:6px; padding:0 15px 15px; }} .component-tags span {{ padding:5px 7px; border:1px solid #2b5264; color:#b8eaff; font:10px ui-monospace,monospace; }} .hardware-facility {{ margin-top:14px; }} .hardware-facility .hardware-media img {{ aspect-ratio:2.55/1; object-position:center 58%; }}
     .visual-stack {{ display:grid; gap:18px; margin:25px 0 56px; }} .figure-card {{ margin:0; padding:20px 21px 17px; background:linear-gradient(160deg,#102c3c,#0c2230); border:1px solid #235269; border-radius:15px; box-shadow:0 14px 34px rgba(0,0,0,.17); }} .editorial-plate {{ border-radius:5px; border-left:3px solid var(--orange); }} .md-figure {{ margin:32px 0 44px; padding:24px 18px 18px; }} .md-figure-svg {{ overflow-x:auto; scrollbar-width:thin; }} .figure-heading {{ display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-bottom:13px; }} .figure-heading span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.14em; }} .figure-heading strong {{ font:18px Georgia,"Noto Serif SC",serif; }} .figure-card svg {{ display:block; width:100%; height:auto; overflow:visible; }} .figure-card svg text {{ fill:#f5f7f9; font-family:ui-sans-serif,"Noto Sans SC",sans-serif; font-size:13px; }} .figure-card svg .grid {{ stroke:#23485b; fill:none; stroke-width:1; }} .figure-card svg .label {{ fill:#d7e2e7; font-size:12px; }} .figure-card svg .axis, .figure-card svg .note {{ fill:#a9b7c5; font-size:11px; }} .figure-card svg .eyebrow {{ fill:#f2783f; font:10px ui-monospace,monospace; letter-spacing:.12em; }} .figure-card svg .value-label {{ fill:#ffd2b5; font:11px ui-monospace,monospace; }} .figure-card svg .value-label.low {{ fill:#b8eaff; }} .figure-card svg .cell {{ font:11px ui-monospace,monospace; }} .figure-card svg .route-title, .figure-card svg .center-title {{ fill:#f5f7f9; font:700 18px Georgia,"Noto Serif SC",serif; }} .figure-card svg .center-sub {{ fill:#071522; font:11px ui-monospace,monospace; }} .figure-card svg .step-number {{ fill:#f5f7f9; font:700 11px ui-monospace,monospace; }} .figure-card svg .step-title {{ fill:#f5f7f9; font-size:14px; font-weight:700; }} .figure-card svg .check-label {{ fill:#b8eaff; font:10px ui-monospace,monospace; }} .figure-card figcaption, .figure-card > figcaption {{ margin:12px 0 0; color:#8fa7b2; font-size:11px; line-height:1.6; }}
+    .financial-plate {{ overflow:hidden; }} .financial-dashboard {{ min-width:880px; }} .figure-card svg .chart-title {{ fill:#f5f7f9; font:700 14px Georgia,"Noto Serif SC",serif; }} .figure-card svg .chart-unit, .figure-card svg .chart-axis, .figure-card svg .chart-legend {{ fill:#8fa7b2; font:10px ui-monospace,monospace; }} .figure-card svg .chart-label {{ fill:#d7e2e7; font-size:10px; }} .figure-card svg .chart-value {{ fill:#ffd2b5; font:10px ui-monospace,monospace; }} .md-image-figure {{ background:linear-gradient(145deg,#0b1d2a,#102c3c); }} .md-image-figure img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; border:1px solid #2b5264; filter:saturate(.9); }}
     .article-wrap {{ max-width:1160px; margin:0 auto; padding:0 clamp(22px,5vw,75px) 90px; }} .article {{ color:#d8e2e7; }} .article h1 {{ font:700 42px/1.12 Georgia,"Noto Serif SC",serif; margin:0 0 26px; }} .article h2 {{ padding-top:58px; scroll-margin-top:22px; color:#fff; }} .article h3 {{ margin:30px 0 10px; color:#fff; font:700 21px/1.3 Georgia,"Noto Serif SC",serif; }} .article h4 {{ color:var(--orange); }} .article p {{ max-width:920px; margin:11px 0; color:#c1d0d7; font-size:14px; }} .article ul, .article ol {{ max-width:900px; color:#c1d0d7; padding-left:23px; font-size:14px; }} .article li {{ margin:5px 0; }} .article li::marker {{ color:var(--orange); }} .article blockquote {{ max-width:920px; margin:20px 0; padding:14px 17px; background:rgba(114,207,255,.06); border-left:3px solid var(--cyan); color:#d8edf5; font-family:Georgia,"Noto Serif SC",serif; }} .rule {{ border:0; border-top:1px solid var(--line); margin:43px 0 15px; }}
     .table-wrap {{ max-width:100%; overflow:auto; margin:18px 0 25px; border:1px solid var(--line); border-radius:10px; background:rgba(13,35,50,.66); }} table {{ width:100%; border-collapse:collapse; min-width:650px; font-size:12px; }} th, td {{ padding:9px 11px; text-align:left; border-bottom:1px solid rgba(169,183,197,.12); vertical-align:top; }} th {{ position:sticky; top:0; background:#173a4c; color:#fff; font:11px ui-monospace,monospace; white-space:nowrap; }} td {{ color:#bfd0d7; }} tr:last-child td {{ border-bottom:0; }} tr:hover td {{ background:rgba(114,207,255,.04); }}
     .code-block {{ overflow:auto; padding:15px; background:#061019; border:1px solid var(--line); border-radius:10px; color:#b8eaff; }}
     .source-drawer {{ position:fixed; z-index:12; top:0; right:0; width:min(560px,92vw); height:100vh; overflow:auto; transform:translateX(102%); transition:transform .28s ease; background:#0a1e2c; border-left:1px solid var(--line); box-shadow:-30px 0 80px rgba(0,0,0,.4); }} body.sources-open .source-drawer {{ transform:translateX(0); }} .drawer-head {{ display:flex; justify-content:space-between; padding:19px 22px; position:sticky; top:0; background:rgba(10,30,44,.92); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); color:var(--orange); font:11px ui-monospace,monospace; letter-spacing:.14em; }} button {{ color:var(--text); background:transparent; border:1px solid var(--line); padding:6px 9px; border-radius:7px; cursor:pointer; }} .source-list {{ padding:17px 22px 40px; }} .source-item {{ padding:16px 0; border-bottom:1px solid rgba(169,183,197,.14); }} .source-item h3 {{ margin:5px 0; font:16px Georgia,"Noto Serif SC",serif; }} .source-item p {{ margin:4px 0; color:var(--muted); font-size:12px; }} .source-id {{ color:var(--orange); font:10px ui-monospace,monospace; }} details {{ margin-top:9px; color:#8fa7b2; font-size:11px; }}
     .open-sources {{ position:fixed; right:22px; bottom:20px; z-index:10; color:var(--ink); background:var(--cyan); border:0; border-radius:99px; padding:10px 14px; font-weight:700; box-shadow:0 8px 24px rgba(0,0,0,.24); }}
     .footer {{ max-width:1160px; margin:auto; padding:25px clamp(22px,5vw,75px) 45px; border-top:1px solid var(--line); color:#76909b; font:11px ui-monospace,monospace; }}
-    @media (max-width:980px) {{ .app-shell {{ display:block; }} .rail {{ position:relative; height:auto; padding:16px 22px; border-right:0; border-bottom:1px solid var(--line); }} .brand {{ margin-bottom:12px; }} .nav {{ display:flex; overflow:auto; max-height:none; padding-bottom:2px; }} .nav a {{ white-space:nowrap; }} .rail-label, .rail-footer {{ display:none; }} .hero {{ min-height:570px; padding-top:40px; }} .thermal-ribbon {{ top:30px; opacity:.35; }} .stats {{ grid-template-columns:repeat(2,1fr); }} .segment-grid, .signal-grid {{ grid-template-columns:1fr; }} .priority-row {{ grid-template-columns:80px 1fr; }} .priority-row em {{ grid-column:2; }} }}
-    @media (max-width:600px) {{ .hero {{ padding:32px 19px 35px; min-height:610px; }} .hero h1 {{ font-size:43px; }} .hero-subtitle {{ font-size:14px; }} .thermal-ribbon {{ width:710px; top:95px; right:-245px; opacity:.27; }} .stats {{ gap:8px; }} .stat-card {{ padding:12px; }} .stat-card strong {{ font-size:22px; }} .canvas, .article-wrap {{ padding-left:17px; padding-right:17px; }} .canvas h2, .article h2 {{ font-size:27px; }} .figure-card {{ padding:15px 12px; }} .figure-heading {{ display:block; }} .figure-heading strong {{ display:block; margin-top:5px; font-size:17px; }} .figure-card svg {{ min-width:620px; }} .figure-card {{ overflow:auto; }} .priority-row {{ display:block; }} .priority-row strong, .priority-row em {{ display:block; margin-top:5px; }} .open-sources {{ right:12px; bottom:12px; }} }}
+    @media (max-width:980px) {{ .app-shell {{ display:block; }} .rail {{ position:relative; height:auto; padding:16px 22px; border-right:0; border-bottom:1px solid var(--line); }} .brand {{ margin-bottom:12px; }} .nav {{ display:flex; overflow:auto; max-height:none; padding-bottom:2px; }} .nav a {{ white-space:nowrap; }} .rail-label, .rail-footer {{ display:none; }} .hero {{ min-height:570px; padding-top:40px; }} .thermal-ribbon {{ top:30px; opacity:.35; }} .stats {{ grid-template-columns:repeat(2,1fr); }} .segment-grid, .signal-grid {{ grid-template-columns:1fr; }} .priority-row {{ grid-template-columns:80px 1fr; }} .priority-row em {{ grid-column:2; }} .board-head {{ display:block; }} .board-head p {{ margin-top:10px; }} .hardware-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:600px) {{ .hero {{ padding:32px 19px 35px; min-height:610px; }} .hero h1 {{ font-size:43px; }} .hero-subtitle {{ font-size:14px; }} .thermal-ribbon {{ width:710px; top:95px; right:-245px; opacity:.27; }} .stats {{ gap:8px; }} .stat-card {{ padding:12px; }} .stat-card strong {{ font-size:22px; }} .canvas, .article-wrap {{ padding-left:17px; padding-right:17px; }} .canvas h2, .article h2 {{ font-size:27px; }} .figure-card {{ padding:15px 12px; }} .figure-heading {{ display:block; }} .figure-heading strong {{ display:block; margin-top:5px; font-size:17px; }} .figure-card svg {{ min-width:620px; }} .figure-card {{ overflow:auto; }} .priority-row {{ display:block; }} .priority-row strong, .priority-row em {{ display:block; margin-top:5px; }} .hardware-board {{ padding:15px; }} .hardware-caption {{ display:block; }} .hardware-caption span {{ display:block; margin-top:6px; }} .hardware-facility .hardware-media img {{ aspect-ratio:3/2; }} .open-sources {{ right:12px; bottom:12px; }} }}
     @media print {{ body {{ background:#fff; color:#111; }} body::before, .rail, .open-sources, .source-drawer {{ display:none!important; }} .app-shell {{ display:block; }} .hero, .figure-card, .priority-panel, .stat-card, .signal-card {{ background:#fff; color:#111; box-shadow:none; border:1px solid #c9d2d6; }} .hero {{ min-height:auto; padding:30px 20px; }} .hero h1, .canvas h2, .article h2, .article h3 {{ color:#111; }} .hero-subtitle, .article p, .article li, td {{ color:#28343a; }} .article h2 {{ break-before:page; }} .visual-stack {{ break-inside:avoid; }} a {{ color:#111; text-decoration:underline; }} .table-wrap {{ border-color:#c9d2d6; }} th {{ background:#edf2f4; color:#111; }} .thermal-ribbon {{ opacity:.28; }} }}
   </style>
 </head>
@@ -568,7 +697,7 @@ def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[st
     </aside>
     <main>
       <section class="hero" id="top"><div class="hero-content"><span class="hero-kicker">LIQUID COOLING / INVESTMENT FRAMEWORK V3</span><h1>热流正在重写<br><em>算力基础设施</em>的价值地图</h1><p class="hero-subtitle">从芯片热密度出发，穿过冷板、CDU、UQD与工质，回到订单、现金流和估值。首屏先给判断，正文再给证据。</p><div class="hero-meta"><span class="meta-chip"><strong>数据截止</strong> {esc(data["meta"]["data_cutoff"])}</span><span class="meta-chip"><strong>基准版本</strong> {esc(data["meta"]["baseline_cutoff"])}</span><span class="meta-chip"><strong>覆盖</strong> A股产业链 / 海外对标</span><span class="meta-chip"><strong>阶段</strong> 商业化加速期</span></div><div class="stats">{stat_card("BEST LINK", "CDU", "系统交付与订单前置", "orange")}{stat_card("HIGH BETA", "冷板 / TIM", "NV平台认证与单位价值量", "cyan")}{stat_card("BOTTLENECK", "UQD", "认证与可靠性优先", "coral")}{stat_card("MUST WATCH", "现金流", "订单不是回款", "cyan")}</div><p class="hero-note">核心观点：优先研究CDU及液冷基础设施；以NV定制冷板/TIM获取平台升级弹性；UQD与高端工质作为国产替代卡位观察。估值和业绩必须回到同一张表里检验。</p></div>{thermal_ribbon()}</section>
-      <section class="canvas" id="investment-conclusion"><p class="section-kicker">00 / INVESTMENT CONCLUSION</p><h2>把行业机会拆成可验证的公司机会</h2><p class="canvas-intro">液冷行业的增长确定性高于单家公司业绩确定性。下方先呈现环节优先级、公司关注顺序和核心验证条件；随后正文按原始模块顺序展开。</p><div class="segment-grid">{best_cards}</div><div class="priority-panel"><div class="section-kicker">COMPANY PRIORITY</div>{priority_cards}</div><div class="signal-grid"><article class="signal-card"><h3>催化剂</h3><ul>{catalysts}</ul></article><article class="signal-card"><h3>验证条件</h3><ul>{validate}</ul></article><article class="signal-card"><h3>失效条件</h3><ul>{invalid}</ul></article></div><div class="visual-stack">{system_figure()}{market_figure(data)}{value_pool_figure(data)}{competition_figure(data)}{financial_figure(data)}</div></section>
+      <section class="canvas" id="investment-conclusion"><p class="section-kicker">00 / INVESTMENT CONCLUSION</p><h2>把行业机会拆成可验证的公司机会</h2><p class="canvas-intro">液冷行业的增长确定性高于单家公司业绩确定性。下方先呈现环节优先级、公司关注顺序和核心验证条件；随后正文按原始模块顺序展开。</p><div class="segment-grid">{best_cards}</div><div class="priority-panel"><div class="section-kicker">COMPANY PRIORITY</div>{priority_cards}</div>{hardware_board(asset_images or {})}<div class="signal-grid"><article class="signal-card"><h3>催化剂</h3><ul>{catalysts}</ul></article><article class="signal-card"><h3>验证条件</h3><ul>{validate}</ul></article><article class="signal-card"><h3>失效条件</h3><ul>{invalid}</ul></article></div><div class="visual-stack">{system_figure()}{market_figure(data)}{value_pool_figure(data)}{competition_figure(data)}{financial_figure(data)}</div></section>
       <section class="article-wrap"><article class="article">{body}</article></section>
       <footer class="footer">液冷行业研究框架 v3 · {esc(data["meta"]["data_cutoff"])} · 事实、预测与判断已尽量分栏标注。<br>本页面为独立HTML，无外部脚本、样式、字体或图片依赖。</footer>
     </main>
@@ -617,15 +746,17 @@ def main() -> int:
     args = parser.parse_args()
     markdown, data = validate_inputs(args.markdown, args.data)
     asset_svgs = figure_assets(data)
+    asset_images = read_image_assets(args.markdown.parent / "assets")
     if args.check:
-        result = build_html(markdown, data, asset_svgs)
+        result = build_html(markdown, data, asset_svgs, asset_images)
         assert "<!doctype html>" in result.lower()
         assert "source-drawer" in result
         assert "THERMAL CARTOGRAPHY" in result
+        assert len(asset_images) == 3
         print(f"liquid cooling report build check: PASS ({len(result):,} chars)")
         return 0
     write_figure_assets(asset_svgs, args.markdown.parent / "assets")
-    result = build_html(markdown, data, asset_svgs)
+    result = build_html(markdown, data, asset_svgs, asset_images)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(result, encoding="utf-8")
     print(f"wrote {args.output} ({len(result):,} chars)")
