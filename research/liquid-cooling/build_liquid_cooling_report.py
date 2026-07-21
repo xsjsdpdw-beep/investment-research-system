@@ -8,7 +8,7 @@ import html
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 FORBIDDEN_DRAWING = set("╔╗╚╝╠╣║═┌┐└┘├┤│─")
@@ -28,6 +28,13 @@ def inline_markdown(value: str) -> str:
         placeholders.append(fragment)
         return token
 
+    text = re.sub(
+        r"!\[([^\]]+)\]\((assets/[^\s)]+\.svg)\)",
+        lambda match: hold(
+            f'<span class="asset-ref" data-asset="{esc(match.group(2))}" data-alt="{esc(match.group(1))}"></span>'
+        ),
+        text,
+    )
     text = re.sub(
         r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
         lambda match: hold(
@@ -79,7 +86,20 @@ def render_table(lines: Sequence[str]) -> str:
     )
 
 
-def render_markdown(markdown: str) -> Tuple[str, List[Tuple[str, str]]]:
+def replace_asset_refs(body: str, asset_svgs: Dict[str, str]) -> str:
+    pattern = re.compile(r'<span class="asset-ref" data-asset="([^"]+)" data-alt="([^"]+)"></span>')
+
+    def replace(match: re.Match[str]) -> str:
+        asset_path, alt = match.group(1), match.group(2)
+        svg = asset_svgs.get(asset_path)
+        if svg:
+            return f'<figure class="figure-card editorial-plate md-figure"><div class="md-figure-svg">{svg}</div><figcaption>{esc(alt)}</figcaption></figure>'
+        return f'<figure class="figure-card editorial-plate md-figure"><img src="{esc(asset_path)}" alt="{esc(alt)}"><figcaption>{esc(alt)}</figcaption></figure>'
+
+    return pattern.sub(replace, body)
+
+
+def render_markdown(markdown: str, asset_svgs: Optional[Dict[str, str]] = None) -> Tuple[str, List[Tuple[str, str]]]:
     lines = markdown.splitlines()
     blocks: List[str] = []
     navigation: List[Tuple[str, str]] = []
@@ -116,6 +136,11 @@ def render_markdown(markdown: str) -> Tuple[str, List[Tuple[str, str]]]:
 
         if stripped in {"---", "***"}:
             blocks.append('<hr class="rule">')
+            index += 1
+            continue
+
+        if re.fullmatch(r"!\[[^\]]+\]\(assets/[^\s)]+\.svg\)", stripped):
+            blocks.append(inline_markdown(stripped))
             index += 1
             continue
 
@@ -174,7 +199,7 @@ def render_markdown(markdown: str) -> Tuple[str, List[Tuple[str, str]]]:
             index += 1
         blocks.append("<p>" + inline_markdown(" ".join(paragraph)) + "</p>")
 
-    return "\n".join(blocks), navigation
+    return replace_asset_refs("\n".join(blocks), asset_svgs or {}), navigation
 
 
 def bar(value: float, maximum: float, color: str) -> str:
@@ -313,6 +338,143 @@ def financial_figure(data: Dict[str, Any]) -> str:
     )
 
 
+def editorial_figure(kicker: str, title: str, svg: str, caption: str, classes: str = "") -> str:
+    return (
+        f'<figure class="figure-card editorial-plate {esc(classes)}">'
+        f'<div class="figure-heading"><span>{esc(kicker)}</span><strong>{esc(title)}</strong></div>'
+        f'{svg}<figcaption>{caption}</figcaption></figure>'
+    )
+
+
+def chain_atlas_figure(data: Dict[str, Any]) -> str:
+    lanes = [
+        ("UPSTREAM", "上游材料", "铜 / 铝 · TIM · 工质 · 密封", "巨化 · 新宙邦 · 中石 · 思泉", "#72cfff"),
+        ("CORE PARTS", "中游部件", "冷板 · CDU · UQD · Manifold", "英维克 · 高澜 · 申菱 · 中航光电", "#f2783f"),
+        ("INTEGRATION", "系统交付", "机柜级液冷 · 一次/二次侧 · 监控运维", "英维克 · 曙光数创 · Vertiv", "#f05a67"),
+        ("APPLICATION", "下游应用", "AI数据中心 · 超算 · 储能 · 汽车热管理", "NVIDIA生态 · 云厂商 · ODM/OEM", "#a9b7c5"),
+    ]
+    parts = ['<svg viewBox="0 0 1120 430" role="img" aria-label="液冷产业链四层泳道图">', '<defs><linearGradient id="chainFlow" x1="0" x2="1"><stop stop-color="#72cfff"/><stop offset=".55" stop-color="#f2783f"/><stop offset="1" stop-color="#f05a67"/></linearGradient><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="#f2783f"/></marker></defs>']
+    parts.append('<path d="M186 75H1042" stroke="#23485b" stroke-width="2" stroke-dasharray="5 8"/>')
+    parts.append('<text x="20" y="31" class="axis">SUPPLY CHAIN ATLAS / 从原料到算力机柜</text><text x="1044" y="31" text-anchor="end" class="axis">价值流向 →</text>')
+    for index, (eyebrow, title, products, companies, color) in enumerate(lanes):
+        y = 78 + index * 80
+        parts.append(f'<line x1="184" y1="{y+27}" x2="1045" y2="{y+27}" stroke="#17394b" stroke-width="52" stroke-linecap="round"/>')
+        parts.append(f'<rect x="20" y="{y}" width="144" height="54" rx="10" fill="#102c3c" stroke="{color}"/><text x="34" y="{y+17}" class="eyebrow">{eyebrow}</text><text x="34" y="{y+39}" class="lane-title">{title}</text>')
+        products_list = [part.strip() for part in products.split("·")]
+        for col, product in enumerate(products_list):
+            x = 208 + col * 188
+            width = 166
+            parts.append(f'<rect x="{x}" y="{y+5}" width="{width}" height="44" rx="9" fill="#14394c" stroke="{color}" stroke-opacity=".42"/><text x="{x+12}" y="{y+25}" class="node-title">{esc(product)}</text><text x="{x+12}" y="{y+41}" class="node-sub">{esc(companies.split(" · ")[min(col, len(companies.split(" · "))-1)])}</text>')
+            if col < len(products_list) - 1:
+                parts.append(f'<path d="M{x+width+6} {y+27}h10" stroke="{color}" stroke-width="2" marker-end="url(#arrow)"/>')
+        parts.append(f'<circle cx="1050" cy="{y+27}" r="7" fill="{color}"/>')
+    parts.append('<text x="20" y="408" class="note">研究重点：价值量、认证权、交付边界和现金回款分别落在不同层，不把产业链整体收入直接等同液冷收入。</text></svg>')
+    return editorial_figure("06 / SUPPLY CHAIN ATLAS", "从材料、部件到客户采购权的四层价值链", "".join(parts), "图示采用泳道与节点表达，重点显示环节之间的采购和价值传递关系；公司名称为研究池，不代表完整市场份额。", "figure-chain")
+
+
+def technology_routes_figure() -> str:
+    routes = [
+        ("01", "冷板式液冷", "当前主流", "芯片 → TIM → 冷板 → CDU", "AI服务器 / 高密度机柜", "冷板 + CDU + UQD", "#f2783f"),
+        ("02", "单相浸没式", "场景化成长", "设备 → 介电液 → 换热器", "超算 / 特定AI集群", "工质 + 罐体 + 运维", "#72cfff"),
+        ("03", "两相浸没 / 喷淋", "验证期", "相变 / 直接接触 → 冷凝", "极高热流密度场景", "工质 + 密封 + 合规", "#f05a67"),
+    ]
+    parts = ['<svg viewBox="0 0 1120 480" role="img" aria-label="液冷技术路线对比图">', '<defs><linearGradient id="routeFlow" x1="0" x2="1"><stop stop-color="#f05a67"/><stop offset=".5" stop-color="#f2783f"/><stop offset="1" stop-color="#72cfff"/></linearGradient></defs>']
+    parts.append('<path d="M66 91C270 28 417 137 566 82S866 31 1056 98" fill="none" stroke="#21465a" stroke-width="24"/><path d="M66 91C270 28 417 137 566 82S866 31 1056 98" fill="none" stroke="url(#routeFlow)" stroke-width="5" stroke-dasharray="12 10"/><text x="20" y="31" class="axis">TECHNOLOGY MAP / 热流路径决定采购环节</text><text x="20" y="53" class="note">路线选择不是“谁更先进”，而是由热流密度、改造难度、工质合规和维护方式共同决定。</text>')
+    for index, (number, name, phase, path, scene, value, color) in enumerate(routes):
+        x = 20 + index * 366
+        parts.append(f'<rect x="{x}" y="155" width="340" height="250" rx="16" fill="#102c3c" stroke="#23485b"/><rect x="{x}" y="155" width="340" height="7" rx="3" fill="{color}"/><text x="{x+22}" y="194" class="eyebrow">ROUTE {number}</text><text x="{x+22}" y="230" class="route-title">{name}</text><text x="{x+22}" y="252" fill="{color}" class="route-phase">{phase}</text>')
+        parts.append(f'<rect x="{x+22}" y="278" width="296" height="42" rx="9" fill="#14394c"/><text x="{x+38}" y="304" class="node-title">{esc(path)}</text>')
+        parts.append(f'<text x="{x+22}" y="350" class="node-sub">典型场景</text><text x="{x+92}" y="350" class="node-title">{esc(scene)}</text><text x="{x+22}" y="378" class="node-sub">价值抓手</text><text x="{x+92}" y="378" class="node-title">{esc(value)}</text>')
+    parts.append('</svg>')
+    return editorial_figure("03 / TECHNOLOGY ROUTES", "三条路线：主流、场景化与验证期", "".join(parts), "科普重点是理解每条路线的热流路径、部署场景和价值抓手；冷板式当前更适合作为主线研究对象。", "figure-routes")
+
+
+def manufacturing_figure() -> str:
+    steps = [
+        ("01", "材料", "铜 / 铝 / 焊料", "导热与兼容"),
+        ("02", "流道成型", "CNC / 冲压 / 蚀刻", "尺寸与均匀性"),
+        ("03", "清洗准备", "洁净 / 涂钎料", "残留与润湿"),
+        ("04", "焊接成型", "真空钎焊 / 扩散焊", "变形与良率"),
+        ("05", "氦检", "零泄漏测试", "可靠性门槛"),
+        ("06", "热流测试", "热阻 / 流阻 / 平面度", "平台认证"),
+        ("07", "量产交付", "追溯 / 复检 / 维护", "客户回款"),
+    ]
+    parts = ['<svg viewBox="0 0 1120 350" role="img" aria-label="冷板制造工艺流程图">', '<defs><linearGradient id="processFlow" x1="0" x2="1"><stop stop-color="#72cfff"/><stop offset=".5" stop-color="#f2783f"/><stop offset="1" stop-color="#f05a67"/></linearGradient><marker id="processArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="#f2783f"/></marker></defs>', '<text x="20" y="31" class="axis">MANUFACTURING RIBBON / 冷板不是“做出来”，而是“测出来”</text>', '<path d="M50 145H1072" stroke="#23485b" stroke-width="4" marker-end="url(#processArrow)"/>']
+    for index, (number, title, detail, check) in enumerate(steps):
+        x = 20 + index * 156
+        color = "#72cfff" if index < 3 else "#f2783f" if index < 6 else "#f05a67"
+        parts.append(f'<circle cx="{x+52}" cy="145" r="30" fill="#102c3c" stroke="{color}" stroke-width="3"/><text x="{x+52}" y="150" text-anchor="middle" class="step-number">{number}</text><text x="{x+52}" y="207" text-anchor="middle" class="step-title">{esc(title)}</text><text x="{x+52}" y="230" text-anchor="middle" class="node-sub">{esc(detail)}</text><rect x="{x+5}" y="264" width="112" height="32" rx="8" fill="#14394c"/><text x="{x+61}" y="285" text-anchor="middle" class="check-label">{esc(check)}</text>')
+    parts.append('<text x="20" y="332" class="note">设备与耗材：CNC / 真空钎焊炉 / 氦质谱检漏 / 点胶涂覆 / 三坐标检测。高端产能的瓶颈通常是认证良率，不是名义产能。</text></svg>')
+    return editorial_figure("07 / MANUFACTURING RIBBON", "从流道成型到客户认证：制造工艺的七个关口", "".join(parts), "制造工艺图把“设备、耗材、测试和认证”放到一条生产带上，便于理解为什么扩产不等于高端产能。", "figure-manufacturing")
+
+
+def commercial_loop_figure() -> str:
+    phases = [("认证", 190, 100, "平台 / 客户"), ("样品", 430, 72, "小批验证"), ("量产", 690, 100, "订单放量"), ("回款", 845, 250, "验收 / 现金"), ("维保", 570, 345, "替换 / 服务")]
+    parts = ['<svg viewBox="0 0 1120 470" role="img" aria-label="液冷商业模式生命周期闭环图">', '<defs><marker id="loopArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="#f2783f"/></marker></defs>', '<text x="20" y="31" class="axis">BUSINESS MODEL LOOP / 一次设备收入只是起点</text>', '<circle cx="560" cy="225" r="112" fill="#102c3c" stroke="#f2783f" stroke-width="2" stroke-dasharray="6 8"/><circle cx="560" cy="225" r="72" fill="#14394c" stroke="#72cfff"/><text x="560" y="216" text-anchor="middle" class="route-title">生命周期价值</text><text x="560" y="241" text-anchor="middle" class="node-sub">设备 + 服务 + 替换</text>']
+    for index in range(len(phases)):
+        x1, y1 = phases[index][1], phases[index][2]
+        x2, y2 = phases[(index + 1) % len(phases)][1], phases[(index + 1) % len(phases)][2]
+        parts.append(f'<path d="M{x1} {y1} Q560 225 {x2} {y2}" fill="none" stroke="#f2783f" stroke-width="2" marker-end="url(#loopArrow)" opacity=".8"/>')
+    for index, (name, x, y, detail) in enumerate(phases):
+        parts.append(f'<g transform="translate({x-58} {y-27})"><rect width="116" height="54" rx="10" fill="#102c3c" stroke="#72cfff"/><text x="58" y="23" text-anchor="middle" class="node-title">{name}</text><text x="58" y="42" text-anchor="middle" class="node-sub">{detail}</text></g>')
+    cards = [("CDU / 系统", "项目交付 + 维保", "验收周期 / 应收", "#f2783f"), ("冷板 / TIM", "平台认证 + 量产", "良率 / 单位毛利", "#72cfff"), ("UQD", "精密制造 + 认证", "寿命 / 泄漏", "#f05a67"), ("工质", "配方合规 + 供货", "测试 / 复购", "#a9b7c5")]
+    for index, (name, model, risk, color) in enumerate(cards):
+        x = 20 + index * 270
+        parts.append(f'<rect x="{x}" y="395" width="244" height="48" rx="9" fill="#14394c" stroke="{color}"/><text x="{x+14}" y="416" class="node-title">{name}</text><text x="{x+14}" y="435" class="node-sub">{model} · 看 {risk}</text>')
+    parts.append('</svg>')
+    return editorial_figure("12 / COMMERCIAL MODEL", "认证、量产、交付、回款与维保构成真正的商业闭环", "".join(parts), "不同环节的收入确认点不同：CDU重验收回款，冷板/TIM重平台认证与良率，UQD重可靠性，工质重测试与复购。", "figure-commercial")
+
+
+def tracking_quadrant_figure() -> str:
+    quadrants = [
+        ("01", "需求", "TDP / 机柜kW / 液冷渗透率", "判断必要性", "#72cfff"),
+        ("02", "订单", "BOM / 在手订单 / 合同负债", "判断能见度", "#f2783f"),
+        ("03", "供给", "认证产能 / 良率 / 交付周期", "判断兑现能力", "#f05a67"),
+        ("04", "财务", "毛利 / 应收 / 存货 / OCF", "判断增长质量", "#a9b7c5"),
+    ]
+    parts = ['<svg viewBox="0 0 1120 410" role="img" aria-label="液冷行业跟踪体系四象限图">', '<text x="20" y="31" class="axis">TRACKING SYSTEM / 每个季度只问四个问题</text>', '<path d="M560 75V350M180 212H940" stroke="#23485b" stroke-width="2" stroke-dasharray="5 8"/>']
+    positions = [(28, 64), (590, 64), (28, 246), (590, 246)]
+    for (number, title, metrics, conclusion, color), (x, y) in zip(quadrants, positions):
+        parts.append(f'<rect x="{x}" y="{y}" width="500" height="130" rx="14" fill="#102c3c" stroke="#23485b"/><circle cx="{x+34}" cy="{y+35}" r="18" fill="{color}"/><text x="{x+34}" y="{y+40}" text-anchor="middle" class="step-number">{number}</text><text x="{x+70}" y="{y+41}" class="route-title">{title}</text><text x="{x+70}" y="{y+72}" class="node-title">{esc(metrics)}</text><text x="{x+70}" y="{y+101}" class="node-sub">{esc(conclusion)}</text>')
+    parts.append('<rect x="415" y="180" width="290" height="64" rx="32" fill="#f2783f"/><text x="560" y="208" text-anchor="middle" class="center-title">业绩与估值验证</text><text x="560" y="230" text-anchor="middle" class="center-sub">订单 → 收入 → 利润 → 现金</text></svg>')
+    return editorial_figure("02 / TRACKING QUADRANT", "需求、订单、供给、财务：跟踪体系的四个入口", "".join(parts), "把宏观景气和公司财务放在同一张图上，避免只看订单或只看概念。", "figure-tracking")
+
+
+def catalyst_timeline_figure() -> str:
+    stages = [("平台发布", "技术规格", "2025—2026", "#72cfff"), ("客户认证", "样品 / 小批", "持续发生", "#72cfff"), ("批量交付", "订单 / 出货", "2026H2—2027", "#f2783f"), ("财务兑现", "利润 / 回款", "季度验证", "#f05a67"), ("估值重估", "分部贡献", "条件触发", "#a9b7c5")]
+    parts = ['<svg viewBox="0 0 1120 300" role="img" aria-label="液冷行业催化剂验证时间轴">', '<text x="20" y="31" class="axis">CATALYST TIMELINE / 催化剂需要跨过三道门</text>', '<path d="M92 128H1030" stroke="#23485b" stroke-width="4"/>']
+    for index, (title, detail, period, color) in enumerate(stages):
+        x = 110 + index * 215
+        parts.append(f'<circle cx="{x}" cy="128" r="22" fill="#102c3c" stroke="{color}" stroke-width="4"/><text x="{x}" y="134" text-anchor="middle" class="step-number">0{index+1}</text><text x="{x}" y="190" text-anchor="middle" class="route-title">{title}</text><text x="{x}" y="215" text-anchor="middle" class="node-title">{detail}</text><text x="{x}" y="239" text-anchor="middle" class="node-sub">{period}</text>')
+        if index < len(stages)-1:
+            parts.append(f'<path d="M{x+25} 128h156" stroke="{color}" stroke-width="3" stroke-dasharray="7 8"/>')
+    parts.append('<text x="20" y="280" class="note">最强验证：客户认证 → 稳定量产 → 收入、毛利和经营现金流同步改善。</text></svg>')
+    return editorial_figure("14 / CATALYST TIMELINE", "从平台催化到估值验证：不要跳过量产与回款", "".join(parts), "催化剂不是公告清单，而是一条必须逐级兑现的验证链。", "figure-catalyst")
+
+
+def figure_assets(data: Dict[str, Any]) -> Dict[str, str]:
+    figures = {
+        "assets/01_technology_routes.svg": technology_routes_figure(),
+        "assets/02_supply_chain_atlas.svg": chain_atlas_figure(data),
+        "assets/03_tracking_quadrant.svg": tracking_quadrant_figure(),
+        "assets/04_manufacturing_ribbon.svg": manufacturing_figure(),
+        "assets/05_commercial_model_loop.svg": commercial_loop_figure(),
+        "assets/06_catalyst_timeline.svg": catalyst_timeline_figure(),
+    }
+    extracted: Dict[str, str] = {}
+    for path, figure in figures.items():
+        match = re.search(r"(<svg\b.*?</svg>)", figure, re.S)
+        if match:
+            extracted[path] = match.group(1)
+    return extracted
+
+
+def write_figure_assets(asset_svgs: Dict[str, str], asset_dir: Path) -> None:
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    for relative_path, svg in asset_svgs.items():
+        (asset_dir / Path(relative_path).name).write_text(svg, encoding="utf-8")
+
+
 def source_drawer(data: Dict[str, Any]) -> str:
     entries = []
     for source in data["sources"]:
@@ -328,8 +490,8 @@ def stat_card(label: str, value: str, detail: str, tone: str = "orange") -> str:
     return f'<div class="stat-card tone-{tone}"><span>{esc(label)}</span><strong>{esc(value)}</strong><small>{esc(detail)}</small></div>'
 
 
-def build_html(markdown: str, data: Dict[str, Any]) -> str:
-    body, navigation = render_markdown(markdown)
+def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[str, str]] = None) -> str:
+    body, navigation = render_markdown(markdown, asset_svgs)
     thesis = data["thesis"]
     best = thesis["best_segments"]
     priorities = thesis["company_priorities"]
@@ -384,7 +546,7 @@ def build_html(markdown: str, data: Dict[str, Any]) -> str:
     .segment-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0 30px; }} .segment-card {{ display:grid; grid-template-columns:42px 1fr; gap:12px; padding:19px; background:linear-gradient(150deg,rgba(20,57,76,.95),rgba(13,35,50,.95)); border:1px solid #235269; border-radius:14px; min-height:210px; }} .segment-rank {{ display:flex; align-items:flex-start; justify-content:center; color:var(--orange); font:24px Georgia,serif; }} .segment-card h3 {{ margin:6px 0 6px; font-size:19px; }} .segment-card p {{ margin:0; color:var(--muted); font-size:12px; line-height:1.65; }} .company-tags {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }} .company-tags span {{ color:#d8e2e7; background:rgba(114,207,255,.08); border:1px solid rgba(114,207,255,.2); padding:3px 7px; border-radius:99px; font-size:10px; }}
     .priority-panel {{ padding:17px 20px; border-left:3px solid var(--orange); background:rgba(242,120,63,.06); margin:20px 0 35px; }} .priority-row {{ display:grid; grid-template-columns:90px minmax(180px,260px) 1fr; gap:14px; padding:10px 0; border-bottom:1px solid rgba(169,183,197,.12); align-items:start; }} .priority-row:last-child {{ border-bottom:0; }} .priority-row span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .priority-row strong {{ font-size:14px; }} .priority-row em {{ font-style:normal; color:var(--muted); font-size:12px; }}
     .signal-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:25px 0 46px; }} .signal-card {{ padding:17px; background:#0d2332; border:1px solid var(--line); border-radius:12px; }} .signal-card h3 {{ margin:0 0 8px; font-size:14px; }} .signal-card ul {{ margin:0; padding-left:17px; color:var(--muted); font-size:12px; }} .signal-card li::marker {{ color:var(--orange); }}
-    .visual-stack {{ display:grid; gap:18px; margin:25px 0 56px; }} .figure-card {{ margin:0; padding:20px 21px 17px; background:linear-gradient(160deg,#102c3c,#0c2230); border:1px solid #235269; border-radius:15px; box-shadow:0 14px 34px rgba(0,0,0,.17); }} .figure-heading {{ display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-bottom:13px; }} .figure-heading span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.14em; }} .figure-heading strong {{ font:18px Georgia,"Noto Serif SC",serif; }} .figure-card svg {{ display:block; width:100%; height:auto; overflow:visible; }} .figure-card svg text {{ fill:#f5f7f9; font-family:ui-sans-serif,"Noto Sans SC",sans-serif; font-size:13px; }} .figure-card svg .grid {{ stroke:#23485b; fill:none; stroke-width:1; }} .figure-card svg .label {{ fill:#d7e2e7; font-size:12px; }} .figure-card svg .axis, .figure-card svg .note {{ fill:#a9b7c5; font-size:11px; }} .figure-card svg .value-label {{ fill:#ffd2b5; font:11px ui-monospace,monospace; }} .figure-card svg .value-label.low {{ fill:#b8eaff; }} .figure-card svg .cell {{ font:11px ui-monospace,monospace; }} .figure-card figcaption, .figure-card > figcaption {{ margin:12px 0 0; color:#8fa7b2; font-size:11px; line-height:1.6; }}
+    .visual-stack {{ display:grid; gap:18px; margin:25px 0 56px; }} .figure-card {{ margin:0; padding:20px 21px 17px; background:linear-gradient(160deg,#102c3c,#0c2230); border:1px solid #235269; border-radius:15px; box-shadow:0 14px 34px rgba(0,0,0,.17); }} .editorial-plate {{ border-radius:5px; border-left:3px solid var(--orange); }} .md-figure {{ margin:32px 0 44px; padding:24px 18px 18px; }} .md-figure-svg {{ overflow-x:auto; scrollbar-width:thin; }} .figure-heading {{ display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-bottom:13px; }} .figure-heading span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.14em; }} .figure-heading strong {{ font:18px Georgia,"Noto Serif SC",serif; }} .figure-card svg {{ display:block; width:100%; height:auto; overflow:visible; }} .figure-card svg text {{ fill:#f5f7f9; font-family:ui-sans-serif,"Noto Sans SC",sans-serif; font-size:13px; }} .figure-card svg .grid {{ stroke:#23485b; fill:none; stroke-width:1; }} .figure-card svg .label {{ fill:#d7e2e7; font-size:12px; }} .figure-card svg .axis, .figure-card svg .note {{ fill:#a9b7c5; font-size:11px; }} .figure-card svg .eyebrow {{ fill:#f2783f; font:10px ui-monospace,monospace; letter-spacing:.12em; }} .figure-card svg .value-label {{ fill:#ffd2b5; font:11px ui-monospace,monospace; }} .figure-card svg .value-label.low {{ fill:#b8eaff; }} .figure-card svg .cell {{ font:11px ui-monospace,monospace; }} .figure-card svg .route-title, .figure-card svg .center-title {{ fill:#f5f7f9; font:700 18px Georgia,"Noto Serif SC",serif; }} .figure-card svg .center-sub {{ fill:#071522; font:11px ui-monospace,monospace; }} .figure-card svg .step-number {{ fill:#f5f7f9; font:700 11px ui-monospace,monospace; }} .figure-card svg .step-title {{ fill:#f5f7f9; font-size:14px; font-weight:700; }} .figure-card svg .check-label {{ fill:#b8eaff; font:10px ui-monospace,monospace; }} .figure-card figcaption, .figure-card > figcaption {{ margin:12px 0 0; color:#8fa7b2; font-size:11px; line-height:1.6; }}
     .article-wrap {{ max-width:1160px; margin:0 auto; padding:0 clamp(22px,5vw,75px) 90px; }} .article {{ color:#d8e2e7; }} .article h1 {{ font:700 42px/1.12 Georgia,"Noto Serif SC",serif; margin:0 0 26px; }} .article h2 {{ padding-top:58px; scroll-margin-top:22px; color:#fff; }} .article h3 {{ margin:30px 0 10px; color:#fff; font:700 21px/1.3 Georgia,"Noto Serif SC",serif; }} .article h4 {{ color:var(--orange); }} .article p {{ max-width:920px; margin:11px 0; color:#c1d0d7; font-size:14px; }} .article ul, .article ol {{ max-width:900px; color:#c1d0d7; padding-left:23px; font-size:14px; }} .article li {{ margin:5px 0; }} .article li::marker {{ color:var(--orange); }} .article blockquote {{ max-width:920px; margin:20px 0; padding:14px 17px; background:rgba(114,207,255,.06); border-left:3px solid var(--cyan); color:#d8edf5; font-family:Georgia,"Noto Serif SC",serif; }} .rule {{ border:0; border-top:1px solid var(--line); margin:43px 0 15px; }}
     .table-wrap {{ max-width:100%; overflow:auto; margin:18px 0 25px; border:1px solid var(--line); border-radius:10px; background:rgba(13,35,50,.66); }} table {{ width:100%; border-collapse:collapse; min-width:650px; font-size:12px; }} th, td {{ padding:9px 11px; text-align:left; border-bottom:1px solid rgba(169,183,197,.12); vertical-align:top; }} th {{ position:sticky; top:0; background:#173a4c; color:#fff; font:11px ui-monospace,monospace; white-space:nowrap; }} td {{ color:#bfd0d7; }} tr:last-child td {{ border-bottom:0; }} tr:hover td {{ background:rgba(114,207,255,.04); }}
     .code-block {{ overflow:auto; padding:15px; background:#061019; border:1px solid var(--line); border-radius:10px; color:#b8eaff; }}
@@ -454,13 +616,16 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="validate and render in memory without writing output")
     args = parser.parse_args()
     markdown, data = validate_inputs(args.markdown, args.data)
-    result = build_html(markdown, data)
+    asset_svgs = figure_assets(data)
     if args.check:
+        result = build_html(markdown, data, asset_svgs)
         assert "<!doctype html>" in result.lower()
         assert "source-drawer" in result
         assert "THERMAL CARTOGRAPHY" in result
         print(f"liquid cooling report build check: PASS ({len(result):,} chars)")
         return 0
+    write_figure_assets(asset_svgs, args.markdown.parent / "assets")
+    result = build_html(markdown, data, asset_svgs)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(result, encoding="utf-8")
     print(f"wrote {args.output} ({len(result):,} chars)")
