@@ -86,7 +86,7 @@ def render_table(lines: Sequence[str]) -> str:
         + "".join(rows)
         + "</tbody></table></div>"
     )
-    return '<details class="data-details"><summary>展开明细数据</summary>' + table + '</details>'
+    return table
 
 
 def replace_asset_refs(body: str, asset_svgs: Dict[str, str], asset_images: Optional[Dict[str, str]] = None) -> str:
