@@ -654,7 +654,7 @@ def figure_assets(data: Dict[str, Any]) -> Dict[str, str]:
     for path, figure in figures.items():
         match = re.search(r"(<svg\b.*?</svg>)", figure, re.S)
         if match:
-            extracted[path] = match.group(1)
+            extracted[path] = light_svg(match.group(1))
     return extracted
 
 

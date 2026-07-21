@@ -86,6 +86,7 @@ class LiquidCoolingReportTest(unittest.TestCase):
             self.assertIn(visual_label, self.html)
         self.assertIn("HARDWARE BOARD", self.html)
         self.assertIn('class="data-details"', self.html)
+        self.assertNotIn('fill="#0d2332"', (REPORT_DIR / "assets" / "08_financial_dashboard.svg").read_text(encoding="utf-8"))
         self.assertGreaterEqual(self.html.count("data:image/jpeg;base64"), 6)
         self.assertNotRegex(self.html, r"<link[^>]+https?://")
         self.assertNotRegex(self.html, r"<script[^>]+src=")
