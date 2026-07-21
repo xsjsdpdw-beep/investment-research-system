@@ -1,0 +1,189 @@
+{
+  "meta": {
+    "version": "v3",
+    "title": "液冷行业研究框架",
+    "data_cutoff": "2026-07-21",
+    "baseline_cutoff": "2026-06-30",
+    "coverage": ["A股产业链", "海外技术与客户对标"],
+    "currency": "A股财务数据统一为人民币亿元；海外公司保留原始币种",
+    "disclaimer": "本文为行业研究框架与公开资料整理，仅供研究使用，不构成投资建议。市场规模、渗透率、价值量和国产化率均需结合来源、时间和口径阅读。"
+  },
+  "thesis": {
+    "stage": "AI算力驱动的高密度数据中心液冷处于商业化加速期，但不同技术路线和供应商的验证节奏并不一致。",
+    "one_sentence": "最优先关注高密度液冷的系统交付与关键热交换部件：CDU/液冷基础设施侧确定性最高，NV定制冷板与TIM具备较高弹性，UQD/高端工质属于卡位观察；不宜把所有“液冷概念”视为同一盈利层级。",
+    "best_segments": [
+      {"rank": 1, "segment": "CDU及液冷基础设施", "category": "核心配置环节", "reason": "订单前置、系统集成和客户认证壁垒较高，受益于机柜功率密度提升与解耦交付。", "companies": ["英维克", "高澜股份", "申菱环境"]},
+      {"rank": 2, "segment": "NV定制冷板、TIM与微通道冷板", "category": "高弹性环节", "reason": "与GPU/CPU平台认证和单芯片功耗直接绑定，单位价值量与技术要求随平台升级提升。", "companies": ["中石科技", "思泉新材", "银轮股份"]},
+      {"rank": 3, "segment": "UQD、精密连接器与高端流体材料", "category": "卡位观察环节", "reason": "认证、可靠性与材料兼容性门槛高，国产替代空间大，但放量节奏和客户份额仍需验证。", "companies": ["中航光电", "飞龙股份", "巨化股份", "新宙邦"]}
+    ],
+    "company_priorities": [
+      {"tier": "第一优先", "names": ["英维克", "中石科技"], "focus": "前者看CDU/海外大客户与订单兑现，后者看NV平台冷板/TIM认证与收入占比。"},
+      {"tier": "第二优先", "names": ["高澜股份", "申菱环境", "思泉新材"], "focus": "看订单质量、客户结构、毛利率和经营现金流能否同步改善。"},
+      {"tier": "卡位观察", "names": ["中航光电", "飞龙股份", "巨化股份", "新宙邦", "曙光数创"], "focus": "看认证/量产/工质出货及液冷业务对集团业绩的实际贡献。"}
+    ],
+    "catalysts": [
+      "NVIDIA Rubin及后续高功耗平台量产，推动高密度机柜从局部液冷向全液冷或混合液冷扩散。",
+      "海外云厂商和国内互联网客户的液冷基础设施招标进入交付窗口，验证CDU订单前置假设。",
+      "OCP UQD标准、客户认证与国产供应商批量导入，验证精密连接器国产替代。",
+      "3M PFAS相关电子氟化液退出后的替代进程，验证国产高端工质的合规与可靠性。",
+      "铜、泵、板换、密封件等成本变化与产品涨价机制，决定收入增长能否转化为利润增长。"
+    ],
+    "validation_conditions": [
+      "2026H2至2027年核心公司液冷相关收入增速高于公司整体收入增速，且毛利率不因扩产显著下滑。",
+      "在手订单转化为出货和回款，经营活动现金流与利润同步改善。",
+      "客户结构从单一国内项目扩展至多家云厂商/服务器ODM/海外客户，集中度风险下降。",
+      "新平台冷板、CDU与UQD的认证由样品、小批量进入稳定量产，公开披露不再停留在概念层。"
+    ],
+    "invalidation_conditions": [
+      "AI服务器功率密度提升不及预期，或风冷通过局部改造继续满足主流机柜需求。",
+      "液冷客户采购延后，核心公司订单、存货和应收账款扩张明显快于收入。",
+      "国产厂商只能获得低毛利标准件，平台认证、海外直供和关键部件份额无法突破。",
+      "氟化液等路线受到环保、材料兼容或成本约束，浸没式市场扩张慢于预期。"
+    ]
+  },
+  "segments": [
+    {"id": "cdu", "name": "CDU及液冷基础设施", "position": "系统中枢", "value_pool": "机构研究常见区间约25%-40%，需按机柜架构核验", "barrier": "系统设计、板换/泵控、可靠性、交付与客户认证", "business_model": "方案设计+设备销售+调试服务+备件维保", "watch": ["订单前置期", "液冷相关收入", "海外客户认证", "毛利率", "回款"]},
+    {"id": "cold_plate", "name": "冷板与微通道冷板", "position": "芯片侧热交换", "value_pool": "机构研究常见区间约30%-45%，NV定制产品单价与数量差异较大", "barrier": "流道设计、真空钎焊/扩散焊、平面度、热阻、检漏与良率", "business_model": "平台认证+定制量产+材料/工艺降本", "watch": ["新平台认证", "单柜冷板数量", "良率", "单片价格", "毛利率"]},
+    {"id": "tim", "name": "TIM与热界面材料", "position": "芯片—冷板最后一毫米", "value_pool": "单件价值量低于系统件，但对热阻和认证重要", "barrier": "导热率、泵出/干涸、可靠性、材料配方与平台认证", "business_model": "材料配方+客户认证+批量供货", "watch": ["导热率与热阻", "客户认证", "复购率", "材料价格", "库存"]},
+    {"id": "uqd", "name": "UQD/快接头/流体连接器", "position": "液路可靠性与维护接口", "value_pool": "单价和价值占比不及CDU/冷板，但失效代价高", "barrier": "零泄漏、低压降、盲插、寿命、材料兼容性、标准与客户认证", "business_model": "精密零件+认证导入+高可靠性溢价", "watch": ["OCP/客户认证", "出货套数", "泄漏率", "寿命测试", "海外份额"]},
+    {"id": "coolant", "name": "冷却液与高端工质", "position": "流体介质", "value_pool": "液冷路线差异导致单价和耗用量差异极大", "barrier": "介电/热物性、材料兼容、环保合规、供应稳定性", "business_model": "配方与认证+化工产能+长周期供货", "watch": ["PFAS监管", "客户测试", "吨级产能", "单位价格", "回收/补液"]},
+    {"id": "pipes_seals", "name": "管路、Manifold、泵与密封", "position": "液路执行件", "value_pool": "单件分散，系统可靠性和交付完整性重要", "barrier": "精密成型、耐压、密封、流量均匀性与一致性", "business_model": "定制件+配套交付+规模降本", "watch": ["良率", "材料成本", "客户导入", "售后更换"]},
+    {"id": "integration", "name": "液冷系统集成与运维", "position": "方案与工程接口", "value_pool": "项目制，价值量受交付范围与客户自采模式影响", "barrier": "架构设计、工程交付、监控软件、服务网络", "business_model": "项目交付+系统集成+运维服务", "watch": ["项目毛利", "验收周期", "应收账款", "服务收入"]}
+  ],
+  "companies": [
+    {"name": "英维克", "ticker": "002837.SZ", "segment": "CDU/液冷基础设施/储能温控", "role": "核心配置环节", "strength": "数据中心温控、CDU与液冷系统产品矩阵较完整，具备海外客户拓展逻辑", "key_risk": "估值较高、订单兑现与海外毛利率需要持续验证", "disclosure": "液冷相关业务需结合年报、公告和调研纪要拆分；iFinD财务为公司整体口径"},
+    {"name": "高澜股份", "ticker": "300499.SZ", "segment": "CDU/板式换热器/液冷系统", "role": "高弹性环节", "strength": "板换和液冷设备基础，收入规模相对小，订单变化对业绩弹性较大", "key_risk": "盈利波动、现金流和项目型业务质量", "disclosure": "液冷业务占比和订单转化需跟踪定期报告"},
+    {"name": "申菱环境", "ticker": "301018.SZ", "segment": "数据中心温控/CDU/工业环境", "role": "高弹性环节", "strength": "精密温控与数据中心场景积累，客户拓展是核心变量", "key_risk": "收入增长向利润和现金流传导不充分", "disclosure": "iFinD财务为公司整体口径"},
+    {"name": "曙光数创", "ticker": "920808.BJ", "segment": "浸没式液冷/数据中心系统", "role": "路线卡位观察", "strength": "浸没式液冷品牌和超算场景积累，技术路线差异化", "key_risk": "项目制、回款和单一场景波动，当前估值敏感", "disclosure": "曾用代码872808；iFinD口径含北交所报告期数据"},
+    {"name": "中石科技", "ticker": "300684.SZ", "segment": "TIM/冷板/热管理材料", "role": "高弹性环节", "strength": "热管理材料与客户认证能力，受益于芯片侧热阻要求提升", "key_risk": "液冷收入占比、平台迭代和单一客户依赖需核验", "disclosure": "iFinD财务为公司整体口径"},
+    {"name": "思泉新材", "ticker": "301489.SZ", "segment": "导热材料/冷板", "role": "高弹性环节", "strength": "材料创新和小市值弹性，关注纳米碳/高导热路线的量产验证", "key_risk": "规模、现金流和高估值对业绩兑现要求高", "disclosure": "原v2公司代码300554有误，本版采用iFinD识别的301489.SZ"},
+    {"name": "中航光电", "ticker": "002179.SZ", "segment": "连接器/UQD/流体接口", "role": "卡位观察", "strength": "高可靠连接器与精密制造基础，关注OCP及客户标准贡献", "key_risk": "液冷业务对整体业绩占比有限，军工周期与估值是主要变量", "disclosure": "液冷收入未单独充分披露，需避免将连接器总收入等同液冷收入"},
+    {"name": "飞龙股份", "ticker": "002536.SZ", "segment": "精密流体件/汽车热管理/UQD观察", "role": "卡位观察", "strength": "汽车热管理零部件工艺可迁移，具备跨赛道弹性", "key_risk": "液冷服务器客户认证和真实出货尚需公开证据", "disclosure": "不能以汽车业务财务数据代表液冷业务盈利"},
+    {"name": "巨化股份", "ticker": "600160.SH", "segment": "含氟材料/冷却工质", "role": "上游材料卡位", "strength": "含氟化学品平台与规模化制造能力，受益于高端工质国产替代可能性", "key_risk": "产品认证、环保合规、化工周期和新产能爬坡", "disclosure": "液冷工质收入需从公司整体含氟业务中单独验证"},
+    {"name": "新宙邦", "ticker": "300037.SZ", "segment": "氟精细化学品/电子化学品", "role": "上游材料卡位", "strength": "电子化学品平台和氟精细化学品布局", "key_risk": "新项目投产、客户认证及氟化液商业化节奏", "disclosure": "液冷工质占比与项目进度以公告为准"},
+    {"name": "银轮股份", "ticker": "002126.SZ", "segment": "换热器/汽车热管理/数据中心热管理观察", "role": "规模制造观察", "strength": "换热器和热管理制造经验，具备跨场景复制能力", "key_risk": "数据中心液冷收入尚需分拆验证", "disclosure": "未列入本轮核心财务对比"},
+    {"name": "川环科技", "ticker": "300547.SZ", "segment": "管路与流体连接", "role": "弹性观察", "strength": "汽车管路工艺与流体系统经验", "key_risk": "AI数据中心客户认证与份额不确定", "disclosure": "未列入本轮核心财务对比"},
+    {"name": "溯联股份", "ticker": "301397.SZ", "segment": "管路与流体连接", "role": "弹性观察", "strength": "精密管路制造能力与汽车客户基础", "key_risk": "液冷业务仍需订单和收入验证", "disclosure": "原v2代码301004有误，本版采用301397.SZ"},
+    {"name": "Vertiv", "ticker": "VRT.N", "segment": "海外数据中心电源与液冷基础设施", "role": "海外对标", "strength": "全球数据中心基础设施平台、客户和服务网络", "key_risk": "海外估值、客户资本开支周期和竞争格局", "disclosure": "海外财务与A股公司不可直接横向比较"},
+    {"name": "Modine Manufacturing", "ticker": "MOD.N", "segment": "海外热交换与数据中心液冷", "role": "海外对标", "strength": "换热与热管理制造平台，液冷业务受AI基础设施带动", "key_risk": "业务结构多元，液冷单项贡献需拆分", "disclosure": "iFinD全球财务口径，美元原始币种；本轮仅用于经营质量参考"}
+  ],
+  "metrics": [
+    {"group": "需求", "metric": "AI服务器/机柜功率密度", "unit": "kW/机柜、W/芯片", "frequency": "月度/季度", "source": "NVIDIA平台资料、客户招标、机构研报", "threshold": "高功耗平台持续提高且液冷成为交付前置条件"},
+    {"group": "需求", "metric": "液冷渗透率", "unit": "%", "frequency": "季度", "source": "TrendForce/IDC/赛迪及客户披露", "threshold": "区分新建机房、存量改造和AI机柜，不能混用"},
+    {"group": "订单", "metric": "CDU/冷板在手订单与交付", "unit": "亿元、台/片", "frequency": "月度/季度", "source": "公司公告、定期报告、调研纪要", "threshold": "订单→出货→验收→回款形成闭环"},
+    {"group": "价格", "metric": "单柜液冷价值量/单片冷板价格", "unit": "美元或人民币", "frequency": "季度", "source": "机构拆解、客户BOM、公司交流", "threshold": "平台升级带来的价值量提升能覆盖材料涨价"},
+    {"group": "供给", "metric": "CDU、冷板、UQD产能与良率", "unit": "台/年、片/年、%", "frequency": "季度", "source": "公司扩产公告、设备采购、产线爬坡", "threshold": "高端认证产能优先于名义产能"},
+    {"group": "盈利", "metric": "毛利率、单位毛利、产品结构", "unit": "%、元/台或元/片", "frequency": "季度", "source": "iFinD、年报、分部披露", "threshold": "收入增长与毛利率、经营现金流同步"},
+    {"group": "现金", "metric": "应收账款周转率、存货周转率、经营现金流", "unit": "次、亿元", "frequency": "季度/年度", "source": "iFinD及财报", "threshold": "项目放量不以大幅垫资和存货积压为代价"},
+    {"group": "认证", "metric": "平台/客户认证状态", "unit": "样品、小批、量产", "frequency": "事件驱动", "source": "公司公告、OCP、客户技术资料", "threshold": "从技术展示进展到可计量批量出货"},
+    {"group": "成本", "metric": "铜、铝、泵、板换、密封件与工质成本", "unit": "价格指数/单位成本", "frequency": "月度", "source": "公开商品价格、供应商报价", "threshold": "关注成本传导时滞与合同调价机制"}
+  ],
+  "charts": {
+    "market_size": [
+      {"series": "中国液冷市场", "year": "2025", "value": 163, "unit": "亿元", "scenario": "单一机构估算", "source": "market-iim-china-2030-2026"},
+      {"series": "中国液冷市场", "year": "2026", "value": 232, "unit": "亿元", "scenario": "机构区间下沿", "source": "local-guosheng-2026-06"},
+      {"series": "中国液冷市场", "year": "2026", "value": 274, "unit": "亿元", "scenario": "机构区间上沿", "source": "local-guangfa-2026-05"},
+      {"series": "中国液冷市场", "year": "2030", "value": 700, "unit": "亿元", "scenario": "机构区间下沿", "source": "local-huayuan-2026-06"},
+      {"series": "中国液冷市场", "year": "2030", "value": 1000, "unit": "亿元", "scenario": "机构区间上沿", "source": "local-guosheng-2026-06"},
+      {"series": "全球液冷市场", "year": "2030", "value": 422, "unit": "亿美元", "scenario": "机构估算", "source": "local-guosheng-2026-06"}
+    ],
+    "penetration": [
+      {"year": "2024", "value": 14, "unit": "%", "definition": "AI数据中心液冷采用率", "source": "trendforce-liquid-cooling-2025-08"},
+      {"year": "2025", "value": 33, "unit": "%", "definition": "AI数据中心液冷采用率", "source": "trendforce-liquid-cooling-2025-08"},
+      {"year": "2026E", "value": 40, "unit": "%", "definition": "机构预测区间下沿，非统一口径", "source": "local-guangfa-2026-05"},
+      {"year": "2027E", "value": 50, "unit": "%", "definition": "机构预测，需区分新建/存量", "source": "local-dongwu-2026-06"}
+    ],
+    "value_pool": [
+      {"component": "冷板/微通道冷板", "share_low": 30, "share_high": 45, "value_note": "不同平台、冷板数量和是否含TIM差异较大", "source": "local-guosheng-2026-06"},
+      {"component": "CDU及基础设施", "share_low": 25, "share_high": 40, "value_note": "受一次侧/二次侧边界和是否含工程服务影响", "source": "local-guosheng-2026-06"},
+      {"component": "UQD/连接器", "share_low": 3, "share_high": 10, "value_note": "价值占比不高但失效代价和认证壁垒高", "source": "local-guosheng-2026-06"},
+      {"component": "管路/Manifold/泵/密封", "share_low": 8, "share_high": 20, "value_note": "系统边界差异大", "source": "local-guangfa-2026-05"},
+      {"component": "工质、监控与服务", "share_low": 5, "share_high": 15, "value_note": "浸没式和运维服务占比更高", "source": "local-guangfa-2026-05"}
+    ],
+    "competition_matrix": [
+      {"name": "英维克", "system": 5, "certification": 4, "overseas": 4, "scale": 5, "valuation_sensitivity": 5},
+      {"name": "高澜股份", "system": 4, "certification": 3, "overseas": 2, "scale": 3, "valuation_sensitivity": 3},
+      {"name": "申菱环境", "system": 4, "certification": 3, "overseas": 2, "scale": 4, "valuation_sensitivity": 3},
+      {"name": "曙光数创", "system": 3, "certification": 4, "overseas": 1, "scale": 2, "valuation_sensitivity": 5},
+      {"name": "中石科技", "system": 2, "certification": 4, "overseas": 3, "scale": 3, "valuation_sensitivity": 4},
+      {"name": "中航光电", "system": 1, "certification": 5, "overseas": 2, "scale": 5, "valuation_sensitivity": 3}
+    ],
+    "financials": [
+      {"ticker": "002837.SZ", "name": "英维克", "year": 2023, "revenue": 35.2886, "net_profit": 3.7366, "gross_margin": 21.0197, "net_margin": 9.8828, "roe": 16.2345, "rd_rate": 7.453, "ocf": 4.5307, "capex_proxy": 2.0417, "ar_turnover": 2.2061, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002837.SZ", "name": "英维克", "year": 2024, "revenue": 45.8882, "net_profit": 4.8653, "gross_margin": 19.3276, "net_margin": 9.8962, "roe": 18.013, "rd_rate": 7.6215, "ocf": 1.9984, "capex_proxy": 3.533, "ar_turnover": 2.2065, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002837.SZ", "name": "英维克", "year": 2025, "revenue": 60.6776, "net_profit": 4.9898, "gross_margin": 17.5103, "net_margin": 8.9437, "roe": 15.6874, "rd_rate": 7.3493, "ocf": 1.5727, "capex_proxy": 3.03, "ar_turnover": 2.2136, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300499.SZ", "name": "高澜股份", "year": 2023, "revenue": 5.733, "net_profit": 2.8041, "gross_margin": null, "net_margin": null, "roe": null, "rd_rate": null, "ocf": 0.4936, "capex_proxy": 0.2398, "ar_turnover": 2.0827, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21", "note": "iFinD该期归母净利润与其他衍生指标存在口径异常，正文不用于趋势结论，需回看年报"},
+      {"ticker": "300499.SZ", "name": "高澜股份", "year": 2024, "revenue": 6.9126, "net_profit": -0.4452, "gross_margin": 22.0978, "net_margin": -7.1772, "roe": -3.2336, "rd_rate": 6.5411, "ocf": -0.6824, "capex_proxy": 0.5281, "ar_turnover": 2.1852, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300499.SZ", "name": "高澜股份", "year": 2025, "revenue": 9.8912, "net_profit": 0.0156, "gross_margin": 27.3092, "net_margin": 2.796, "roe": 0.1145, "rd_rate": 5.4986, "ocf": 1.1086, "capex_proxy": 0.258, "ar_turnover": 2.5567, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301018.SZ", "name": "申菱环境", "year": 2023, "revenue": 25.1119, "net_profit": 1.786, "gross_margin": 27.4073, "net_margin": 4.1502, "roe": 8.8468, "rd_rate": 6.1459, "ocf": 0.1385, "capex_proxy": 2.2173, "ar_turnover": 2.1041, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301018.SZ", "name": "申菱环境", "year": 2024, "revenue": 30.1618, "net_profit": 0.9877, "gross_margin": 23.852, "net_margin": 3.6841, "roe": 3.963, "rd_rate": 5.6569, "ocf": 1.3532, "capex_proxy": 3.7478, "ar_turnover": 1.9893, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301018.SZ", "name": "申菱环境", "year": 2025, "revenue": 42.092, "net_profit": 1.2278, "gross_margin": 22.9075, "net_margin": 5.3494, "roe": 4.6682, "rd_rate": 4.5654, "ocf": 3.2494, "capex_proxy": 3.7535, "ar_turnover": 2.1377, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300684.SZ", "name": "中石科技", "year": 2023, "revenue": 12.5791, "net_profit": 0.7376, "gross_margin": 25.1051, "net_margin": 5.7181, "roe": 4.0707, "rd_rate": 6.3346, "ocf": 1.8969, "capex_proxy": null, "ar_turnover": 3.48, "inventory_turnover": 5.5037, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300684.SZ", "name": "中石科技", "year": 2024, "revenue": 15.6629, "net_profit": 2.0139, "gross_margin": 30.95, "net_margin": 12.8041, "roe": 10.2492, "rd_rate": 5.3856, "ocf": 2.3987, "capex_proxy": null, "ar_turnover": 3.9014, "inventory_turnover": 6.9709, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300684.SZ", "name": "中石科技", "year": 2025, "revenue": 18.347, "net_profit": 3.3857, "gross_margin": 36.2594, "net_margin": 18.4047, "roe": 16.0608, "rd_rate": 5.5471, "ocf": 2.7962, "capex_proxy": null, "ar_turnover": 3.4613, "inventory_turnover": 6.8181, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301489.SZ", "name": "思泉新材", "year": 2023, "revenue": 4.3425, "net_profit": 0.5458, "gross_margin": 25.1131, "net_margin": 12.6331, "roe": 7.7612, "rd_rate": 5.3296, "ocf": 0.1201, "capex_proxy": null, "ar_turnover": 2.8525, "inventory_turnover": 3.2936, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301489.SZ", "name": "思泉新材", "year": 2024, "revenue": 6.5614, "net_profit": 0.5246, "gross_margin": 24.8087, "net_margin": 7.3751, "roe": 5.1646, "rd_rate": 5.5173, "ocf": 0.0431, "capex_proxy": null, "ar_turnover": 2.8199, "inventory_turnover": 3.4619, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301489.SZ", "name": "思泉新材", "year": 2025, "revenue": 9.281, "net_profit": 0.6026, "gross_margin": 26.999, "net_margin": 6.3764, "roe": 5.7224, "rd_rate": 6.0791, "ocf": 0.0717, "capex_proxy": null, "ar_turnover": 3.0754, "inventory_turnover": 3.2174, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002179.SZ", "name": "中航光电", "year": 2023, "revenue": 200.7444, "net_profit": 33.2579, "gross_margin": 37.0416, "net_margin": 17.6133, "roe": 17.5515, "rd_rate": 10.9455, "ocf": 30.8781, "capex_proxy": 23.9368, "ar_turnover": 3.0263, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002179.SZ", "name": "中航光电", "year": 2024, "revenue": 206.8553, "net_profit": 29.5864, "gross_margin": 34.6359, "net_margin": 17.1517, "roe": 13.4197, "rd_rate": 10.8855, "ocf": 21.4996, "capex_proxy": 15.428, "ar_turnover": 1.9712, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002179.SZ", "name": "中航光电", "year": 2025, "revenue": 213.8606, "net_profit": 25.78, "gross_margin": 23.0186, "net_margin": 10.9873, "roe": 10.7718, "rd_rate": 9.7804, "ocf": 15.6184, "capex_proxy": 15.8214, "ar_turnover": 1.7554, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002536.SZ", "name": "飞龙股份", "year": 2023, "revenue": 40.9487, "net_profit": 2.506, "gross_margin": 6.8566, "net_margin": 5.8886, "roe": 9.063, "rd_rate": 5.871, "ocf": 3.1563, "capex_proxy": 0.9528, "ar_turnover": 5.3163, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002536.SZ", "name": "飞龙股份", "year": 2024, "revenue": 47.2321, "net_profit": 3.0385, "gross_margin": 6.4295, "net_margin": 6.9265, "roe": 9.2547, "rd_rate": 5.7564, "ocf": 3.8075, "capex_proxy": 2.8038, "ar_turnover": 4.9339, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "002536.SZ", "name": "飞龙股份", "year": 2025, "revenue": 45.45, "net_profit": 3.4972, "gross_margin": 8.8072, "net_margin": 6.647, "roe": 10.2417, "rd_rate": 6.5759, "ocf": 3.7437, "capex_proxy": 4.1501, "ar_turnover": 4.0067, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "600160.SH", "name": "巨化股份", "year": 2023, "revenue": 206.5522, "net_profit": 9.4351, "gross_margin": 13.2222, "net_margin": 4.6897, "roe": 5.9823, "rd_rate": 4.8448, "ocf": 21.9634, "capex_proxy": null, "ar_turnover": 21.731, "inventory_turnover": 10.2664, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "600160.SH", "name": "巨化股份", "year": 2024, "revenue": 244.6237, "net_profit": 19.5953, "gross_margin": 17.4983, "net_margin": 8.898, "roe": 11.5721, "rd_rate": 4.3093, "ocf": 27.6482, "capex_proxy": null, "ar_turnover": 28.1777, "inventory_turnover": 9.973, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "600160.SH", "name": "巨化股份", "year": 2025, "revenue": 269.9087, "net_profit": 37.8323, "gross_margin": 28.2328, "net_margin": 16.0217, "roe": 19.7949, "rd_rate": 4.1508, "ocf": 62.6059, "capex_proxy": null, "ar_turnover": 30.6796, "inventory_turnover": 8.1498, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300037.SZ", "name": "新宙邦", "year": 2023, "revenue": 74.8395, "net_profit": 10.1107, "gross_margin": 28.9431, "net_margin": 13.5045, "roe": 11.5301, "rd_rate": 6.4823, "ocf": 34.4791, "capex_proxy": null, "ar_turnover": 3.9997, "inventory_turnover": 5.8675, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300037.SZ", "name": "新宙邦", "year": 2024, "revenue": 78.4679, "net_profit": 9.4205, "gross_margin": 26.4921, "net_margin": 12.1335, "roe": 9.9554, "rd_rate": 5.0065, "ocf": 8.1841, "capex_proxy": null, "ar_turnover": 3.4336, "inventory_turnover": 6.0571, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "300037.SZ", "name": "新宙邦", "year": 2025, "revenue": 96.3917, "net_profit": 10.973, "gross_margin": 24.2753, "net_margin": 11.4026, "roe": 10.6811, "rd_rate": 5.2066, "ocf": 11.6869, "capex_proxy": null, "ar_turnover": 3.122, "inventory_turnover": 6.5997, "source": "ifind-a-financials-2026-07-21"},
+      {"ticker": "301489.SZ", "name": "思泉新材", "year": 2026, "period": "Q1", "revenue": 2.5984, "net_profit": null, "gross_margin": null, "net_margin": 11.975, "roe": 2.4488, "rd_rate": 7.7052, "ocf": null, "capex_proxy": null, "ar_turnover": null, "inventory_turnover": null, "source": "ifind-a-financials-2026-07-21", "note": "季度数据，仅用于观察，不与完整年度直接比较"}
+    ]
+  },
+  "catalysts": [
+    {"date": "2026H2-2027", "event": "Rubin及后续高功耗平台放量", "mechanism": "GPU/CPU TDP与机柜功率密度抬升，液冷从选配走向平台级交付要求", "beneficiary": "CDU、微通道冷板、UQD、TIM", "validation": "客户平台BOM、量产订单、出货与毛利率", "source": "official-nvidia-rubin-2026"},
+    {"date": "持续跟踪", "event": "云厂商液冷基础设施招标与解耦采购", "mechanism": "CDU和一次侧基础设施采购前置，系统厂商获得更长订单能见度", "beneficiary": "英维克、高澜、申菱及海外基础设施厂商", "validation": "订单金额、交付节奏、回款和客户集中度", "source": "local-dongwu-2026-06"},
+    {"date": "2026-2028", "event": "OCP UQD标准与国产认证", "mechanism": "标准化降低生态导入成本，但高可靠性验证仍限制供给", "beneficiary": "中航光电、飞龙股份及精密连接器供应链", "validation": "标准贡献、认证状态、批量出货、泄漏率", "source": "official-ocp-uqd-2025"},
+    {"date": "2025-2028", "event": "3M电子氟化液退出后的替代", "mechanism": "供应缺口与PFAS合规约束提高国产工质验证价值", "beneficiary": "巨化股份、新宙邦及其他氟精细化学品厂商", "validation": "客户测试、合规文件、吨级产能、复购", "source": "official-3m-pfas-exit-2025"}
+  ],
+  "risks": [
+    {"risk": "市场规模口径混用", "impact": "全球/中国、设备/系统、存量/新增和AI/全数据中心口径差异会造成估值误判", "monitor": "统一市场边界并保留区间，不使用单一数字外推", "source": "market-methodology-note"},
+    {"risk": "平台路线变化", "impact": "冷板、浸没式、微通道与混合液冷的价值量和供应商名单会随平台迭代变化", "monitor": "跟踪NVIDIA/OCP/服务器ODM技术资料和客户BOM", "source": "official-nvidia-gb200-2025"},
+    {"risk": "客户认证与订单兑现", "impact": "概念验证、样品、小批量和稳定量产之间存在时间差", "monitor": "订单→出货→验收→回款四段式核验", "source": "local-research-reports"},
+    {"risk": "材料与成本波动", "impact": "铜、铝、泵、板换、密封及工质成本上涨会压缩标准化产品利润", "monitor": "成本传导、合同调价、库存和单位毛利", "source": "local-guangfa-2026-05"},
+    {"risk": "高估值与业绩错配", "impact": "部分标的PE/PB已隐含高增长，业绩低于预期可能引发估值快速收缩", "monitor": "用当前估值快照配合收入、利润、现金流验证", "source": "ifind-valuation-2026-07-21"},
+    {"risk": "环保与材料兼容性", "impact": "PFAS限制、工质安全和材料兼容性可能改变浸没式技术路线", "monitor": "监管文本、客户认证和全生命周期成本", "source": "official-3m-pfas-exit-2025"}
+  ],
+  "questions": [
+    "核心公司披露的液冷订单中，哪些已转化为收入、验收和现金回款？",
+    "CDU收入增长是否来自可复制的标准平台，还是一次性项目和低毛利集成？",
+    "NV定制冷板与TIM是否完成量产认证，客户集中度和平台切换风险如何？",
+    "UQD国产供应商能否进入主流GPU平台的量产BOM，认证周期和寿命测试是否可公开验证？",
+    "氟化液项目的产品是研发样品、客户测试、吨级供货还是稳定复购？",
+    "公司扩产后固定资产利用率、良率、单位成本和经营现金流是否改善？",
+    "液冷业务在公司总收入、毛利和订单中的实际占比是否足以支撑当前估值？"
+  ],
+  "sources": [
+    {"id": "source-user-liquid-v2", "type": "user-provided", "title": "液冷行业认知框架_v2.md", "date": "2026-06-30", "path": "/Users/leo/Desktop/液冷行业认知框架_v2.md", "url": null, "use": "原始框架、公司池、跟踪指标和研究假设；其中未经交叉验证的精确数字在本版改为区间或假设"},
+    {"id": "source-user-storage-v2", "type": "user-provided", "title": "存储行业认知框架_v2.md", "date": "2026-07", "path": "/Users/leo/Desktop/存储行业认知框架_v2.md", "url": null, "use": "研究框架的结论—逻辑—信息—验证结构和公司比较方式参考"},
+    {"id": "source-research-standard-pdf", "type": "user-provided", "title": "研究规范2024打印版2.0V2.pdf", "date": "2024", "path": "/Users/leo/Desktop/同步空间/驼铃资产/驼铃资料/研究规范2024打印版2.0V2.pdf", "url": null, "use": "研究结论、商业模式、供需、盈利模型、估值、催化剂和风险检查项"},
+    {"id": "local-dongwu-2026-06", "type": "institutional-research", "title": "东吴证券：液冷行业深度报告：千亿液冷市场爆发，看好增量环节国产份额提升", "date": "2026-06-26", "path": "/Users/leo/Desktop/同步空间/投资研究/1、高端制造/1、机械/3新-AI驱动/#液冷/2026-06-26-东吴证券-液冷行业深度报告：千亿液冷市场爆发，看好增量环节国产份额提升.pdf", "url": null, "use": "国内市场规模、平台升级、解耦交付和增量环节判断；属于卖方预测"},
+    {"id": "local-guosheng-2026-06", "type": "institutional-research", "title": "国盛证券：液冷，产业化拐点已至，千亿赛道扬帆起航", "date": "2026-06-28", "path": "/Users/leo/Desktop/同步空间/投资研究/1、高端制造/1、机械/3新-AI驱动/#液冷/2026-06-28-国盛证券-机械设备行业深度：液冷，产业化拐点已至，千亿赛道扬帆起航.pdf", "url": null, "use": "全球/中国市场规模、机柜功率密度和系统价值量区间；属于卖方预测"},
+    {"id": "local-huayuan-2026-06", "type": "institutional-research", "title": "华源证券：从可选到刚需，AI算力浪潮下液冷产业链投资价值再审视", "date": "2026-06-30", "path": "/Users/leo/Desktop/同步空间/投资研究/1、高端制造/1、机械/3新-AI驱动/#液冷/2026-06-30-华源证券-新质生产力专题报告六：从可选到刚需，AI算力浪潮下液冷产业链投资价值再审视.pdf", "url": null, "use": "液冷从可选到刚需的投资逻辑和市场区间；属于卖方预测"},
+    {"id": "local-guangfa-2026-05", "type": "institutional-research", "title": "广发证券：液冷设备，从风到液的迁徙，从0到1的散热革命", "date": "2026-05-30", "path": "/Users/leo/Desktop/同步空间/投资研究/1、高端制造/1、机械/3新-AI驱动/#液冷/20260530液冷设备，从风到液的迁徙，从0到1的散热革命【广发】.pdf", "url": null, "use": "工作原理、技术路线、部件拆解和市场规模区间；属于卖方预测"},
+    {"id": "trendforce-liquid-cooling-2025-08", "type": "industry-data", "title": "TrendForce：AI Data Center Liquid Cooling Adoption to Reach 33% in 2025", "date": "2025-08-21", "url": "https://www.trendforce.com/presscenter/news/20250821-12682.html", "use": "AI数据中心液冷采用率、GB200/GB300机柜功率密度的公开行业数据"},
+    {"id": "official-nvidia-gb200-2025", "type": "official", "title": "NVIDIA GB200 NVL72 technical blog", "date": "2025", "url": "https://developer.nvidia.com/blog/?p=90182", "use": "GB200 NVL72 72 GPU、直接液冷、120kW冷却能力和OCP合作背景"},
+    {"id": "official-nvidia-gb200-product", "type": "official", "title": "NVIDIA GB200 NVL72", "date": "2025", "url": "https://www.nvidia.com/en-us/data-center/gb200-nvl72/", "use": "GB200 NVL72产品架构和液冷事实"},
+    {"id": "official-nvidia-rubin-2026", "type": "official", "title": "NVIDIA Vera Rubin NVL72", "date": "2026", "url": "https://www.nvidia.com/en-us/data-center/vera-rubin-nvl72/", "use": "Rubin NVL72平台架构、液冷机柜兼容性和AI基础设施演进"},
+    {"id": "official-ocp-uqd-2025", "type": "official-standard", "title": "OCP Universal Quick Disconnect UQD Specification Rev 1.0", "date": "2025", "url": "https://www.opencompute.org/documents/ocp-universal-quick-disconnect-uqd-specification-rev-1-0-2-pdf", "use": "UQD可靠性、流体损失和标准化要求"},
+    {"id": "official-ocp-uqd-methodology", "type": "official-standard", "title": "OCP Blind-Mate Universal Quick Disconnect Methodology", "date": "2025", "url": "https://www.opencompute.org/documents/whitepaper-blind-mate-universal-quick-disconnect-methodology-rev-1-0-pdf", "use": "盲插UQD测试方法、耐久与泄漏控制"},
+    {"id": "official-3m-pfas-exit-2025", "type": "official", "title": "3M to Exit PFAS Manufacturing by the End of 2025", "date": "2022-12-20", "url": "https://news.3m.com/2022-12-20-3M-to-Exit-PFAS-Manufacturing-by-the-End-of-2025", "use": "3M PFAS制造退出时间表与电子氟化液替代背景"},
+    {"id": "official-3m-specialty-fluids", "type": "official", "title": "3M Specialty Fluids discontinuation information", "date": "2025", "url": "https://www.3mcanada.ca/3M/en_CA/p/c/electronics-components/specialty-fluids/", "use": "Novec、Fluorinert等产品退出与替代提示"},
+    {"id": "market-iim-china-2030-2026", "type": "market-research-secondary", "title": "中国液冷产业市场规模公开汇总（IIM）", "date": "2026", "url": "https://www.iim.net.cn/2190/view-301967-1.html", "use": "中国市场规模参考；二手汇总口径，不能替代原始报告"},
+    {"id": "market-iim-global-2030", "type": "market-research-secondary", "title": "全球数据中心液冷市场公开汇总（IIM）", "date": "2026", "url": "https://www.iim.net.cn/2190/view-307939-1.html", "use": "全球市场规模参考；二手汇总口径"},
+    {"id": "ifind-a-financials-2026-07-21", "type": "market-data", "title": "iFinD A股财务数据查询", "date": "2026-07-21", "url": null, "use": "2023-2025年度营业收入、归母净利润、毛利率、净利率、ROE、研发费用率、经营现金流、资本开支代理、应收周转率等；公司整体口径"},
+    {"id": "ifind-global-financials-2026-07-21", "type": "market-data", "title": "iFinD全球股票财务数据查询", "date": "2026-07-21", "url": null, "use": "Modine 2023-2025美元口径经营数据；海外对标仅作参考"},
+    {"id": "ifind-valuation-2026-07-21", "type": "market-data", "title": "iFinD估值快照", "date": "2026-07-21", "url": null, "use": "A股市值、PE-TTM、PB快照；估值随股价变化，不作目标价"},
+    {"id": "market-methodology-note", "type": "methodology", "title": "市场规模与价值量口径说明", "date": "2026-07-21", "url": null, "use": "本报告将机构预测、公开行业数据和研究假设分栏展示，避免跨口径相加"},
+    {"id": "local-research-reports", "type": "institutional-research", "title": "国内卖方液冷专题报告集合", "date": "2026-05至2026-07", "path": "/Users/leo/Desktop/同步空间/投资研究/1、高端制造/1、机械/3新-AI驱动/#液冷/", "url": null, "use": "技术路线、公司池、价值量和催化剂的交叉参考；所有预测均保留原始机构属性"}
+  ]
+}
