@@ -79,13 +79,14 @@ def render_table(lines: Sequence[str]) -> str:
     for row in body:
         padded = list(row) + [""] * max(0, len(header) - len(row))
         rows.append("<tr>" + "".join(f"<td>{inline_markdown(cell)}</td>" for cell in padded[: len(header)]) + "</tr>")
-    return (
+    table = (
         '<div class="table-wrap"><table><thead><tr>'
         + head_html
         + "</tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
     )
+    return '<details class="data-details"><summary>展开明细数据</summary>' + table + '</details>'
 
 
 def replace_asset_refs(body: str, asset_svgs: Dict[str, str], asset_images: Optional[Dict[str, str]] = None) -> str:
@@ -281,6 +282,30 @@ def market_figure(data: Dict[str, Any]) -> str:
     )
 
 
+def penetration_figure(data: Dict[str, Any]) -> str:
+    points = data["charts"].get("penetration", [])
+    values = [float(item["value"]) for item in points if isinstance(item.get("value"), (int, float))]
+    labels = [str(item["year"]) for item in points if isinstance(item.get("value"), (int, float))]
+    maximum = max(60.0, max(values or [1]))
+    left, top, width, height = 86, 55, 680, 170
+    coords = []
+    for index, value in enumerate(values):
+        x = left + index * width / max(1, len(values) - 1)
+        y = top + height - value / maximum * height
+        coords.append((x, y, value))
+    path = " ".join(("M" if index == 0 else "L") + f"{x:.1f} {y:.1f}" for index, (x, y, _) in enumerate(coords))
+    area = f"M{left} {top+height} " + " ".join(f"L{x:.1f} {y:.1f}" for x, y, _ in coords) + f" L{left+width} {top+height} Z"
+    marks = []
+    for index, (x, y, value) in enumerate(coords):
+        marks.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="6" fill="#ef6437" stroke="#ffffff" stroke-width="3"/><text x="{x:.1f}" y="{y-15:.1f}" text-anchor="middle" class="value-label">{value:.0f}%</text><text x="{x:.1f}" y="{top+height+27}" text-anchor="middle" class="label">{esc(labels[index])}</text>')
+    grid = "".join(f'<path d="M{left} {top+height-index*height/3:.1f}H{left+width}" class="grid"/><text x="{left-10}" y="{top+height-index*height/3+4:.1f}" text-anchor="end" class="axis">{int(maximum*index/3)}%</text>' for index in range(4))
+    return (
+        '<figure class="figure-card editorial-plate"><div class="figure-heading"><span>02B / PENETRATION CURVE</span><strong>液冷采用率进入加速段，但统计口径仍需拆分</strong></div>'
+        f'<svg viewBox="0 0 850 300" role="img" aria-label="AI数据中心液冷采用率趋势图">{grid}<path d="{area}" fill="#2e76c9" opacity=".10"/><path d="{path}" fill="none" stroke="#2e76c9" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>{"".join(marks)}<text x="770" y="280" text-anchor="end" class="note">单位：%；2026E/2027E为机构预测或区间口径</text></svg>'
+        '<figcaption>采用率需区分新建AI数据中心、存量改造和特定GPU平台，不能将单一机构样本直接外推至全部数据中心。来源：<code>trendforce-liquid-cooling-2025-08</code>、<code>local-guangfa-2026-05</code>、<code>local-dongwu-2026-06</code>。</figcaption></figure>'
+    )
+
+
 def value_pool_figure(data: Dict[str, Any]) -> str:
     colors = ["#f05a67", "#f2783f", "#72cfff", "#4aa6c7", "#a9b7c5"]
     items = data["charts"]["value_pool"]
@@ -418,11 +443,39 @@ def financial_figure(data: Dict[str, Any]) -> str:
     )
 
 
+def light_svg(svg: str) -> str:
+    """Translate the shared dark SVG palette into the report's light research palette."""
+    replacements = {
+        "#071522": "#122334",
+        "#0c2230": "#f8fafb",
+        "#0d2332": "#ffffff",
+        "#102c3c": "#f7fafb",
+        "#14394c": "#eaf1f4",
+        "#16394b": "#e4edf1",
+        "#173243": "#dce7ec",
+        "#17394b": "#d4e1e7",
+        "#21465a": "#d8e4e9",
+        "#23485b": "#c8d6dd",
+        "#24485b": "#c8d6dd",
+        "#a9b7c5": "#63737d",
+        "#8fa7b2": "#687983",
+        "#c1d0d7": "#43545f",
+        "#d7e2e7": "#233744",
+        "#f5f7f9": "#122334",
+        "#ffd2b5": "#d9532d",
+        "#b8eaff": "#2873bd",
+        "#72cfff": "#2e76c9",
+    }
+    for source, target in replacements.items():
+        svg = svg.replace(source, target)
+    return svg
+
+
 def editorial_figure(kicker: str, title: str, svg: str, caption: str, classes: str = "") -> str:
     return (
         f'<figure class="figure-card editorial-plate {esc(classes)}">'
         f'<div class="figure-heading"><span>{esc(kicker)}</span><strong>{esc(title)}</strong></div>'
-        f'{svg}<figcaption>{caption}</figcaption></figure>'
+        f'{light_svg(svg)}<figcaption>{caption}</figcaption></figure>'
     )
 
 
@@ -453,6 +506,57 @@ def chain_atlas_figure(data: Dict[str, Any]) -> str:
             parts.append(f'<path d="M{x+247} 283h24" stroke="{color}" stroke-width="3" marker-end="url(#chainAtlasArrow)"/>')
     parts.append('<rect x="20" y="435" width="1080" height="45" rx="9" fill="#102c3c" stroke="#24485b"/><text x="38" y="462" class="note">研究跟踪：材料成本看毛利传导；冷板/UQD看平台认证与良率；CDU看订单、验收与应收；下游看机柜kW、客户资本开支与液冷渗透。</text></svg>')
     return editorial_figure("06 / SUPPLY CHAIN ATLAS", "把产业链画成可触摸的四类硬件：价值量、采购权与验证变量", "".join(parts), "图示把产业链从抽象分层改为四类可采购对象；价值量区间仅为机构研究常见口径，需按项目边界和是否含工程服务核验。", "figure-chain")
+
+
+def sankey_supply_chain_figure(data: Dict[str, Any]) -> str:
+    """Show the supply chain as a value-flow map, closer to an equity-research atlas than a table."""
+    parts = ['<svg viewBox="0 0 1240 720" role="img" aria-label="液冷产业链价值流量图">']
+    parts.append('<defs><linearGradient id="sankeyBlue" x1="0" x2="1"><stop stop-color="#2f7cf6"/><stop offset="1" stop-color="#6aa9ff"/></linearGradient><linearGradient id="sankeyOrange" x1="0" x2="1"><stop stop-color="#ff6b38"/><stop offset="1" stop-color="#ff9b5d"/></linearGradient><linearGradient id="sankeySlate" x1="0" x2="1"><stop stop-color="#91a7b5"/><stop offset="1" stop-color="#c7d3d9"/></linearGradient><marker id="sankeyArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L8 5L0 10" fill="#667985"/></marker></defs>')
+    parts.append('<text x="20" y="34" class="atlas-title">SUPPLY CHAIN ATLAS / SUPPLY CHAIN VALUE FLOW / 从材料到算力机柜</text><text x="1220" y="34" text-anchor="end" class="atlas-note">图中比例用于价值量和采购权的结构化理解，不代表市场份额</text>')
+    metrics = [("CDU / 基础设施", "核心配置", "价值量约 25–40%", "英维克 · 高澜 · 申菱", "#ff6b38"), ("冷板 / TIM", "平台弹性", "价值量约 30–45%", "中石科技 · 思泉新材", "#2f7cf6"), ("UQD / 流体接口", "卡位观察", "价值量约 3–10%", "中航光电 · 飞龙股份", "#667985")]
+    for index, (title, subtitle, detail, companies, color) in enumerate(metrics):
+        x = 20 + index * 400
+        parts.append(f'<rect x="{x}" y="62" width="370" height="90" rx="16" fill="#ffffff" stroke="#d8e3e8"/><rect x="{x}" y="62" width="8" height="90" rx="4" fill="{color}"/><text x="{x+24}" y="94" class="metric-title">{title}</text><text x="{x+24}" y="118" class="metric-sub">{subtitle} · {detail}</text><text x="{x+24}" y="140" class="metric-companies">重点：{companies}</text>')
+    parts.append('<text x="32" y="204" class="column-title">上游 / 材料与设备</text><text x="424" y="204" class="column-title">中游 / 部件与系统</text><text x="872" y="204" class="column-title">下游 / 应用与采购</text>')
+    # Flow bands: the width is intentionally different so the reader sees where value and procurement concentrate.
+    flow_paths = [
+        ('M245 260 C330 260 336 255 430 255', 64, 'url(#sankeyBlue)'),
+        ('M245 315 C330 315 340 344 430 344', 46, 'url(#sankeyOrange)'),
+        ('M245 370 C332 370 350 430 430 430', 28, 'url(#sankeySlate)'),
+        ('M245 425 C340 425 350 480 430 480', 20, 'url(#sankeySlate)'),
+        ('M755 282 C825 282 835 265 910 265', 58, 'url(#sankeyOrange)'),
+        ('M755 350 C832 350 840 345 910 345', 46, 'url(#sankeyBlue)'),
+        ('M755 415 C830 415 842 425 910 425', 30, 'url(#sankeySlate)'),
+        ('M755 480 C830 480 845 510 910 510', 20, 'url(#sankeySlate)'),
+    ]
+    for path, width, stroke in flow_paths:
+        parts.append(f'<path d="{path}" fill="none" stroke="{stroke}" stroke-width="{width}" stroke-linecap="round" opacity=".86"/>')
+    upstream = [
+        ("铜 / 铝 / 钎料", "冷板、管路成本", 228, "材料价格 · 调价机制"),
+        ("TIM / 密封 / 工质", "热阻与兼容性", 283, "配方认证 · 合规"),
+        ("泵 / 板换 / 检测", "系统可靠性", 338, "设备进场 · 良率"),
+        ("精密加工设备", "产能与交付", 393, "CNC · 钎焊 · 氦检"),
+    ]
+    for title, subtitle, y, note in upstream:
+        parts.append(f'<rect x="20" y="{y}" width="225" height="42" rx="10" fill="#ffffff" stroke="#d8e3e8"/><text x="36" y="{y+18}" class="node-title-dark">{title}</text><text x="36" y="{y+34}" class="node-sub-dark">{subtitle} · {note}</text>')
+    middle = [
+        ("冷板 / 微通道", "平台认证 · 单位毛利", 224, "中石科技 · 思泉新材"),
+        ("CDU / 换热泵控", "系统交付 · 验收回款", 304, "英维克 · 高澜 · 申菱"),
+        ("UQD / Manifold", "泄漏 · 寿命 · 流量均匀", 384, "中航光电 · 飞龙股份"),
+        ("系统集成 / 运维", "一次侧 · 二次侧 · 维保", 464, "曙光数创 · Vertiv"),
+    ]
+    for title, subtitle, y, companies in middle:
+        parts.append(f'<rect x="430" y="{y}" width="325" height="58" rx="14" fill="#ffffff" stroke="#cbd9e0"/><rect x="430" y="{y}" width="7" height="58" rx="3" fill="#2f7cf6"/><text x="452" y="{y+23}" class="node-title-dark">{title}</text><text x="452" y="{y+42}" class="node-sub-dark">{subtitle} · {companies}</text>')
+    downstream = [
+        ("AI高密度机柜", "机柜kW · 液冷渗透", 234, "云厂商 / 服务器ODM"),
+        ("超算与智算中心", "项目验收 · PUE", 314, "运营商 / 政企客户"),
+        ("储能与新能源", "成本 · 安全 · 交付", 394, "系统集成商"),
+        ("汽车与工业热管理", "跨场景工艺迁移", 474, "Tier 1 / 工业客户"),
+    ]
+    for title, subtitle, y, companies in downstream:
+        parts.append(f'<rect x="910" y="{y}" width="300" height="58" rx="14" fill="#ffffff" stroke="#d8e3e8"/><rect x="910" y="{y}" width="7" height="58" rx="3" fill="#ff6b38"/><text x="932" y="{y+23}" class="node-title-dark">{title}</text><text x="932" y="{y+42}" class="node-sub-dark">{subtitle} · {companies}</text>')
+    parts.append('<path d="M40 612H1200" stroke="#d8e3e8" stroke-width="2"/><text x="40" y="646" class="atlas-note">投资读法：价值量看冷板/CDU，认证权看平台与UQD，订单能见度看系统交付，业绩质量最终看毛利、应收和经营现金流。</text><text x="40" y="675" class="atlas-note">图示公司为研究池，不代表完整市场份额；价值量区间来自公开机构研究，系统边界和项目模式会改变比例。</text></svg>')
+    return editorial_figure("06 / SUPPLY CHAIN VALUE FLOW", "用流量而不是表格理解产业链：钱、货与采购权如何流动", "".join(parts), "产业链图采用参考图2式的流量带和节点卡片，先建立环节之间的关系，再回到公司、价值量和验证指标。", "figure-sankey")
 
 
 def technology_routes_figure() -> str:
@@ -538,11 +642,13 @@ def catalyst_timeline_figure() -> str:
 def figure_assets(data: Dict[str, Any]) -> Dict[str, str]:
     figures = {
         "assets/01_technology_routes.svg": technology_routes_figure(),
-        "assets/02_supply_chain_atlas.svg": chain_atlas_figure(data),
+        "assets/02_supply_chain_atlas.svg": sankey_supply_chain_figure(data),
         "assets/03_tracking_quadrant.svg": tracking_quadrant_figure(),
         "assets/04_manufacturing_ribbon.svg": manufacturing_figure(),
         "assets/05_commercial_model_loop.svg": commercial_loop_figure(),
         "assets/06_catalyst_timeline.svg": catalyst_timeline_figure(),
+        "assets/07_penetration_curve.svg": penetration_figure(data),
+        "assets/08_financial_dashboard.svg": financial_figure(data),
     }
     extracted: Dict[str, str] = {}
     for path, figure in figures.items():
@@ -639,49 +745,49 @@ def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[st
   <meta name="description" content="液冷行业研究框架：投资结论、产业链、商业模式、财务与跟踪体系">
   <title>液冷行业研究框架 v3 · Thermal Cartography</title>
   <style>
-    :root {{ --ink:#071522; --ink-2:#0d2332; --panel:#102c3c; --panel-2:#14394c; --line:#24485b; --text:#f5f7f9; --muted:#a9b7c5; --orange:#f2783f; --coral:#f05a67; --cyan:#72cfff; --cream:#f0eee8; --paper:#e8e3d9; --shadow:0 20px 60px rgba(0,0,0,.25); }}
+    :root {{ --ink:#142332; --ink-2:#243644; --panel:#ffffff; --panel-2:#eef3f5; --line:#d4dfe4; --text:#142332; --muted:#61727c; --orange:#ef6437; --coral:#c84557; --cyan:#2e76c9; --cream:#fff8ed; --paper:#f4f1eb; --shadow:0 18px 42px rgba(25,54,72,.12); }}
     * {{ box-sizing:border-box; }}
     html {{ scroll-behavior:smooth; }}
-    body {{ margin:0; background:var(--ink); color:var(--text); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; line-height:1.68; }}
-    body::before {{ content:""; position:fixed; inset:0; pointer-events:none; opacity:.14; background-image:radial-gradient(rgba(255,255,255,.14) .7px, transparent .7px); background-size:17px 17px; mix-blend-mode:screen; }}
-    a {{ color:var(--cyan); text-decoration:none; }} a:hover {{ color:#d1f1ff; }}
-    code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.82em; color:#ffd2b5; background:rgba(242,120,63,.12); padding:.18em .42em; border-radius:5px; }}
+    body {{ margin:0; background:var(--paper); color:var(--text); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; line-height:1.68; }}
+    body::before {{ content:""; position:fixed; inset:0; pointer-events:none; opacity:.05; background-image:radial-gradient(rgba(20,35,50,.22) .7px, transparent .7px); background-size:17px 17px; }}
+    a {{ color:var(--cyan); text-decoration:none; }} a:hover {{ color:#14549c; }}
+    code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.82em; color:#b44b27; background:rgba(239,100,55,.10); padding:.18em .42em; border-radius:4px; }}
     .app-shell {{ display:grid; grid-template-columns:260px minmax(0,1fr); min-height:100vh; }}
-    .rail {{ position:sticky; top:0; height:100vh; padding:27px 21px; border-right:1px solid var(--line); background:rgba(7,21,34,.86); backdrop-filter:blur(16px); z-index:8; }}
+    .rail {{ position:sticky; top:0; height:100vh; padding:27px 21px; border-right:1px solid var(--line); background:rgba(255,255,255,.92); backdrop-filter:blur(16px); z-index:8; }}
     .brand {{ display:flex; align-items:center; gap:11px; margin-bottom:30px; }}
     .brand-mark {{ width:32px; height:32px; border-radius:10px; background:linear-gradient(135deg,var(--cyan),var(--orange) 62%,var(--coral)); box-shadow:0 0 24px rgba(242,120,63,.28); }}
     .brand strong {{ display:block; font-family:Georgia,"Noto Serif SC",serif; letter-spacing:.02em; }} .brand small {{ color:var(--muted); font-size:10px; letter-spacing:.16em; }}
     .rail-label {{ color:var(--muted); font:10px ui-monospace,monospace; letter-spacing:.15em; margin:23px 0 10px; }}
     .nav {{ display:grid; gap:4px; max-height:calc(100vh - 190px); overflow:auto; scrollbar-width:thin; }}
-    .nav a {{ display:flex; gap:10px; align-items:center; padding:8px 8px; border-radius:9px; color:var(--muted); font-size:12px; transition:.2s ease; }}
-    .nav a:hover {{ color:var(--text); background:rgba(114,207,255,.08); transform:translateX(2px); }} .nav a span {{ color:var(--orange); font:10px ui-monospace,monospace; width:22px; }}
+    .nav a {{ display:flex; gap:10px; align-items:center; padding:8px 8px; border-radius:6px; color:var(--muted); font-size:12px; transition:.2s ease; }}
+    .nav a:hover {{ color:var(--text); background:rgba(46,118,201,.08); transform:translateX(2px); }} .nav a span {{ color:var(--orange); font:10px ui-monospace,monospace; width:22px; }}
     .rail-footer {{ position:absolute; bottom:26px; color:#6e8997; font:10px ui-monospace,monospace; line-height:1.5; }}
     main {{ min-width:0; }}
-    .hero {{ position:relative; overflow:hidden; min-height:600px; padding:58px clamp(28px,7vw,110px) 48px; background:radial-gradient(circle at 80% 4%, rgba(242,120,63,.20), transparent 29%), radial-gradient(circle at 10% 42%, rgba(114,207,255,.12), transparent 33%), linear-gradient(135deg,#081b2a 0%,#071522 60%); border-bottom:1px solid var(--line); }}
-    .hero::after {{ content:""; position:absolute; width:350px; height:350px; border:1px solid rgba(114,207,255,.18); border-radius:50%; right:8%; top:80px; box-shadow:0 0 0 26px rgba(114,207,255,.02),0 0 0 52px rgba(114,207,255,.02); }}
+    .hero {{ position:relative; overflow:hidden; min-height:600px; padding:58px clamp(28px,7vw,110px) 48px; background:radial-gradient(circle at 82% 5%, rgba(239,100,55,.12), transparent 28%), radial-gradient(circle at 10% 42%, rgba(46,118,201,.10), transparent 33%), linear-gradient(135deg,#ffffff 0%,#f1f5f6 68%); border-bottom:1px solid var(--line); }}
+    .hero::after {{ content:""; position:absolute; width:350px; height:350px; border:1px solid rgba(46,118,201,.18); border-radius:50%; right:8%; top:80px; box-shadow:0 0 0 26px rgba(46,118,201,.03),0 0 0 52px rgba(239,100,55,.025); }}
     .hero-content {{ position:relative; z-index:1; max-width:1160px; margin:auto; }}
     .eyebrow, .hero-kicker {{ display:inline-block; font:11px ui-monospace,monospace; text-transform:uppercase; letter-spacing:.17em; color:var(--cyan); }}
-    .hero h1 {{ max-width:880px; margin:17px 0 14px; font:700 clamp(39px,6vw,76px)/1.03 Georgia,"Noto Serif SC",serif; letter-spacing:-.055em; }}
-    .hero h1 em {{ color:var(--orange); font-style:normal; }} .hero-subtitle {{ max-width:730px; color:#c7d2d9; font-size:16px; margin:0; }}
-    .thermal-ribbon {{ display:block; position:absolute; width:min(800px,72vw); right:-15px; top:40px; opacity:.78; z-index:0; }}
-    .hero-meta {{ display:flex; flex-wrap:wrap; gap:11px; margin:29px 0 30px; }} .meta-chip {{ color:var(--muted); border:1px solid var(--line); background:rgba(13,35,50,.72); padding:7px 10px; border-radius:999px; font:11px ui-monospace,monospace; }} .meta-chip strong {{ color:var(--text); }}
-    .stats {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; max-width:1020px; }} .stat-card {{ padding:16px 17px; background:rgba(16,44,60,.74); border:1px solid rgba(114,207,255,.13); border-radius:13px; box-shadow:var(--shadow); }} .stat-card span {{ display:block; color:var(--muted); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .stat-card strong {{ display:block; margin:7px 0 2px; font:700 27px Georgia,"Noto Serif SC",serif; }} .stat-card small {{ color:#9eb3bd; font-size:11px; }} .tone-orange strong {{ color:var(--orange); }} .tone-cyan strong {{ color:var(--cyan); }} .tone-coral strong {{ color:var(--coral); }}
-    .hero-note {{ margin:24px 0 0; max-width:960px; color:#8ea6b1; font-size:12px; }}
-    .canvas {{ max-width:1160px; margin:0 auto; padding:46px clamp(22px,5vw,75px) 86px; }}
+    .hero h1 {{ max-width:880px; margin:17px 0 14px; color:var(--ink); font:700 clamp(39px,6vw,76px)/1.03 Georgia,"Noto Serif SC",serif; letter-spacing:-.055em; }}
+    .hero h1 em {{ color:var(--orange); font-style:normal; }} .hero-subtitle {{ max-width:730px; color:#52636d; font-size:16px; margin:0; }}
+    .thermal-ribbon {{ display:block; position:absolute; width:min(800px,72vw); right:-15px; top:40px; opacity:.42; z-index:0; }}
+    .hero-meta {{ display:flex; flex-wrap:wrap; gap:11px; margin:29px 0 30px; }} .meta-chip {{ color:#5c6d77; border:1px solid #ccd9df; background:rgba(255,255,255,.78); padding:7px 10px; border-radius:5px; font:11px ui-monospace,monospace; }} .meta-chip strong {{ color:var(--text); }}
+    .stats {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; max-width:1020px; }} .stat-card {{ padding:16px 17px; background:rgba(255,255,255,.88); border:1px solid #d6e1e5; border-radius:7px; box-shadow:var(--shadow); }} .stat-card span {{ display:block; color:var(--muted); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .stat-card strong {{ display:block; margin:7px 0 2px; font:700 27px Georgia,"Noto Serif SC",serif; }} .stat-card small {{ color:#6d7c84; font-size:11px; }} .tone-orange strong {{ color:var(--orange); }} .tone-cyan strong {{ color:var(--cyan); }} .tone-coral strong {{ color:var(--coral); }}
+    .hero-note {{ margin:24px 0 0; max-width:960px; color:#61727c; font-size:12px; }}
+    .canvas {{ max-width:1160px; margin:0 auto; padding:46px clamp(22px,5vw,75px) 86px; background:rgba(255,255,255,.42); }}
     .section-kicker {{ margin:0 0 8px; color:var(--orange); font:11px ui-monospace,monospace; letter-spacing:.15em; }} .canvas h2, .article h2 {{ font:700 31px/1.16 Georgia,"Noto Serif SC",serif; letter-spacing:-.03em; margin:0 0 12px; }}
     .canvas-intro {{ color:var(--muted); margin:0 0 25px; max-width:800px; }}
-    .segment-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0 30px; }} .segment-card {{ display:grid; grid-template-columns:42px 1fr; gap:12px; padding:19px; background:linear-gradient(150deg,rgba(20,57,76,.95),rgba(13,35,50,.95)); border:1px solid #235269; border-radius:14px; min-height:210px; }} .segment-rank {{ display:flex; align-items:flex-start; justify-content:center; color:var(--orange); font:24px Georgia,serif; }} .segment-card h3 {{ margin:6px 0 6px; font-size:19px; }} .segment-card p {{ margin:0; color:var(--muted); font-size:12px; line-height:1.65; }} .company-tags {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }} .company-tags span {{ color:#d8e2e7; background:rgba(114,207,255,.08); border:1px solid rgba(114,207,255,.2); padding:3px 7px; border-radius:99px; font-size:10px; }}
-    .priority-panel {{ padding:17px 20px; border-left:3px solid var(--orange); background:rgba(242,120,63,.06); margin:20px 0 35px; }} .priority-row {{ display:grid; grid-template-columns:90px minmax(180px,260px) 1fr; gap:14px; padding:10px 0; border-bottom:1px solid rgba(169,183,197,.12); align-items:start; }} .priority-row:last-child {{ border-bottom:0; }} .priority-row span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .priority-row strong {{ font-size:14px; }} .priority-row em {{ font-style:normal; color:var(--muted); font-size:12px; }}
-    .signal-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:25px 0 46px; }} .signal-card {{ padding:17px; background:#0d2332; border:1px solid var(--line); border-radius:12px; }} .signal-card h3 {{ margin:0 0 8px; font-size:14px; }} .signal-card ul {{ margin:0; padding-left:17px; color:var(--muted); font-size:12px; }} .signal-card li::marker {{ color:var(--orange); }}
-    .hardware-board {{ margin:36px 0 52px; padding:24px; background:linear-gradient(145deg,#0b1d2a,#102c3c); border:1px solid #2b5264; border-top:3px solid var(--orange); box-shadow:var(--shadow); }} .board-head {{ display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:18px; }} .board-head h3 {{ margin:4px 0 0; font:700 24px/1.25 Georgia,"Noto Serif SC",serif; }} .board-head p {{ max-width:430px; margin:0; color:var(--muted); font-size:11px; line-height:1.65; }} .hardware-grid {{ display:grid; grid-template-columns:1.22fr .78fr; gap:14px; }} .hardware-card {{ margin:0; min-width:0; overflow:hidden; background:#071522; border:1px solid #2a5368; border-radius:5px; }} .hardware-media {{ position:relative; overflow:hidden; background:#071522; }} .hardware-media img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; filter:saturate(.88) contrast(1.04); }} .hardware-caption {{ display:grid; grid-template-columns:130px 1fr; gap:13px; padding:13px 15px 15px; border-top:1px solid rgba(114,207,255,.16); }} .hardware-caption strong {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .hardware-caption span {{ color:#c4d3d9; font-size:12px; line-height:1.6; }} .hardware-callout, .facility-label {{ position:absolute; padding:5px 8px; color:#071522; background:var(--cream); border-left:3px solid var(--orange); font:700 10px ui-monospace,monospace; box-shadow:0 7px 20px rgba(0,0,0,.28); }} .callout-heat {{ left:8%; top:17%; }} .callout-plate {{ right:26%; top:28%; }} .callout-uqd {{ right:30%; top:45%; border-left-color:var(--cyan); }} .callout-cdu {{ left:9%; bottom:20%; border-left-color:var(--cyan); }} .facility-label {{ bottom:10%; }} .facility-left {{ left:5%; border-left-color:var(--cyan); }} .facility-right {{ right:5%; border-left-color:var(--coral); }} .component-tags {{ display:flex; flex-wrap:wrap; gap:6px; padding:0 15px 15px; }} .component-tags span {{ padding:5px 7px; border:1px solid #2b5264; color:#b8eaff; font:10px ui-monospace,monospace; }} .hardware-facility {{ margin-top:14px; }} .hardware-facility .hardware-media img {{ aspect-ratio:2.55/1; object-position:center 58%; }}
-    .visual-stack {{ display:grid; gap:18px; margin:25px 0 56px; }} .figure-card {{ margin:0; padding:20px 21px 17px; background:linear-gradient(160deg,#102c3c,#0c2230); border:1px solid #235269; border-radius:15px; box-shadow:0 14px 34px rgba(0,0,0,.17); }} .editorial-plate {{ border-radius:5px; border-left:3px solid var(--orange); }} .md-figure {{ margin:32px 0 44px; padding:24px 18px 18px; }} .md-figure-svg {{ overflow-x:auto; scrollbar-width:thin; }} .figure-heading {{ display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-bottom:13px; }} .figure-heading span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.14em; }} .figure-heading strong {{ font:18px Georgia,"Noto Serif SC",serif; }} .figure-card svg {{ display:block; width:100%; height:auto; overflow:visible; }} .figure-card svg text {{ fill:#f5f7f9; font-family:ui-sans-serif,"Noto Sans SC",sans-serif; font-size:13px; }} .figure-card svg .grid {{ stroke:#23485b; fill:none; stroke-width:1; }} .figure-card svg .label {{ fill:#d7e2e7; font-size:12px; }} .figure-card svg .axis, .figure-card svg .note {{ fill:#a9b7c5; font-size:11px; }} .figure-card svg .eyebrow {{ fill:#f2783f; font:10px ui-monospace,monospace; letter-spacing:.12em; }} .figure-card svg .value-label {{ fill:#ffd2b5; font:11px ui-monospace,monospace; }} .figure-card svg .value-label.low {{ fill:#b8eaff; }} .figure-card svg .cell {{ font:11px ui-monospace,monospace; }} .figure-card svg .route-title, .figure-card svg .center-title {{ fill:#f5f7f9; font:700 18px Georgia,"Noto Serif SC",serif; }} .figure-card svg .center-sub {{ fill:#071522; font:11px ui-monospace,monospace; }} .figure-card svg .step-number {{ fill:#f5f7f9; font:700 11px ui-monospace,monospace; }} .figure-card svg .step-title {{ fill:#f5f7f9; font-size:14px; font-weight:700; }} .figure-card svg .check-label {{ fill:#b8eaff; font:10px ui-monospace,monospace; }} .figure-card figcaption, .figure-card > figcaption {{ margin:12px 0 0; color:#8fa7b2; font-size:11px; line-height:1.6; }}
-    .financial-plate {{ overflow:hidden; }} .financial-dashboard {{ min-width:880px; }} .figure-card svg .chart-title {{ fill:#f5f7f9; font:700 14px Georgia,"Noto Serif SC",serif; }} .figure-card svg .chart-unit, .figure-card svg .chart-axis, .figure-card svg .chart-legend {{ fill:#8fa7b2; font:10px ui-monospace,monospace; }} .figure-card svg .chart-label {{ fill:#d7e2e7; font-size:10px; }} .figure-card svg .chart-value {{ fill:#ffd2b5; font:10px ui-monospace,monospace; }} .md-image-figure {{ background:linear-gradient(145deg,#0b1d2a,#102c3c); }} .md-image-figure img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; border:1px solid #2b5264; filter:saturate(.9); }}
-    .article-wrap {{ max-width:1160px; margin:0 auto; padding:0 clamp(22px,5vw,75px) 90px; }} .article {{ color:#d8e2e7; }} .article h1 {{ font:700 42px/1.12 Georgia,"Noto Serif SC",serif; margin:0 0 26px; }} .article h2 {{ padding-top:58px; scroll-margin-top:22px; color:#fff; }} .article h3 {{ margin:30px 0 10px; color:#fff; font:700 21px/1.3 Georgia,"Noto Serif SC",serif; }} .article h4 {{ color:var(--orange); }} .article p {{ max-width:920px; margin:11px 0; color:#c1d0d7; font-size:14px; }} .article ul, .article ol {{ max-width:900px; color:#c1d0d7; padding-left:23px; font-size:14px; }} .article li {{ margin:5px 0; }} .article li::marker {{ color:var(--orange); }} .article blockquote {{ max-width:920px; margin:20px 0; padding:14px 17px; background:rgba(114,207,255,.06); border-left:3px solid var(--cyan); color:#d8edf5; font-family:Georgia,"Noto Serif SC",serif; }} .rule {{ border:0; border-top:1px solid var(--line); margin:43px 0 15px; }}
-    .table-wrap {{ max-width:100%; overflow:auto; margin:18px 0 25px; border:1px solid var(--line); border-radius:10px; background:rgba(13,35,50,.66); }} table {{ width:100%; border-collapse:collapse; min-width:650px; font-size:12px; }} th, td {{ padding:9px 11px; text-align:left; border-bottom:1px solid rgba(169,183,197,.12); vertical-align:top; }} th {{ position:sticky; top:0; background:#173a4c; color:#fff; font:11px ui-monospace,monospace; white-space:nowrap; }} td {{ color:#bfd0d7; }} tr:last-child td {{ border-bottom:0; }} tr:hover td {{ background:rgba(114,207,255,.04); }}
-    .code-block {{ overflow:auto; padding:15px; background:#061019; border:1px solid var(--line); border-radius:10px; color:#b8eaff; }}
-    .source-drawer {{ position:fixed; z-index:12; top:0; right:0; width:min(560px,92vw); height:100vh; overflow:auto; transform:translateX(102%); transition:transform .28s ease; background:#0a1e2c; border-left:1px solid var(--line); box-shadow:-30px 0 80px rgba(0,0,0,.4); }} body.sources-open .source-drawer {{ transform:translateX(0); }} .drawer-head {{ display:flex; justify-content:space-between; padding:19px 22px; position:sticky; top:0; background:rgba(10,30,44,.92); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); color:var(--orange); font:11px ui-monospace,monospace; letter-spacing:.14em; }} button {{ color:var(--text); background:transparent; border:1px solid var(--line); padding:6px 9px; border-radius:7px; cursor:pointer; }} .source-list {{ padding:17px 22px 40px; }} .source-item {{ padding:16px 0; border-bottom:1px solid rgba(169,183,197,.14); }} .source-item h3 {{ margin:5px 0; font:16px Georgia,"Noto Serif SC",serif; }} .source-item p {{ margin:4px 0; color:var(--muted); font-size:12px; }} .source-id {{ color:var(--orange); font:10px ui-monospace,monospace; }} details {{ margin-top:9px; color:#8fa7b2; font-size:11px; }}
-    .open-sources {{ position:fixed; right:22px; bottom:20px; z-index:10; color:var(--ink); background:var(--cyan); border:0; border-radius:99px; padding:10px 14px; font-weight:700; box-shadow:0 8px 24px rgba(0,0,0,.24); }}
-    .footer {{ max-width:1160px; margin:auto; padding:25px clamp(22px,5vw,75px) 45px; border-top:1px solid var(--line); color:#76909b; font:11px ui-monospace,monospace; }}
+    .segment-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0 30px; }} .segment-card {{ display:grid; grid-template-columns:42px 1fr; gap:12px; padding:19px; background:#ffffff; border:1px solid #d4dfe4; border-top:3px solid var(--orange); border-radius:5px; min-height:210px; box-shadow:0 12px 28px rgba(35,59,72,.07); }} .segment-rank {{ display:flex; align-items:flex-start; justify-content:center; color:var(--orange); font:24px Georgia,serif; }} .segment-card h3 {{ margin:6px 0 6px; font-size:19px; }} .segment-card p {{ margin:0; color:var(--muted); font-size:12px; line-height:1.65; }} .company-tags {{ display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }} .company-tags span {{ color:#38515f; background:#eff5f7; border:1px solid #d5e4e9; padding:3px 7px; border-radius:4px; font-size:10px; }}
+    .priority-panel {{ padding:17px 20px; border-left:3px solid var(--orange); background:#fff8ef; margin:20px 0 35px; }} .priority-row {{ display:grid; grid-template-columns:90px minmax(180px,260px) 1fr; gap:14px; padding:10px 0; border-bottom:1px solid rgba(92,114,124,.16); align-items:start; }} .priority-row:last-child {{ border-bottom:0; }} .priority-row span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.12em; }} .priority-row strong {{ font-size:14px; }} .priority-row em {{ font-style:normal; color:var(--muted); font-size:12px; }}
+    .signal-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:25px 0 46px; }} .signal-card {{ padding:17px; background:#ffffff; border:1px solid #d4dfe4; border-radius:5px; box-shadow:0 10px 24px rgba(35,59,72,.05); }} .signal-card h3 {{ margin:0 0 8px; font-size:14px; }} .signal-card ul {{ margin:0; padding-left:17px; color:var(--muted); font-size:12px; }} .signal-card li::marker {{ color:var(--orange); }}
+    .hardware-board {{ margin:36px 0 52px; padding:24px; background:#ffffff; border:1px solid #d4dfe4; border-top:3px solid var(--orange); box-shadow:var(--shadow); }} .board-head {{ display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:18px; }} .board-head h3 {{ margin:4px 0 0; color:var(--ink); font:700 24px/1.25 Georgia,"Noto Serif SC",serif; }} .board-head p {{ max-width:430px; margin:0; color:var(--muted); font-size:11px; line-height:1.65; }} .hardware-grid {{ display:grid; grid-template-columns:1.22fr .78fr; gap:14px; }} .hardware-card {{ margin:0; min-width:0; overflow:hidden; background:#142332; border:1px solid #c9d7de; border-radius:5px; }} .hardware-media {{ position:relative; overflow:hidden; background:#142332; }} .hardware-media img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; filter:saturate(.88) contrast(1.04); }} .hardware-caption {{ display:grid; grid-template-columns:130px 1fr; gap:13px; padding:13px 15px 15px; border-top:1px solid rgba(114,207,255,.16); }} .hardware-caption strong {{ color:#ff9b5d; font:10px ui-monospace,monospace; letter-spacing:.12em; }} .hardware-caption span {{ color:#d4e0e5; font-size:12px; line-height:1.6; }} .hardware-callout, .facility-label {{ position:absolute; padding:5px 8px; color:#142332; background:var(--cream); border-left:3px solid var(--orange); font:700 10px ui-monospace,monospace; box-shadow:0 7px 20px rgba(0,0,0,.28); }} .callout-heat {{ left:8%; top:17%; }} .callout-plate {{ right:26%; top:28%; }} .callout-uqd {{ right:30%; top:45%; border-left-color:var(--cyan); }} .callout-cdu {{ left:9%; bottom:20%; border-left-color:var(--cyan); }} .facility-label {{ bottom:10%; }} .facility-left {{ left:5%; border-left-color:var(--cyan); }} .facility-right {{ right:5%; border-left-color:var(--coral); }} .component-tags {{ display:flex; flex-wrap:wrap; gap:6px; padding:0 15px 15px; }} .component-tags span {{ padding:5px 7px; border:1px solid #2b5264; color:#b8eaff; font:10px ui-monospace,monospace; }} .hardware-facility {{ margin-top:14px; }} .hardware-facility .hardware-media img {{ aspect-ratio:2.55/1; object-position:center 58%; }}
+    .visual-stack {{ display:grid; gap:18px; margin:25px 0 56px; }} .figure-card {{ margin:0; padding:20px 21px 17px; background:#ffffff; border:1px solid #d4dfe4; border-radius:5px; box-shadow:0 14px 34px rgba(35,59,72,.08); }} .editorial-plate {{ border-radius:5px; border-left:3px solid var(--orange); }} .md-figure {{ margin:32px 0 44px; padding:24px 18px 18px; }} .md-figure-svg {{ overflow-x:auto; scrollbar-width:thin; }} .figure-heading {{ display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-bottom:13px; }} .figure-heading span {{ color:var(--orange); font:10px ui-monospace,monospace; letter-spacing:.14em; }} .figure-heading strong {{ color:var(--ink); font:18px Georgia,"Noto Serif SC",serif; }} .figure-card svg {{ display:block; width:100%; height:auto; overflow:visible; }} .figure-card svg text {{ fill:#122334; font-family:ui-sans-serif,"Noto Sans SC",sans-serif; font-size:13px; }} .figure-card svg .grid {{ stroke:#cbd8de; fill:none; stroke-width:1; }} .figure-card svg .label {{ fill:#233744; font-size:12px; }} .figure-card svg .axis, .figure-card svg .note {{ fill:#63737d; font-size:11px; }} .figure-card svg .eyebrow {{ fill:#ef6437; font:10px ui-monospace,monospace; letter-spacing:.12em; }} .figure-card svg .value-label {{ fill:#d9532d; font:11px ui-monospace,monospace; }} .figure-card svg .value-label.low {{ fill:#2873bd; }} .figure-card svg .cell {{ font:11px ui-monospace,monospace; }} .figure-card svg .route-title, .figure-card svg .center-title {{ fill:#122334; font:700 18px Georgia,"Noto Serif SC",serif; }} .figure-card svg .center-sub {{ fill:#122334; font:11px ui-monospace,monospace; }} .figure-card svg .step-number {{ fill:#122334; font:700 11px ui-monospace,monospace; }} .figure-card svg .step-title {{ fill:#122334; font-size:14px; font-weight:700; }} .figure-card svg .check-label {{ fill:#2873bd; font:10px ui-monospace,monospace; }} .figure-card svg .atlas-title {{ fill:#122334; font:700 15px Georgia,"Noto Serif SC",serif; }} .figure-card svg .atlas-note {{ fill:#687983; font:10px ui-monospace,monospace; }} .figure-card svg .column-title {{ fill:#122334; font:700 15px Georgia,"Noto Serif SC",serif; }} .figure-card svg .metric-title {{ fill:#122334; font:700 16px Georgia,"Noto Serif SC",serif; }} .figure-card svg .metric-sub, .figure-card svg .metric-companies {{ fill:#52636d; font-size:11px; }} .figure-card svg .node-title-dark {{ fill:#122334; font:700 13px ui-sans-serif,"Noto Sans SC",sans-serif; }} .figure-card svg .node-sub-dark {{ fill:#63737d; font-size:10px; }} .figure-card figcaption, .figure-card > figcaption {{ margin:12px 0 0; color:#687983; font-size:11px; line-height:1.6; }}
+    .financial-plate {{ overflow:hidden; }} .financial-dashboard {{ min-width:880px; }} .figure-card svg .chart-title {{ fill:#122334; font:700 14px Georgia,"Noto Serif SC",serif; }} .figure-card svg .chart-unit, .figure-card svg .chart-axis, .figure-card svg .chart-legend {{ fill:#687983; font:10px ui-monospace,monospace; }} .figure-card svg .chart-label {{ fill:#233744; font-size:10px; }} .figure-card svg .chart-value {{ fill:#d9532d; font:10px ui-monospace,monospace; }} .md-image-figure {{ background:#ffffff; }} .md-image-figure img {{ display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; border:1px solid #cbd8de; filter:saturate(.9); }}
+    .article-wrap {{ max-width:1160px; margin:0 auto; padding:0 clamp(22px,5vw,75px) 90px; background:rgba(255,255,255,.42); }} .article {{ color:#314550; }} .article h1 {{ font:700 42px/1.12 Georgia,"Noto Serif SC",serif; margin:0 0 26px; }} .article h2 {{ padding-top:58px; scroll-margin-top:22px; color:var(--ink); border-top:1px solid #d4dfe4; }} .article h3 {{ margin:30px 0 10px; color:var(--ink); font:700 21px/1.3 Georgia,"Noto Serif SC",serif; }} .article h4 {{ color:var(--orange); }} .article p {{ max-width:920px; margin:11px 0; color:#435862; font-size:14px; }} .article ul, .article ol {{ max-width:900px; color:#435862; padding-left:23px; font-size:14px; }} .article li {{ margin:5px 0; }} .article li::marker {{ color:var(--orange); }} .article blockquote {{ max-width:920px; margin:20px 0; padding:14px 17px; background:#eef5f7; border-left:3px solid var(--cyan); color:#314550; font-family:Georgia,"Noto Serif SC",serif; }} .rule {{ border:0; border-top:1px solid var(--line); margin:43px 0 15px; }}
+    .data-details {{ max-width:100%; margin:18px 0 25px; border:1px solid #d4dfe4; background:#ffffff; }} .data-details summary {{ cursor:pointer; padding:12px 15px; color:#52636d; font:11px ui-monospace,monospace; list-style:none; }} .data-details summary::before {{ content:"＋"; margin-right:8px; color:var(--orange); }} .data-details[open] summary::before {{ content:"−"; }} .table-wrap {{ max-width:100%; overflow:auto; margin:0; border-top:1px solid #d4dfe4; }} table {{ width:100%; border-collapse:collapse; min-width:650px; font-size:12px; }} th, td {{ padding:9px 11px; text-align:left; border-bottom:1px solid #e3eaed; vertical-align:top; }} th {{ position:sticky; top:0; background:#edf3f5; color:#233744; font:11px ui-monospace,monospace; white-space:nowrap; }} td {{ color:#52636d; }} tr:last-child td {{ border-bottom:0; }} tr:hover td {{ background:#f5f8f9; }}
+    .code-block {{ overflow:auto; padding:15px; background:#eef4f6; border:1px solid var(--line); border-radius:5px; color:#2873bd; }}
+    .source-drawer {{ position:fixed; z-index:12; top:0; right:0; width:min(560px,92vw); height:100vh; overflow:auto; transform:translateX(102%); transition:transform .28s ease; background:#ffffff; border-left:1px solid var(--line); box-shadow:-30px 0 80px rgba(35,59,72,.18); }} body.sources-open .source-drawer {{ transform:translateX(0); }} .drawer-head {{ display:flex; justify-content:space-between; padding:19px 22px; position:sticky; top:0; background:rgba(255,255,255,.94); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); color:var(--orange); font:11px ui-monospace,monospace; letter-spacing:.14em; }} button {{ color:var(--text); background:transparent; border:1px solid var(--line); padding:6px 9px; border-radius:5px; cursor:pointer; }} .source-list {{ padding:17px 22px 40px; }} .source-item {{ padding:16px 0; border-bottom:1px solid #e1e9ed; }} .source-item h3 {{ margin:5px 0; color:var(--ink); font:16px Georgia,"Noto Serif SC",serif; }} .source-item p {{ margin:4px 0; color:var(--muted); font-size:12px; }} .source-id {{ color:var(--orange); font:10px ui-monospace,monospace; }} details {{ margin-top:9px; color:#687983; font-size:11px; }}
+    .open-sources {{ position:fixed; right:22px; bottom:20px; z-index:10; color:#ffffff; background:var(--cyan); border:0; border-radius:5px; padding:10px 14px; font-weight:700; box-shadow:0 8px 24px rgba(35,59,72,.18); }}
+    .footer {{ max-width:1160px; margin:auto; padding:25px clamp(22px,5vw,75px) 45px; border-top:1px solid var(--line); color:#71828c; font:11px ui-monospace,monospace; }}
     @media (max-width:980px) {{ .app-shell {{ display:block; }} .rail {{ position:relative; height:auto; padding:16px 22px; border-right:0; border-bottom:1px solid var(--line); }} .brand {{ margin-bottom:12px; }} .nav {{ display:flex; overflow:auto; max-height:none; padding-bottom:2px; }} .nav a {{ white-space:nowrap; }} .rail-label, .rail-footer {{ display:none; }} .hero {{ min-height:570px; padding-top:40px; }} .thermal-ribbon {{ top:30px; opacity:.35; }} .stats {{ grid-template-columns:repeat(2,1fr); }} .segment-grid, .signal-grid {{ grid-template-columns:1fr; }} .priority-row {{ grid-template-columns:80px 1fr; }} .priority-row em {{ grid-column:2; }} .board-head {{ display:block; }} .board-head p {{ margin-top:10px; }} .hardware-grid {{ grid-template-columns:1fr; }} }}
     @media (max-width:600px) {{ .hero {{ padding:32px 19px 35px; min-height:610px; }} .hero h1 {{ font-size:43px; }} .hero-subtitle {{ font-size:14px; }} .thermal-ribbon {{ width:710px; top:95px; right:-245px; opacity:.27; }} .stats {{ gap:8px; }} .stat-card {{ padding:12px; }} .stat-card strong {{ font-size:22px; }} .canvas, .article-wrap {{ padding-left:17px; padding-right:17px; }} .canvas h2, .article h2 {{ font-size:27px; }} .figure-card {{ padding:15px 12px; }} .figure-heading {{ display:block; }} .figure-heading strong {{ display:block; margin-top:5px; font-size:17px; }} .figure-card svg {{ min-width:620px; }} .figure-card {{ overflow:auto; }} .priority-row {{ display:block; }} .priority-row strong, .priority-row em {{ display:block; margin-top:5px; }} .hardware-board {{ padding:15px; }} .hardware-caption {{ display:block; }} .hardware-caption span {{ display:block; margin-top:6px; }} .hardware-facility .hardware-media img {{ aspect-ratio:3/2; }} .open-sources {{ right:12px; bottom:12px; }} }}
     @media print {{ body {{ background:#fff; color:#111; }} body::before, .rail, .open-sources, .source-drawer {{ display:none!important; }} .app-shell {{ display:block; }} .hero, .figure-card, .priority-panel, .stat-card, .signal-card {{ background:#fff; color:#111; box-shadow:none; border:1px solid #c9d2d6; }} .hero {{ min-height:auto; padding:30px 20px; }} .hero h1, .canvas h2, .article h2, .article h3 {{ color:#111; }} .hero-subtitle, .article p, .article li, td {{ color:#28343a; }} .article h2 {{ break-before:page; }} .visual-stack {{ break-inside:avoid; }} a {{ color:#111; text-decoration:underline; }} .table-wrap {{ border-color:#c9d2d6; }} th {{ background:#edf2f4; color:#111; }} .thermal-ribbon {{ opacity:.28; }} }}
@@ -697,7 +803,7 @@ def build_html(markdown: str, data: Dict[str, Any], asset_svgs: Optional[Dict[st
     </aside>
     <main>
       <section class="hero" id="top"><div class="hero-content"><span class="hero-kicker">LIQUID COOLING / INVESTMENT FRAMEWORK V3</span><h1>热流正在重写<br><em>算力基础设施</em>的价值地图</h1><p class="hero-subtitle">从芯片热密度出发，穿过冷板、CDU、UQD与工质，回到订单、现金流和估值。首屏先给判断，正文再给证据。</p><div class="hero-meta"><span class="meta-chip"><strong>数据截止</strong> {esc(data["meta"]["data_cutoff"])}</span><span class="meta-chip"><strong>基准版本</strong> {esc(data["meta"]["baseline_cutoff"])}</span><span class="meta-chip"><strong>覆盖</strong> A股产业链 / 海外对标</span><span class="meta-chip"><strong>阶段</strong> 商业化加速期</span></div><div class="stats">{stat_card("BEST LINK", "CDU", "系统交付与订单前置", "orange")}{stat_card("HIGH BETA", "冷板 / TIM", "NV平台认证与单位价值量", "cyan")}{stat_card("BOTTLENECK", "UQD", "认证与可靠性优先", "coral")}{stat_card("MUST WATCH", "现金流", "订单不是回款", "cyan")}</div><p class="hero-note">核心观点：优先研究CDU及液冷基础设施；以NV定制冷板/TIM获取平台升级弹性；UQD与高端工质作为国产替代卡位观察。估值和业绩必须回到同一张表里检验。</p></div>{thermal_ribbon()}</section>
-      <section class="canvas" id="investment-conclusion"><p class="section-kicker">00 / INVESTMENT CONCLUSION</p><h2>把行业机会拆成可验证的公司机会</h2><p class="canvas-intro">液冷行业的增长确定性高于单家公司业绩确定性。下方先呈现环节优先级、公司关注顺序和核心验证条件；随后正文按原始模块顺序展开。</p><div class="segment-grid">{best_cards}</div><div class="priority-panel"><div class="section-kicker">COMPANY PRIORITY</div>{priority_cards}</div>{hardware_board(asset_images or {})}<div class="signal-grid"><article class="signal-card"><h3>催化剂</h3><ul>{catalysts}</ul></article><article class="signal-card"><h3>验证条件</h3><ul>{validate}</ul></article><article class="signal-card"><h3>失效条件</h3><ul>{invalid}</ul></article></div><div class="visual-stack">{system_figure()}{market_figure(data)}{value_pool_figure(data)}{competition_figure(data)}{financial_figure(data)}</div></section>
+      <section class="canvas" id="investment-conclusion"><p class="section-kicker">00 / INVESTMENT CONCLUSION</p><h2>把行业机会拆成可验证的公司机会</h2><p class="canvas-intro">液冷行业的增长确定性高于单家公司业绩确定性。下方先呈现环节优先级、公司关注顺序和核心验证条件；随后正文按原始模块顺序展开。</p><div class="segment-grid">{best_cards}</div><div class="priority-panel"><div class="section-kicker">COMPANY PRIORITY</div>{priority_cards}</div>{hardware_board(asset_images or {})}<div class="signal-grid"><article class="signal-card"><h3>催化剂</h3><ul>{catalysts}</ul></article><article class="signal-card"><h3>验证条件</h3><ul>{validate}</ul></article><article class="signal-card"><h3>失效条件</h3><ul>{invalid}</ul></article></div><div class="visual-stack">{light_svg(system_figure())}{light_svg(market_figure(data))}{light_svg(penetration_figure(data))}{light_svg(value_pool_figure(data))}{light_svg(competition_figure(data))}{light_svg(financial_figure(data))}</div></section>
       <section class="article-wrap"><article class="article">{body}</article></section>
       <footer class="footer">液冷行业研究框架 v3 · {esc(data["meta"]["data_cutoff"])} · 事实、预测与判断已尽量分栏标注。<br>本页面为独立HTML，无外部脚本、样式、字体或图片依赖。</footer>
     </main>
