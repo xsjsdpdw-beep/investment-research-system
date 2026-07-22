@@ -41,3 +41,10 @@ frontend/tsconfig.tsbuildinfo
 
 # ── 本地隔离工作区 ────────────────────────────────────────────────
 .worktrees/
+
+# Task-only generated previews and helper scripts
+business_integrated_compact.png
+business_integrated_text.png
+business_integrated_text_v2.png
+work_compact_integrated_report.py
+work_integrate_md_text.py
