@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -24,6 +24,7 @@ import chat as chat_layer
 import cli_runtime
 import data_adapters
 import database_modules
+import field_research_audio
 import gstock
 import knowledge
 import learning_factory
@@ -103,6 +104,28 @@ def _validate(code: str) -> str:
 @app.get("/api/health")
 def health():
     return {"ok": True, "service": "investment-research-api", "version": "0.1.3"}
+
+
+@app.get("/api/field-research/transcription-status")
+def field_research_transcription_status():
+    return {"data": field_research_audio.engine_status()}
+
+
+@app.post("/api/field-research/transcribe")
+def field_research_transcribe(file: UploadFile = File(...)):
+    try:
+        payload = file.file.read()
+        return {
+            "data": field_research_audio.transcribe_audio(
+                file.filename or "audio",
+                file.content_type or "",
+                payload,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
 
 
 class LLMConfig(BaseModel):

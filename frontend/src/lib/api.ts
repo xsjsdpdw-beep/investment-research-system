@@ -38,6 +38,27 @@ export interface MyReport {
   id: string; name: string; industry: string; size: number; ext: string; ts: number;
 }
 
+export interface FieldResearchTranscriptionStatus {
+  available: boolean;
+  engine: string;
+  model: string;
+  message: string;
+}
+
+export interface FieldResearchAudioSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface FieldResearchTranscription {
+  engine: string;
+  model: string;
+  language: string;
+  duration: number;
+  segments: FieldResearchAudioSegment[];
+}
+
 // 下载/预览研报：带鉴权头 fetch → blob → 触发浏览器下载（<a download> 无法带 Authorization，故走 blob）。
 export async function downloadReport(id: string, name: string): Promise<void> {
   const resp = await fetch(`/api/myreports/file/${id}`, { headers: authHeaders() });
@@ -63,8 +84,12 @@ async function request<T>(
   const headers: Record<string, string> = { ...authHeaders() };
   const opts: RequestInit = { method, ...init };
   if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(body);
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      opts.body = body;
+    } else {
+      headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
   }
   const extraHeaders = (init?.headers || {}) as Record<string, string>;
   const mergedHeaders = { ...extraHeaders, ...headers };
@@ -1254,6 +1279,12 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  fieldResearchTranscriptionStatus: () => get<FieldResearchTranscriptionStatus>("/field-research/transcription-status"),
+  transcribeFieldResearchAudio: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<FieldResearchTranscription>("/field-research/transcribe", "POST", form);
+  },
   knowledgeEntries: (params?: { kind?: string; sector?: string; stock?: string }) => {
     const query = new URLSearchParams();
     if (params?.kind) query.set("kind", params.kind);

@@ -54,7 +54,10 @@ def ifind_status() -> dict[str, Any]:
     """返回 iFind 本地接入状态，不泄露 token 原文。"""
 
     token = _ifind_token()
-    dsn = os.environ.get("VR_IFIND_DSN", "").strip()
+    dsn = (
+        os.environ.get("VR_IFIND_DSN", "").strip()
+        or os.environ.get("VR_IFIND_FUND_DSN", "").strip()
+    )
     mode = os.environ.get("VR_IFIND_MODE", "auto").strip() or "auto"
     sdk_module = _detect_ifind_sdk()
     enabled = _env_flag("VR_IFIND_ENABLED", bool(token or dsn or sdk_module))
@@ -123,7 +126,11 @@ def _post_ifind_proxy(path: str, payload: dict[str, Any]) -> Any | None:
     若代理不存在或协议不同，静默返回 None，由公开源兜底。
     """
 
-    dsn = os.environ.get("VR_IFIND_DSN", "").strip()
+    dsn = (
+        os.environ.get("VR_IFIND_FUND_DSN", "").strip()
+        if path.startswith("/fund/")
+        else os.environ.get("VR_IFIND_DSN", "").strip()
+    ) or os.environ.get("VR_IFIND_DSN", "").strip()
     if not dsn:
         return None
     base = dsn.rstrip("/")
@@ -141,6 +148,12 @@ def _post_ifind_proxy(path: str, payload: dict[str, Any]) -> Any | None:
         except (OSError, urllib.error.URLError, json.JSONDecodeError):
             continue
     return None
+
+
+def ifind_request(path: str, payload: dict[str, Any]) -> Any | None:
+    """公开 iFind 代理入口，供基金等专题数据适配器复用。"""
+
+    return _post_ifind_proxy(path, payload)
 
 
 def _unwrap_rows(result: Any) -> list[Any]:

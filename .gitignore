@@ -48,3 +48,7 @@ business_integrated_text.png
 business_integrated_text_v2.png
 work_compact_integrated_report.py
 work_integrate_md_text.py
+
+# Generated exports / scratch processing
+outputs/
+tmp/

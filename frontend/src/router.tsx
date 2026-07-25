@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Calendar } from "@/pages/Calendar";
+import { StandaloneFieldResearch } from "@/pages/StandaloneFieldResearch";
 import { Intel } from "@/pages/Intel";
 import { Framework } from "@/pages/Framework";
 import { Sectors } from "@/pages/Sectors";
@@ -37,5 +38,9 @@ export const router = createBrowserRouter([
       { path: "/tradingagents", element: <TradingAgents /> },
       { path: "/settings", element: <Settings /> },
     ],
+  },
+  {
+    path: "/field-research",
+    element: <StandaloneFieldResearch />,
   },
 ]);
