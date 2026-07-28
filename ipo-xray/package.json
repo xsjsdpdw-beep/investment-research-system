@@ -1,11 +1,13 @@
 {
   "name": "ipo-xray",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Independent A-share and Hong Kong IPO research terminal prototype",
+  "description": "Independent A-share and Hong Kong IPO X-ray terminal",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "refresh-data": "node scripts/refresh-data.mjs",
+    "enrich-szse": "node scripts/enrich-szse.mjs"
   }
 }
