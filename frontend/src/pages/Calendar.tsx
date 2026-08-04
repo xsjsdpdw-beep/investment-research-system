@@ -54,9 +54,16 @@ function formatHeader(date: Date, view: CalendarView) {
 }
 
 function eventTone(item: CalendarEvent) {
+  if (isUserDefined(item)) {
+    return "border-amber-300/70 bg-amber-300/15 text-foreground shadow-[inset_3px_0_0_rgb(252_211_77_/_0.9),0_0_0_1px_rgb(252_211_77_/_0.12)]";
+  }
   if (item.importance === "high") return "border-primary/40 bg-primary/12 text-foreground";
   if (item.category === "earnings" || item.category === "conference_call") return "border-sky-400/30 bg-sky-400/10 text-foreground";
   return "border-border/40 bg-black/15 text-foreground";
+}
+
+function isUserDefined(item: CalendarEvent) {
+  return item.source === "manual" || item.category === "manual";
 }
 
 function categoryLabel(item: CalendarEvent) {
@@ -152,7 +159,7 @@ export function Calendar() {
     selectDate(toKey(next));
   };
 
-  const canInlineEdit = (item: CalendarEvent) => item.source === "manual" || item.category === "manual";
+  const canInlineEdit = (item: CalendarEvent) => isUserDefined(item);
 
   const openInlineEditor = (item: CalendarEvent) => {
     if (!canInlineEdit(item)) {
@@ -324,7 +331,14 @@ export function Calendar() {
                               className="w-full rounded border border-primary/40 bg-black/20 px-1.5 py-1 font-medium text-foreground outline-none"
                             />
                           ) : (
-                            <div className="truncate font-medium">{item.title}</div>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              {isUserDefined(item) && (
+                                <span className="shrink-0 rounded-md bg-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-950">
+                                  我的自定义
+                                </span>
+                              )}
+                              <div className="truncate font-medium">{item.title}</div>
+                            </div>
                           )}
                           {((item.notes || "").trim() || categoryLabel(item)) && (
                             <div className="mt-0.5 truncate text-muted-foreground">{(item.notes || "").trim() || categoryLabel(item)}</div>
@@ -389,6 +403,9 @@ export function Calendar() {
                       />
                     ) : (
                       <p className="font-medium">{item.title}</p>
+                    )}
+                    {isUserDefined(item) && (
+                      <span className="rounded-md bg-amber-300 px-2 py-0.5 text-[11px] font-bold text-amber-950">我的自定义</span>
                     )}
                     {categoryLabel(item) && <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{categoryLabel(item)}</span>}
                     <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] text-muted-foreground">{importanceLabel(item.importance)}</span>

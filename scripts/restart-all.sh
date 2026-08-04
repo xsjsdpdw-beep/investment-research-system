@@ -2,18 +2,20 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+export VR_RESTART_ROOT="$ROOT_DIR"
 
 "$ROOT_DIR/scripts/stop-all.sh"
 
 python3 - <<'PY'
 from urllib.request import urlopen
+import os
 import subprocess
 import json
 import time
 from pathlib import Path
 
 
-root_dir = Path("/Users/leo/Documents/投研体系")
+root_dir = Path(os.environ["VR_RESTART_ROOT"])
 
 
 def launch(script_name: str, log_name: str) -> None:

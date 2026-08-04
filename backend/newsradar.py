@@ -42,6 +42,23 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 BEIJING = timezone(timedelta(hours=8))
 
+SOURCE_TIER_OFFICIAL = {
+    "Federal Reserve", "国家统计局", "中国人民银行", "美国劳工统计局",
+    "U.S. Bureau of Labor Statistics", "SEC",
+}
+SOURCE_TIER_ONE = {
+    "Reuters", "Bloomberg", "Financial Times", "The Wall Street Journal",
+    "WSJ Markets", "CNBC", "MarketWatch", "华尔街见闻",
+}
+
+
+def _default_source_tier(name: str) -> str:
+    if name in SOURCE_TIER_OFFICIAL:
+        return "T1"
+    if name in SOURCE_TIER_ONE:
+        return "T1.5"
+    return "T2"
+
 
 def _normalize_config(raw: dict) -> dict:
     cfg = dict(raw or {})
@@ -66,6 +83,9 @@ def _normalize_config(raw: dict) -> dict:
         hint = str(item.get("hint") or "").strip()
         source_type = str(item.get("type") or "rss").strip() or "rss"
         url = str(item.get("url") or "").strip()
+        tier = str(item.get("tier") or _default_source_tier(name)).strip()
+        if tier not in {"T1", "T1.5", "T2"}:
+            tier = "T2"
         if not name or not hint:
             continue
         if source_type == "rss" and not url:
@@ -75,6 +95,7 @@ def _normalize_config(raw: dict) -> dict:
             "hint": hint,
             "type": source_type,
             "url": url,
+            "tier": tier,
         })
     return {
         "_comment": cfg.get("_comment") or "investment-news sources config",
@@ -145,7 +166,10 @@ def _fetch_source(src: dict, per: int, cutoff, redline: list[str]):
         for n in [e for e in root.iter() if _local(e.tag) in ("item", "entry")]:
             if len(out) >= per:
                 break
-            d = {"title": "", "url": "", "time": "", "ts": 0, "summary": "", "source": src["name"]}
+            d = {
+                "title": "", "url": "", "time": "", "ts": 0,
+                "summary": "", "source": src["name"], "tier": src.get("tier", "T2"),
+            }
             rawtime = ""
             for c in n:
                 t = _local(c.tag)

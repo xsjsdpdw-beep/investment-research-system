@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Search, FileText, Newspaper, Loader2, AlertCircle, LineChart, BarChart3, Megaphone,
-  Wallet, Trophy, CalendarClock, Boxes, MessageSquare,
+  Wallet, Trophy, CalendarClock, Boxes, MessageSquare, DatabaseZap, KeyRound,
 } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -12,7 +13,8 @@ import {
   api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
   type DividendRow, type FundFlowRow, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
-  type GlobalStock,
+  type GlobalStock, type FmpStatus, type FmpFinancialsData, type FmpEstimatesData, type FmpRow,
+  loadFmpApiKey, saveFmpApiKey,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +35,23 @@ const bigMoney = (v: number | null, market: string) =>
   v == null ? "—" : v >= 1e12 ? `${(v / 1e12).toFixed(2)} 万亿${curOf(market)}` : `${(v / 1e8).toFixed(0)} 亿${curOf(market)}`;
 const round2 = (v: number | null | undefined, suffix = "") =>
   v == null ? "—" : `${Math.round(v * 100) / 100}${suffix}`;
+
+const fmpValue = (row: FmpRow | undefined, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== null && value !== undefined && value !== "") return value;
+  }
+  return null;
+};
+
+const compactNumber = (value: unknown) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("zh-CN", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(n);
+};
 
 // 百分比：后端偶发给 null/缺字段时显示 —，不出现 "NaN%" / 误导性 "0.00%"
 const pct = (v: number | null | undefined) =>
@@ -100,7 +119,60 @@ export function StockData() {
   const [hotCon, setHotCon] = useState<HotConcept[]>([]);
   const [qa, setQa] = useState<QaRow[]>([]);
   const [gstock, setGStock] = useState<GlobalStock | null>(null);  // 美股 / 港股
+  const [fmpStatus, setFmpStatus] = useState<FmpStatus | null>(null);
+  const [fmpKey, setFmpKey] = useState(loadFmpApiKey);
+  const [fmpTesting, setFmpTesting] = useState(false);
+  const [fmpLoading, setFmpLoading] = useState<"financials" | "estimates" | null>(null);
+  const [fmpFinancials, setFmpFinancials] = useState<FmpFinancialsData | null>(null);
+  const [fmpEstimates, setFmpEstimates] = useState<FmpEstimatesData | null>(null);
   const runIdRef = useRef(0);
+
+  useEffect(() => {
+    api.fmpStatus().then(setFmpStatus).catch(() => {});
+  }, []);
+
+  const saveAndTestFmp = async () => {
+    const key = fmpKey.trim();
+    if (!key && !fmpStatus?.configured) {
+      toast.error("请先填写 FMP API Key");
+      return;
+    }
+    saveFmpApiKey(key);
+    setFmpTesting(true);
+    try {
+      const result = await api.testFmp();
+      setFmpStatus(await api.fmpStatus());
+      toast.success(`FMP 已连通：${result.company_name || result.symbol}`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "FMP 连通测试失败");
+    } finally {
+      setFmpTesting(false);
+    }
+  };
+
+  const loadFmpFinancials = async () => {
+    if (!gstock) return;
+    setFmpLoading("financials");
+    try {
+      setFmpFinancials(await api.fmpFinancials(gstock.code, "annual", 5));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "FMP 财务数据读取失败");
+    } finally {
+      setFmpLoading(null);
+    }
+  };
+
+  const loadFmpEstimates = async () => {
+    if (!gstock) return;
+    setFmpLoading("estimates");
+    try {
+      setFmpEstimates(await api.fmpEstimates(gstock.code, "annual", 10));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "FMP 一致预期读取失败");
+    } finally {
+      setFmpLoading(null);
+    }
+  };
 
   const run = async () => {
     const c = code.trim().toUpperCase();
@@ -109,6 +181,8 @@ export function StockData() {
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
     setMargin([]); setBlockT([]); setHolders([]); setDividend([]); setFundFlow([]); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa([]);
     setGStock(null);
+    setFmpFinancials(null);
+    setFmpEstimates(null);
 
     // 6 位纯数字 = A 股；否则（字母 / 港股短代码）走美股 / 港股（global-stock-data）
     if (!/^\d{6}$/.test(c)) {
@@ -219,6 +293,48 @@ export function StockData() {
         )}
       />
 
+      <GlassCard className="mb-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-56 flex-1 items-center gap-2">
+            <DatabaseZap className="h-4 w-4 text-primary" />
+            <div>
+              <p className="text-sm font-medium">Financial Modeling Prep</p>
+              <p className="text-[11px] text-muted-foreground">
+                美股财务三表、关键指标、分析师一致预期、目标价与评级
+              </p>
+            </div>
+          </div>
+          <span className={cn(
+            "rounded-full px-2 py-1 text-[11px]",
+            fmpStatus?.ready ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
+          )}>
+            {fmpStatus?.ready ? "已配置" : "待配置"}
+          </span>
+          <div className="relative min-w-64 flex-[1.2]">
+            <KeyRound className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="password"
+              value={fmpKey}
+              onChange={(e) => setFmpKey(e.target.value)}
+              placeholder={fmpStatus?.configured_from === "environment" ? "后端环境已配置，可留空" : "填写 FMP API Key"}
+              autoComplete="off"
+              className="w-full rounded-lg border border-border bg-black/20 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary/50"
+            />
+          </div>
+          <button
+            onClick={saveAndTestFmp}
+            disabled={fmpTesting}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"
+          >
+            {fmpTesting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            保存并测试
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground/60">
+          网页 Key 仅保存在当前浏览器；后台任务可在 backend/.env 设置 VR_FMP_API_KEY。读取财务数据约消耗 5 次请求，一致预期约 3 次，因此默认按需加载。
+        </p>
+      </GlassCard>
+
       {/* 查询框 */}
       <div className="mb-5 flex gap-2">
         <input
@@ -300,8 +416,128 @@ export function StockData() {
             </GlassCard>
           )}
 
+          {gstock.market !== "HK" && gstock.market !== "KR" && (
+            <GlassCard className="mb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="mr-auto">
+                  <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                    <DatabaseZap className="h-4 w-4 text-primary" /> FMP 深度数据
+                  </h3>
+                  <p className="mt-1 text-[11px] text-muted-foreground/60">
+                    按需调用，避免无意消耗套餐额度。接口无权限时会明确提示套餐限制。
+                  </p>
+                </div>
+                <button
+                  onClick={loadFmpFinancials}
+                  disabled={Boolean(fmpLoading)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                >
+                  {fmpLoading === "financials" ? "读取中…" : "读取财务数据"}
+                </button>
+                <button
+                  onClick={loadFmpEstimates}
+                  disabled={Boolean(fmpLoading)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                >
+                  {fmpLoading === "estimates" ? "读取中…" : "读取一致预期"}
+                </button>
+              </div>
+
+              {fmpFinancials && (
+                <div className="mt-4 overflow-x-auto border-t border-border/40 pt-4">
+                  <p className="mb-2 text-xs font-medium">年度财务三表与指标 · 最近 {fmpFinancials.income_statement.length} 期</p>
+                  <table className="w-full min-w-[680px] text-left text-xs">
+                    <thead className="text-muted-foreground">
+                      <tr>
+                        <th className="pb-2 font-normal">报告期</th>
+                        <th className="pb-2 font-normal">营收</th>
+                        <th className="pb-2 font-normal">毛利</th>
+                        <th className="pb-2 font-normal">营业利润</th>
+                        <th className="pb-2 font-normal">净利润</th>
+                        <th className="pb-2 font-normal">EPS</th>
+                        <th className="pb-2 font-normal">自由现金流</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fmpFinancials.income_statement.map((row, index) => (
+                        <tr key={`${String(fmpValue(row, "date", "calendarYear"))}-${index}`} className="border-t border-border/30">
+                          <td className="py-2 font-mono">{String(fmpValue(row, "date", "calendarYear") ?? "—")}</td>
+                          <td className="py-2 font-mono">{compactNumber(fmpValue(row, "revenue"))}</td>
+                          <td className="py-2 font-mono">{compactNumber(fmpValue(row, "grossProfit"))}</td>
+                          <td className="py-2 font-mono">{compactNumber(fmpValue(row, "operatingIncome"))}</td>
+                          <td className="py-2 font-mono">{compactNumber(fmpValue(row, "netIncome"))}</td>
+                          <td className="py-2 font-mono">{String(fmpValue(row, "eps", "epsDiluted") ?? "—")}</td>
+                          <td className="py-2 font-mono">{compactNumber(fmpValue(fmpFinancials.cash_flow[index], "freeCashFlow"))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {fmpEstimates && (
+                <div className="mt-4 border-t border-border/40 pt-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {fmpEstimates.price_target_consensus[0] && (
+                      <div className="rounded-lg bg-muted/25 p-3">
+                        <p className="text-xs text-muted-foreground">目标价共识</p>
+                        <p className="mt-1 font-mono text-lg font-bold">
+                          {String(fmpValue(fmpEstimates.price_target_consensus[0], "targetConsensus", "targetMedian") ?? "—")}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          低 {String(fmpValue(fmpEstimates.price_target_consensus[0], "targetLow") ?? "—")}
+                          {" · "}高 {String(fmpValue(fmpEstimates.price_target_consensus[0], "targetHigh") ?? "—")}
+                        </p>
+                      </div>
+                    )}
+                    {fmpEstimates.grades_consensus[0] && (
+                      <div className="rounded-lg bg-muted/25 p-3">
+                        <p className="text-xs text-muted-foreground">评级共识</p>
+                        <p className="mt-1 text-lg font-bold">
+                          {String(fmpValue(fmpEstimates.grades_consensus[0], "consensus") ?? "—")}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          强买 {String(fmpValue(fmpEstimates.grades_consensus[0], "strongBuy") ?? "—")}
+                          {" · "}买入 {String(fmpValue(fmpEstimates.grades_consensus[0], "buy") ?? "—")}
+                          {" · "}持有 {String(fmpValue(fmpEstimates.grades_consensus[0], "hold") ?? "—")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {fmpEstimates.analyst_estimates.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <p className="mb-2 text-xs font-medium">分析师一致预期</p>
+                      <table className="w-full min-w-[560px] text-left text-xs">
+                        <thead className="text-muted-foreground">
+                          <tr>
+                            <th className="pb-2 font-normal">预测期</th>
+                            <th className="pb-2 font-normal">营收均值</th>
+                            <th className="pb-2 font-normal">EPS 均值</th>
+                            <th className="pb-2 font-normal">营收覆盖</th>
+                            <th className="pb-2 font-normal">EPS 覆盖</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fmpEstimates.analyst_estimates.map((row, index) => (
+                            <tr key={`${String(fmpValue(row, "date"))}-${index}`} className="border-t border-border/30">
+                              <td className="py-2 font-mono">{String(fmpValue(row, "date") ?? "—")}</td>
+                              <td className="py-2 font-mono">{compactNumber(fmpValue(row, "revenueAvg", "estimatedRevenueAvg"))}</td>
+                              <td className="py-2 font-mono">{String(fmpValue(row, "epsAvg", "estimatedEpsAvg") ?? "—")}</td>
+                              <td className="py-2 font-mono">{String(fmpValue(row, "numAnalystsRevenue") ?? "—")}</td>
+                              <td className="py-2 font-mono">{String(fmpValue(row, "numAnalystsEps") ?? "—")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </GlassCard>
+          )}
+
           <p className="text-xs text-muted-foreground/60">
-            美股 / 港股数据来自 <a href="https://github.com/simonlin1212/global-stock-data" target="_blank" rel="noreferrer" className="hover:text-primary">global-stock-data</a>（东财域内源）· 金额为原生币种 · 仅客观数据，不含买卖建议。
+            行情来自 <a href="https://github.com/simonlin1212/global-stock-data" target="_blank" rel="noreferrer" className="hover:text-primary">global-stock-data</a>（东财域内源）；FMP 数据仅在上方按需读取 · 金额为原生币种 · 仅客观数据，不含买卖建议。
           </p>
         </>
       )}

@@ -566,6 +566,7 @@ def provider_status() -> dict[str, Any]:
     ifind_ready = bool(status["ready"])
     premium_enabled = _env_flag("VR_PREMIUM_NOTES_ENABLED")
     premium_ready = premium_enabled and bool(os.environ.get("VR_PREMIUM_NOTES_DSN", "").strip())
+    fmp_ready = bool(os.environ.get("VR_FMP_API_KEY", "").strip())
     dataset_status = {
         "china_macro_overview": {
             "active_provider": "ifind" if ifind_ready else "public",
@@ -581,6 +582,16 @@ def provider_status() -> dict[str, Any]:
             "active_provider": "premium_notes" if premium_ready else "placeholder",
             "fallback_provider": "placeholder",
             "dataset_key": "stock_expert_notes",
+        },
+        "us_stock_financials": {
+            "active_provider": "financialmodelingprep" if fmp_ready else "eastmoney",
+            "fallback_provider": "eastmoney",
+            "dataset_key": "us_stock_financials",
+        },
+        "us_stock_estimates": {
+            "active_provider": "financialmodelingprep" if fmp_ready else "unconfigured",
+            "fallback_provider": "unconfigured",
+            "dataset_key": "us_stock_estimates",
         },
     }
     for key in [
@@ -622,6 +633,13 @@ def provider_status() -> dict[str, Any]:
                 "ready": True,
                 "label": "资料结构化提取",
                 "notes": "统一投喂与结构化候选底座，具体 OCR/PDF 引擎状态请看 /api/research/ingest/status。",
+            },
+            "financialmodelingprep": {
+                "enabled": fmp_ready,
+                "ready": fmp_ready,
+                "label": "Financial Modeling Prep",
+                "notes": "美股财务三表、关键指标与分析师一致预期；可在个股数据页配置个人 Key，定时任务请设置 VR_FMP_API_KEY。",
+                "has_api_key": fmp_ready,
             },
         },
         **dataset_status,

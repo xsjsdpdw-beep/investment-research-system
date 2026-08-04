@@ -213,22 +213,14 @@
 .research-desk-main {
   min-height: 100vh;
   background:
-    linear-gradient(rgba(231, 239, 232, 0.025) 1px, transparent 1px),
     radial-gradient(circle at 86% 0%, rgba(35, 87, 93, 0.15), transparent 30%),
     #0e1721;
-  background-size: 100% 44px;
 }
 
 .research-desk-topbar {
   border-color: rgba(231, 239, 232, 0.13);
   background: rgba(14, 23, 33, 0.94);
   backdrop-filter: blur(12px);
-}
-
-.research-desk-snapshot {
-  border: 1px solid rgba(231, 239, 232, 0.15);
-  border-radius: 999px;
-  background: rgba(24, 43, 57, 0.74);
 }
 
 .research-desk-classic-link {
@@ -263,6 +255,15 @@
 
 .research-desk-content .text-glow {
   text-shadow: none;
+}
+
+/* The desk shell owns module titles; page headers only keep module actions. */
+.research-desk-content .page-header {
+  display: none;
+}
+
+.research-desk-content .page-header-copy {
+  display: none;
 }
 
 .research-desk-content [class*="rounded-2xl"] {

@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { ResearchDeskLayout } from "@/components/layout/ResearchDeskLayout";
 import { Calendar } from "@/pages/Calendar";
+import { CalendarV2 } from "@/pages/CalendarV2";
 import { StandaloneFieldResearch } from "@/pages/StandaloneFieldResearch";
 import { Intel } from "@/pages/Intel";
 import { Framework } from "@/pages/Framework";
@@ -45,14 +46,14 @@ export const router = createBrowserRouter([
     element: <ResearchDeskLayout />,
     children: [
       { index: true, element: <Navigate to="/desk/calendar" replace /> },
-      { path: "calendar", element: <Calendar /> },
+      { path: "calendar", element: <CalendarV2 /> },
       { path: "daily-review", element: <Navigate to="/desk/intel" replace /> },
       { path: "portfolio", element: <Portfolio /> },
       { path: "stock-data", element: <Navigate to="/desk/database?sub=stock-data" replace /> },
       { path: "my-reports", element: <Navigate to="/desk/framework" replace /> },
       { path: "sectors", element: <Sectors /> },
       { path: "sectors/:key", element: <SectorDetail /> },
-      { path: "intel", element: <Intel /> },
+      { path: "intel", element: <Intel deskMode /> },
       { path: "decision-cockpit", element: <DecisionCockpit /> },
       { path: "watchlist", element: <Watchlist /> },
       { path: "memos", element: <Notes /> },

@@ -106,10 +106,6 @@ export const SIDEBAR_MODULES: SidebarModuleConfig[] = [
     label: "关注列表",
     icon: Star,
     description: "管理重点个股与指标",
-    children: [
-      { key: "stocks", label: "重点个股" },
-      { key: "indicators", label: "重点指标" },
-    ],
   },
   {
     to: "/intel",

@@ -20,11 +20,13 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import astock
+import calendar_v2
 import chat as chat_layer
 import cli_runtime
 import data_adapters
 import database_modules
 import field_research_audio
+import fmp
 import gstock
 import knowledge
 import learning_factory
@@ -190,6 +192,18 @@ class CalendarEventIn(BaseModel):
     importance: str = "medium"
     source: str = "manual"
     notes: str = ""
+
+
+class CalendarV2EventIn(BaseModel):
+    id: str | None = None
+    title: str
+    date: str
+    time: str = ""
+    category: str = "manual"
+    importance: str = "high"
+    source: str = "manual"
+    notes: str = ""
+    stars: int = 3
 
 
 class WatchlistIn(BaseModel):
@@ -596,6 +610,30 @@ def calendar_events(view: str = Query("upcoming"), importance: str | None = Quer
 def calendar_upsert(payload: CalendarEventIn):
     try:
         return {"data": knowledge.upsert_calendar_event(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/v2/calendar/events")
+def calendar_v2_events(
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+):
+    return {"data": calendar_v2.list_events(start=start, end=end)}
+
+
+@app.post("/api/v2/calendar/events")
+def calendar_v2_upsert(payload: CalendarV2EventIn):
+    try:
+        return {"data": calendar_v2.upsert_event(payload.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/v2/calendar/events/{event_id}")
+def calendar_v2_delete(event_id: str):
+    try:
+        return {"data": {"ok": calendar_v2.delete_event(event_id)}}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -1498,6 +1536,81 @@ def global_stock(symbol: str = Query(..., min_length=1, max_length=16)):
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"美港股查询异常：{e}") from e
+
+
+def _fmp_request_key(request: Request) -> str | None:
+    return request.headers.get("x-fmp-api-key")
+
+
+def _raise_fmp_http_error(exc: Exception) -> None:
+    if isinstance(exc, ValueError):
+        raise HTTPException(400, str(exc)) from exc
+    if isinstance(exc, fmp.FmpError):
+        if exc.upstream_status == 429:
+            status_code = 429
+        elif exc.upstream_status in {401, 403}:
+            status_code = 424
+        else:
+            status_code = 502
+        raise HTTPException(status_code, str(exc)) from exc
+    raise exc
+
+
+@app.get("/api/global/fmp/status")
+def global_fmp_status(request: Request):
+    """FMP 配置状态；只返回是否配置，不返回 Key。"""
+    return {"data": fmp.status(_fmp_request_key(request))}
+
+
+@app.post("/api/global/fmp/test")
+def global_fmp_test(request: Request):
+    """用 AAPL profile 做一次低成本连通性测试。"""
+    try:
+        return {"data": fmp.test_connection(_fmp_request_key(request))}
+    except Exception as exc:  # noqa: BLE001
+        _raise_fmp_http_error(exc)
+
+
+@app.get("/api/global/fmp/financials")
+def global_fmp_financials(
+    request: Request,
+    symbol: str = Query(..., min_length=1, max_length=20),
+    period: Literal["annual", "quarter"] = "annual",
+    limit: int = Query(5, ge=1, le=20),
+):
+    """FMP 财务三表、关键指标与比率。一次调用会请求 5 个 stable 端点。"""
+    try:
+        return {
+            "data": fmp.financials(
+                symbol,
+                period=period,
+                limit=limit,
+                api_key=_fmp_request_key(request),
+            )
+        }
+    except Exception as exc:  # noqa: BLE001
+        _raise_fmp_http_error(exc)
+
+
+@app.get("/api/global/fmp/estimates")
+def global_fmp_estimates(
+    request: Request,
+    symbol: str = Query(..., min_length=1, max_length=20),
+    period: Literal["annual", "quarter"] = "annual",
+    limit: int = Query(10, ge=1, le=20),
+):
+    """FMP 分析师一致预期、目标价共识与评级共识。"""
+    try:
+        return {
+            "data": fmp.estimates(
+                symbol,
+                period=period,
+                limit=limit,
+                api_key=_fmp_request_key(request),
+            )
+        }
+    except Exception as exc:  # noqa: BLE001
+        _raise_fmp_http_error(exc)
 
 
 @app.get("/api/indices")

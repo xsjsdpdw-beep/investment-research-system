@@ -1,7 +1,7 @@
 // Vibe-Research 后端 API 客户端。/api → vite 代理到本地 FastAPI（默认 8900）。
 // 后端未启动或数据源异常时抛 ApiError，页面据此优雅降级。
 
-import { APP_CONFIG } from "./app-config";
+import { APP_CONFIG, APP_STORAGE_KEYS } from "./app-config";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -32,6 +32,28 @@ export function saveAccessKey(key: string) {
 export function authHeaders(): Record<string, string> {
   const k = loadAccessKey();
   return k ? { Authorization: `Bearer ${k}` } : {};
+}
+
+export function loadFmpApiKey(): string {
+  try {
+    return localStorage.getItem(APP_STORAGE_KEYS.fmpApiKey) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveFmpApiKey(key: string) {
+  try {
+    if (key) localStorage.setItem(APP_STORAGE_KEYS.fmpApiKey, key);
+    else localStorage.removeItem(APP_STORAGE_KEYS.fmpApiKey);
+  } catch {
+    /* 隐私模式等场景 localStorage 不可用 */
+  }
+}
+
+function fmpHeaders(): Record<string, string> {
+  const key = loadFmpApiKey();
+  return key ? { "X-FMP-API-Key": key } : {};
 }
 
 export interface MyReport {
@@ -198,8 +220,10 @@ export interface TurnoverStock {
 }
 export interface TurnoverTop { stocks: TurnoverStock[]; updated: string }
 
+export type SourceTier = "T1" | "T1.5" | "T2";
+
 export interface RadarItem {
-  title: string; url: string; time: string; source: string; summary?: string; zh?: string;
+  title: string; url: string; time: string; source: string; summary?: string; zh?: string; tier?: SourceTier;
 }
 export interface Industry {
   key: string; name: string; accent: string; total: number; items: RadarItem[];
@@ -217,6 +241,7 @@ export interface NewsRadarSourceConfig {
   hint: string;
   type: string;
   url: string;
+  tier?: SourceTier;
 }
 
 export interface NewsRadarConfig {
@@ -288,6 +313,51 @@ export interface GlobalStock {
   quote: GlobalQuote; metrics: GlobalMetrics | null;
 }
 
+export interface FmpStatus {
+  provider: "financialmodelingprep";
+  configured: boolean;
+  ready: boolean;
+  configured_from: "request" | "environment" | null;
+  base_url: string;
+  docs_url: string;
+  capabilities: string[];
+}
+
+export interface FmpTestResult {
+  ok: boolean;
+  provider: "financialmodelingprep";
+  symbol: string;
+  company_name: string | null;
+  configured_from?: "request" | "environment";
+  base_url?: string;
+}
+
+export type FmpRow = Record<string, unknown>;
+
+export interface FmpFinancialsData {
+  provider: "financialmodelingprep";
+  symbol: string;
+  period: "annual" | "quarter";
+  limit: number;
+  retrieved_at: string;
+  income_statement: FmpRow[];
+  balance_sheet: FmpRow[];
+  cash_flow: FmpRow[];
+  key_metrics: FmpRow[];
+  ratios: FmpRow[];
+}
+
+export interface FmpEstimatesData {
+  provider: "financialmodelingprep";
+  symbol: string;
+  period: "annual" | "quarter";
+  limit: number;
+  retrieved_at: string;
+  analyst_estimates: FmpRow[];
+  price_target_consensus: FmpRow[];
+  grades_consensus: FmpRow[];
+}
+
 export interface KnowledgeEntry {
   id: string;
   title: string;
@@ -317,6 +387,17 @@ export interface CalendarEvent {
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CalendarV2Event extends CalendarEvent {
+  time?: string;
+  stars?: number;
+  country?: string;
+  ticker?: string;
+  watchlist?: boolean;
+  watchlist_match?: boolean;
+  important_us?: boolean;
+  source_url?: string;
 }
 
 export interface WatchStock {
@@ -774,6 +855,7 @@ export interface ProviderStatusData {
     sdk_module?: string;
     has_token?: boolean;
     has_dsn?: boolean;
+    has_api_key?: boolean;
   }>;
   china_macro_overview: ProviderDatasetStatus;
   stock_data?: ProviderDatasetStatus;
@@ -1245,6 +1327,18 @@ export const api = {
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
   globalIndices: () => get<GlobalIndex[]>("/global/indices"),
   globalStock: (symbol: string) => get<GlobalStock>(`/global/stock?symbol=${encodeURIComponent(symbol)}`),
+  fmpStatus: () => get<FmpStatus>("/global/fmp/status", { headers: fmpHeaders() }),
+  testFmp: () => request<FmpTestResult>("/global/fmp/test", "POST", undefined, { headers: fmpHeaders() }),
+  fmpFinancials: (symbol: string, period: "annual" | "quarter" = "annual", limit = 5) =>
+    get<FmpFinancialsData>(
+      `/global/fmp/financials?symbol=${encodeURIComponent(symbol)}&period=${period}&limit=${limit}`,
+      { headers: fmpHeaders() },
+    ),
+  fmpEstimates: (symbol: string, period: "annual" | "quarter" = "annual", limit = 10) =>
+    get<FmpEstimatesData>(
+      `/global/fmp/estimates?symbol=${encodeURIComponent(symbol)}&period=${period}&limit=${limit}`,
+      { headers: fmpHeaders() },
+    ),
   radar: () => get<RadarData>("/radar"),
   radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
   hiringRadarRefresh: () => request<ResearchHubData["fundamental"]["hiring_radar"]>("/research/hiring-radar/refresh", "POST"),
@@ -1335,6 +1429,26 @@ export const api = {
     source: string;
     notes: string;
   }) => request<CalendarEvent>("/calendar/events", "POST", payload),
+  calendarV2Events: (params?: { start?: string; end?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.start) query.set("start", params.start);
+    if (params?.end) query.set("end", params.end);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return get<CalendarV2Event[]>(`/v2/calendar/events${suffix}`);
+  },
+  upsertCalendarV2Event: (payload: {
+    id?: string;
+    title: string;
+    date: string;
+    time?: string;
+    category: string;
+    importance: string;
+    source: string;
+    notes: string;
+    stars?: number;
+  }) => request<CalendarV2Event>("/v2/calendar/events", "POST", payload),
+  deleteCalendarV2Event: (id: string) =>
+    request<{ ok: boolean }>(`/v2/calendar/events/${encodeURIComponent(id)}`, "DELETE"),
   watchlist: () => get<WatchlistData>("/watchlist"),
   saveWatchlist: (payload: { stocks: WatchStock[]; indicators: WatchIndicator[] }) =>
     request<WatchlistData>("/watchlist", "PUT", payload),

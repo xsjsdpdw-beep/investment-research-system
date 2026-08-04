@@ -10,14 +10,20 @@ import { api, ApiError, type GlobalStock, type Quote, type StockSearchResult, ty
 import { cn } from "@/lib/utils";
 
 type AssetRow =
-  | { id: string; kind: "stock"; code: string; market: string; name: string; group: string; sort_order: number; source: WatchStock }
-  | { id: string; kind: "indicator"; key: string; name: string; group: string; value: string; note: string; sort_order: number; source: WatchIndicator };
+  | { id: string; tab: WatchTab; kind: "stock"; code: string; market: string; name: string; group: string; sort_order: number; source: WatchStock }
+  | { id: string; tab: WatchTab; kind: "indicator"; key: string; name: string; group: string; value: string; note: string; sort_order: number; source: WatchIndicator };
 
-const ASSET_TYPES = [
-  { key: "stock", label: "个股" },
-  { key: "commodity", label: "大宗商品" },
-  { key: "rate", label: "利率/债券" },
+type WatchTab = "stock" | "commodity" | "macro";
+
+const WATCH_TABS = [
+  { key: "stock", label: "个股", description: "A股、港股与美股" },
+  { key: "commodity", label: "大宗", description: "能源、金属与农产品" },
+  { key: "macro", label: "宏观", description: "宏观、利率与汇率指标" },
+];
+
+const MACRO_ASSET_TYPES = [
   { key: "macro", label: "宏观指标" },
+  { key: "rate", label: "利率/债券" },
   { key: "fx", label: "汇率" },
   { key: "custom", label: "自定义" },
 ];
@@ -34,6 +40,12 @@ const marketLabel = (market: string) => {
   return market || "指标";
 };
 
+const indicatorTab = (item: WatchIndicator): WatchTab => {
+  const assetType = (item.asset_type || "").toLowerCase();
+  if (assetType === "commodity" || /大宗|商品/.test(item.category || "")) return "commodity";
+  return "macro";
+};
+
 const primaryButtonClass = "inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryButtonClass = "rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:text-primary";
 
@@ -45,21 +57,6 @@ function CompactNotice({ children }: { children: React.ReactNode }) {
   );
 }
 
-function StatsBar({ items }: { items: Array<{ label: string; value: string | number }> }) {
-  return (
-    <div className="rounded-lg border border-border/30 bg-muted/12 px-2.5 py-1.5">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-        {items.map((item) => (
-          <div key={item.label} className="inline-flex items-center gap-1.5">
-            <span>{item.label}</span>
-            <span className="font-medium text-foreground">{item.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function Watchlist() {
   const [stocks, setStocks] = useState<WatchStock[]>([]);
   const [indicators, setIndicators] = useState<WatchIndicator[]>([]);
@@ -67,12 +64,13 @@ export function Watchlist() {
   const [globalQuotes, setGlobalQuotes] = useState<Record<string, GlobalStock>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<WatchTab>("stock");
   const [selectedGroup, setSelectedGroup] = useState("");
   const [draggingKey, setDraggingKey] = useState("");
   const [dragOverKey, setDragOverKey] = useState("");
-  const [assetType, setAssetType] = useState("stock");
+  const [assetType, setAssetType] = useState("macro");
   const [stockInput, setStockInput] = useState({ code: "", market: "SZ", name: "", group: "" });
-  const [assetInput, setAssetInput] = useState({ key: "", label: "", category: "大宗商品", value: "待更新", note: "" });
+  const [assetInput, setAssetInput] = useState({ key: "", label: "", category: "宏观指标", value: "待更新", note: "" });
   const [stockSearchText, setStockSearchText] = useState("");
   const [stockSearchResults, setStockSearchResults] = useState<StockSearchResult[]>([]);
   const [stockSearching, setStockSearching] = useState(false);
@@ -164,6 +162,7 @@ export function Watchlist() {
   const rows = useMemo<AssetRow[]>(() => {
     const stockRows: AssetRow[] = stocks.map((item, index) => ({
       id: `${item.code}.${item.market}`,
+      tab: "stock",
       kind: "stock",
       code: item.code,
       market: item.market,
@@ -174,6 +173,7 @@ export function Watchlist() {
     }));
     const indicatorRows: AssetRow[] = indicators.map((item, index) => ({
       id: item.key,
+      tab: indicatorTab(item),
       kind: "indicator",
       key: item.key,
       name: item.label,
@@ -186,27 +186,28 @@ export function Watchlist() {
     return [...stockRows, ...indicatorRows].sort((a, b) => a.sort_order - b.sort_order);
   }, [indicators, stocks]);
 
+  const tabRows = useMemo(
+    () => rows.filter((item) => item.tab === activeTab),
+    [activeTab, rows],
+  );
+
   const groups = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const item of rows) counts.set(item.group, (counts.get(item.group) || 0) + 1);
+    for (const item of tabRows) counts.set(item.group, (counts.get(item.group) || 0) + 1);
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [rows]);
+  }, [tabRows]);
 
   const visibleRows = useMemo(
-    () => (selectedGroup ? rows.filter((item) => item.group === selectedGroup) : rows),
-    [rows, selectedGroup],
+    () => (selectedGroup ? tabRows.filter((item) => item.group === selectedGroup) : tabRows),
+    [selectedGroup, tabRows],
   );
 
   const stockCount = stocks.length;
-  const indicatorCount = indicators.length;
-  const marketBreakdown = useMemo(() => ({
-    a: stocks.filter((item) => ["SZ", "SH", "BJ"].includes(item.market)).length,
-    hk: stocks.filter((item) => item.market === "HK").length,
-    us: stocks.filter((item) => !["SZ", "SH", "BJ", "HK"].includes(item.market)).length,
-  }), [stocks]);
+  const commodityCount = indicators.filter((item) => indicatorTab(item) === "commodity").length;
+  const macroCount = indicators.length - commodityCount;
 
-  const aiContext = rows.length
-    ? rows.map((item) => {
+  const aiContext = visibleRows.length
+    ? visibleRows.map((item) => {
         if (item.kind === "stock") {
           const aQuote = quotes[item.code];
           const gQuote = globalQuotes[item.code]?.quote;
@@ -214,7 +215,20 @@ export function Watchlist() {
         }
         return `${item.name}(${item.key}) ${item.group} 当前值${item.value} ${item.note}`;
       }).join("\n")
-    : "还没有关注对象。";
+    : `“${WATCH_TABS.find((item) => item.key === activeTab)?.label}”页还没有关注对象。`;
+
+  useEffect(() => {
+    setSelectedGroup("");
+    if (activeTab === "commodity") {
+      setAssetType("commodity");
+      setAssetInput((prev) => ({ ...prev, category: "大宗商品" }));
+      return;
+    }
+    if (activeTab === "macro") {
+      setAssetType("macro");
+      setAssetInput((prev) => ({ ...prev, category: "宏观指标" }));
+    }
+  }, [activeTab]);
 
   const selectStockSuggestion = async (item: StockSearchResult) => {
     setStockInput((prev) => ({ ...prev, code: item.code, market: item.market, name: item.name }));
@@ -267,11 +281,11 @@ export function Watchlist() {
     const next = [...indicators, {
       key,
       label,
-      category: assetInput.category.trim() || ASSET_TYPES.find((item) => item.key === assetType)?.label || "自定义",
+      category: assetInput.category.trim() || (activeTab === "commodity" ? "大宗商品" : MACRO_ASSET_TYPES.find((item) => item.key === assetType)?.label) || "自定义",
       value: assetInput.value.trim() || "待更新",
       note: assetInput.note.trim(),
       sort_order: rows.length,
-      asset_type: assetType,
+      asset_type: activeTab === "commodity" ? "commodity" : assetType,
     }];
     await persist(stocks, next);
     setAssetInput({ key: "", label: "", category: assetInput.category, value: "待更新", note: "" });
@@ -312,37 +326,45 @@ export function Watchlist() {
     <div>
       <PageHeader
         title="关注列表"
-        subtitle="只维护一份重点关注池：A股、港股、美股、大宗商品、利率和宏观指标都在这里统一增减。"
-        actions={rows.length > 0 ? <AskAiButton context={aiContext} label="让 AI 看关注列表" suggestions={["帮我按资产类别复盘", "哪些对象需要放入投资日历", "这份关注池还缺什么"]} /> : undefined}
+        subtitle="按个股、大宗与宏观分开查看，在各自页签里直接增减关注对象。"
+        actions={visibleRows.length > 0 ? <AskAiButton context={aiContext} label="让 AI 看当前页" suggestions={["帮我复盘当前关注对象", "哪些对象需要放入投资日历", "当前关注还缺什么"]} /> : undefined}
       />
 
       <div className="space-y-3">
-        <StatsBar
-          items={[
-            { label: "重点个股", value: stockCount },
-            { label: "重点指标", value: indicatorCount },
-            { label: "A股", value: marketBreakdown.a },
-            { label: "港股", value: marketBreakdown.hk },
-            { label: "美股", value: marketBreakdown.us },
-          ]}
-        />
+        <GlassCard className="p-3">
+          <SectionTabs
+            tabs={WATCH_TABS.map((tab) => ({
+              ...tab,
+              label: `${tab.label} · ${tab.key === "stock" ? stockCount : tab.key === "commodity" ? commodityCount : macroCount}`,
+            }))}
+            active={activeTab}
+            onChange={(next) => setActiveTab(next as WatchTab)}
+            className="mb-0"
+          />
+        </GlassCard>
 
         <GlassCard className="space-y-2.5 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Star className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium">{selectedGroup ? `${selectedGroup} · 关注对象` : "全部重点个股与重点指标"}</p>
+              <p className="text-sm font-medium">
+                {selectedGroup
+                  ? `${selectedGroup} · 关注对象`
+                  : `${WATCH_TABS.find((item) => item.key === activeTab)?.label}关注`}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground">{visibleRows.length} 项</span>
-              <button onClick={() => void refreshQuotes(stocks)} className={secondaryButtonClass} title="刷新行情">
-                <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-              </button>
+              {activeTab === "stock" && (
+                <button onClick={() => void refreshQuotes(stocks)} className={secondaryButtonClass} title="刷新行情">
+                  <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+                </button>
+              )}
             </div>
           </div>
 
           <CompactNotice>
-            这里只维护一份高频关注池。拖动即可调整顺序，分组页签也支持拖动重排。
+            当前页支持新增、删除与拖动排序；下方分组只筛选当前 Tab 的内容。
           </CompactNotice>
 
           {groups.length > 0 && (
@@ -350,21 +372,23 @@ export function Watchlist() {
               tabs={[{ key: "", label: "全部" }, ...groups.map(([group, count]) => ({ key: group, label: `${group} · ${count}` }))]}
               active={selectedGroup}
               onChange={setSelectedGroup}
-              draggableStorageKey="watchlist-unified-group-order"
+              draggableStorageKey={`watchlist-group-order:${activeTab}`}
             />
           )}
 
           {loading ? (
             <p className="text-sm text-muted-foreground">正在读取关注列表…</p>
           ) : visibleRows.length === 0 ? (
-            <CompactNotice>还没有关注对象。可以在下方新增 A股、港股、美股、商品或利率指标。</CompactNotice>
+            <CompactNotice>
+              当前页还没有关注对象，可以在下方新增{activeTab === "stock" ? "个股" : activeTab === "commodity" ? "大宗商品" : "宏观、利率或汇率指标"}。
+            </CompactNotice>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-muted-foreground">
-                    {["", "名称", "代码/Key", "类型/市场", "分组", "现价/值", "涨跌%", "备注", ""].map((header) => (
-                      <th key={header} className="px-2.5 py-2 font-medium">{header}</th>
+                    {["", "名称", "代码/Key", "类型/市场", "分组", "现价/值", "涨跌%", "备注", ""].map((header, index) => (
+                      <th key={`${header}-${index}`} className="px-2.5 py-2 font-medium">{header}</th>
                     ))}
                   </tr>
                 </thead>
@@ -411,7 +435,11 @@ export function Watchlist() {
                         <td className={cn("px-2.5 py-2 font-mono", color(pct))}>{item.kind === "stock" ? pct == null ? "—" : `${pct > 0 ? "+" : ""}${pct}%` : "—"}</td>
                         <td className="max-w-[220px] truncate px-2.5 py-2 text-muted-foreground">{item.kind === "indicator" ? item.note : ""}</td>
                         <td className="px-2.5 py-2">
-                          <button onClick={() => void deleteRow(item)} className="text-muted-foreground hover:text-destructive">
+                          <button
+                            onClick={() => void deleteRow(item)}
+                            aria-label={`删除${item.name}`}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </td>
@@ -425,22 +453,17 @@ export function Watchlist() {
         </GlassCard>
 
         <GlassCard className="space-y-2.5 p-3">
-          <h3 className="flex items-center gap-2 font-semibold"><Plus className="h-4 w-4 text-primary" />新增关注对象</h3>
+          <h3 className="flex items-center gap-2 font-semibold">
+            <Plus className="h-4 w-4 text-primary" />
+            新增{activeTab === "stock" ? "个股" : activeTab === "commodity" ? "大宗商品" : "宏观指标"}
+          </h3>
           <CompactNotice>
-            股票支持 A股名称搜索下拉选择；商品、利率、汇率等对象先以代码 / Key 方式加入，后面再逐步接自动行情。
+            {activeTab === "stock"
+              ? "A股支持名称搜索下拉选择，港股与美股可直接输入代码。"
+              : "先以代码 / Key、当前值和跟踪要点加入，后续接入数据源后可继续复用。"}
           </CompactNotice>
-          <SectionTabs
-            tabs={ASSET_TYPES}
-            active={assetType}
-            onChange={(next) => {
-              setAssetType(next);
-              const label = ASSET_TYPES.find((item) => item.key === next)?.label || "自定义";
-              setAssetInput((prev) => ({ ...prev, category: label }));
-            }}
-            draggableStorageKey="watchlist-asset-type-order"
-          />
 
-          {assetType === "stock" ? (
+          {activeTab === "stock" ? (
             <div className="space-y-3">
               <div className="grid gap-2 md:grid-cols-[160px_minmax(0,1fr)]">
                 <select
@@ -497,13 +520,27 @@ export function Watchlist() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-2 md:grid-cols-2">
-              <input value={assetInput.key} onChange={(event) => setAssetInput((prev) => ({ ...prev, key: event.target.value }))} placeholder="代码/Key，如 COMEX_GOLD、US10Y" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-              <input value={assetInput.label} onChange={(event) => setAssetInput((prev) => ({ ...prev, label: event.target.value }))} placeholder="名称，如 黄金、美国十年期国债收益率" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-              <input value={assetInput.category} onChange={(event) => setAssetInput((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-              <input value={assetInput.value} onChange={(event) => setAssetInput((prev) => ({ ...prev, value: event.target.value }))} placeholder="当前值，iFind 接通后自动更新" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-              <textarea value={assetInput.note} onChange={(event) => setAssetInput((prev) => ({ ...prev, note: event.target.value }))} rows={3} placeholder="备注 / 跟踪要点" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 md:col-span-2" />
-              <button onClick={() => void addIndicator()} className={`${primaryButtonClass} md:col-span-2`}>加入关注</button>
+            <div className="space-y-3">
+              {activeTab === "macro" && (
+                <SectionTabs
+                  tabs={MACRO_ASSET_TYPES}
+                  active={assetType}
+                  onChange={(next) => {
+                    setAssetType(next);
+                    const label = MACRO_ASSET_TYPES.find((item) => item.key === next)?.label || "自定义";
+                    setAssetInput((prev) => ({ ...prev, category: label }));
+                  }}
+                  className="mb-0"
+                />
+              )}
+              <div className="grid gap-2 md:grid-cols-2">
+                <input value={assetInput.key} onChange={(event) => setAssetInput((prev) => ({ ...prev, key: event.target.value }))} placeholder="代码/Key，如 COMEX_GOLD、US10Y" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <input value={assetInput.label} onChange={(event) => setAssetInput((prev) => ({ ...prev, label: event.target.value }))} placeholder="名称，如 黄金、美国十年期国债收益率" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <input value={assetInput.category} onChange={(event) => setAssetInput((prev) => ({ ...prev, category: event.target.value }))} placeholder="分组，如 能源、贵金属、通胀、利率" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <input value={assetInput.value} onChange={(event) => setAssetInput((prev) => ({ ...prev, value: event.target.value }))} placeholder="当前值，iFind 接通后自动更新" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+                <textarea value={assetInput.note} onChange={(event) => setAssetInput((prev) => ({ ...prev, note: event.target.value }))} rows={3} placeholder="备注 / 跟踪要点" className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 md:col-span-2" />
+                <button onClick={() => void addIndicator()} className={`${primaryButtonClass} md:col-span-2`}>加入关注</button>
+              </div>
             </div>
           )}
         </GlassCard>

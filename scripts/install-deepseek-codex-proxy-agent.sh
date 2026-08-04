@@ -9,6 +9,13 @@ RUNTIME_DIR="${HOME}/.codex/deepseek-proxy"
 RUNTIME_VENV="${RUNTIME_DIR}/.venv"
 RUNTIME_START="${RUNTIME_DIR}/start.sh"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+PYTHON_BIN="$(command -v python3)"
+
+if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  PYTHON_CMD=(arch -arm64 "${PYTHON_BIN}")
+else
+  PYTHON_CMD=("${PYTHON_BIN}")
+fi
 
 mkdir -p "${HOME}/.codex" "${LOG_DIR}" "${HOME}/Library/LaunchAgents" "${RUNTIME_DIR}"
 
@@ -26,9 +33,12 @@ fi
 
 cp "${ROOT_DIR}/backend/deepseek_codex_proxy.py" "${RUNTIME_DIR}/deepseek_codex_proxy.py"
 
-if [[ ! -x "${RUNTIME_VENV}/bin/python3" ]]; then
-  python3 -m venv "${RUNTIME_VENV}"
-  "${RUNTIME_VENV}/bin/pip" install fastapi uvicorn requests >/dev/null
+if ! "${RUNTIME_VENV}/bin/python3" -c 'import fastapi, uvicorn, requests' >/dev/null 2>&1; then
+  if [[ -d "${RUNTIME_VENV}" ]]; then
+    mv "${RUNTIME_VENV}" "${RUNTIME_DIR}/.venv-backup-$(date +%Y%m%d%H%M%S)"
+  fi
+  "${PYTHON_CMD[@]}" -m venv "${RUNTIME_VENV}"
+  "${RUNTIME_VENV}/bin/python3" -m pip install --upgrade fastapi uvicorn requests >/dev/null
 fi
 
 cat > "${RUNTIME_START}" <<EOF
@@ -41,7 +51,7 @@ chmod +x "${RUNTIME_START}"
 
 cd "${ROOT_DIR}"
 export RUNTIME_DIR RUNTIME_START ENV_FILE LOG_DIR
-"${ROOT_DIR}/.venv/bin/python3" - <<'PY' > "${PLIST_PATH}"
+"${PYTHON_CMD[@]}" - <<'PY' > "${PLIST_PATH}"
 from backend.deepseek_launchd import LAUNCH_AGENT_LABEL, render_launch_agent_plist
 import os
 
@@ -62,6 +72,12 @@ print(
 PY
 
 launchctl bootout "gui/$(id -u)/${LABEL}" >/dev/null 2>&1 || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if ! launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
 launchctl bootstrap "gui/$(id -u)" "${PLIST_PATH}"
 launchctl kickstart -k "gui/$(id -u)/${LABEL}"
 

@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { ArrowLeft, BookOpenText, CircleCheck, Layers3 } from "lucide-react";
+import { BookOpenText, CircleCheck, Layers3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_CONFIG } from "@/lib/app-config";
 import { SIDEBAR_MODULES } from "@/lib/workspace";
@@ -9,14 +9,6 @@ const NAV_GROUPS = [
   { label: "研究决策", modules: SIDEBAR_MODULES.slice(4, 9) },
   { label: "资产与系统", modules: SIDEBAR_MODULES.slice(9) },
 ];
-
-function snapshotDate() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 export function ResearchDeskLayout() {
   const { pathname, search } = useLocation();
@@ -29,7 +21,7 @@ export function ResearchDeskLayout() {
   return (
     <div className="research-desk flex min-h-screen">
       <aside className="research-desk-sidebar flex w-full shrink-0 flex-col md:sticky md:top-0 md:h-screen md:w-[272px]">
-        <Link to="/desk/calendar" className="research-desk-brand flex items-center gap-3 px-7 py-7">
+        <Link to="/desk/calendar" className="research-desk-brand flex items-center gap-3 px-7 py-7 md:min-h-[150px]">
           <span className="research-desk-monogram flex h-12 w-12 shrink-0 items-center justify-center">
             <BookOpenText className="h-6 w-6" />
           </span>
@@ -102,9 +94,9 @@ export function ResearchDeskLayout() {
 
       <main className="research-desk-main min-w-0 flex-1">
         <header className="research-desk-topbar border-b">
-          <div className="mx-auto flex min-h-[104px] max-w-[1600px] flex-wrap items-center justify-between gap-5 px-6 py-5 lg:px-10">
+          <div className="mx-auto flex min-h-[150px] max-w-[1600px] flex-wrap items-center justify-between gap-5 px-6 py-5 lg:px-10">
             <div>
-              <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#5dd7cd]">
+              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#5dd7cd]">
                 <Layers3 className="h-3.5 w-3.5" />
                 Continuous research desk
               </div>
@@ -113,19 +105,10 @@ export function ResearchDeskLayout() {
               </h1>
               <p className="mt-1 text-sm text-[#b6c2c1]">{activeModule.description}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="research-desk-snapshot hidden items-center gap-2 px-4 py-2 text-xs text-[#aebcbd] sm:flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#5dd7cd]" />
-                仓库快照 · {snapshotDate()}
-              </span>
-              <Link
-                to={activeModule.to}
-                className="research-desk-classic-link inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                返回原版
-              </Link>
-            </div>
+            <div
+              id="research-desk-page-actions"
+              className="flex flex-wrap items-center justify-end gap-2"
+            />
           </div>
         </header>
 

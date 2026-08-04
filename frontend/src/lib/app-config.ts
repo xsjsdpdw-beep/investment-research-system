@@ -11,5 +11,6 @@ export const APP_STORAGE_KEYS = {
   sidebar: "vr-sidebar",
   theme: "vr-theme",
   accessKey: "vr-access-key",
+  fmpApiKey: "vr-fmp-api-key",
   llm: "vr-llm",
 } as const;

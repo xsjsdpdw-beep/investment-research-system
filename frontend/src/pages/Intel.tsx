@@ -9,7 +9,8 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { SectionTabs } from "@/components/ui/SectionTabs";
-import { api, ApiError, type Announcement, type GlobalIndex, type IntelDigestResult, type MarketOverview, type NewsItem, type NewsRadarConfig, type ResearchHubData, type TurnoverTop } from "@/lib/api";
+import { api, ApiError, type Announcement, type GlobalIndex, type IntelDigestResult, type MarketOverview, type NewsItem, type NewsRadarConfig, type ResearchHubData, type SourceTier, type TurnoverTop } from "@/lib/api";
+import { countMacroItems, filterDeskMacroGroups, type MacroFeedMode, type MacroScoreBreakdown, type ScoredMacroItem } from "@/lib/intel-macro-filter";
 import { formatIntelAutoRefreshNotice } from "@/lib/intel-auto-refresh-notice";
 import { buildIntelContentSignature } from "@/lib/intel-content-signature";
 import { type DropIndicator, type DropPosition, getDropPosition, reorderWithDropPosition } from "@/lib/drag-sort";
@@ -26,6 +27,11 @@ const FUNDAMENTAL_VIEW_TABS = [
   { key: "stock", label: "个股动态" },
   { key: "geopolitics", label: "地缘政治" },
   { key: "hiring", label: "招聘雷达" },
+];
+
+const DESK_FUNDAMENTAL_VIEW_TABS = [
+  ...FUNDAMENTAL_VIEW_TABS,
+  { key: "sources", label: "信息源" },
 ];
 
 const LIQUIDITY_VIEW_TABS = [
@@ -72,6 +78,7 @@ type ModuleSource = {
   provider: string;
   note: string;
   enabled: boolean;
+  tier?: SourceTier;
   removable?: boolean;
 };
 
@@ -80,6 +87,7 @@ type ModuleSourceDraft = {
   provider: string;
   note: string;
   topicKey: string;
+  tier: SourceTier;
 };
 
 type SourceRecord = Record<IntelKind, ModuleSource[]>;
@@ -106,6 +114,13 @@ type NewsFrontItem = {
   source?: string;
   topic?: string;
   url?: string;
+  score?: number;
+  scoreLabel?: string;
+  sourceCount?: number;
+  clusterSize?: number;
+  scoreReason?: string;
+  scoreBreakdown?: MacroScoreBreakdown;
+  relatedItems?: Array<{ title: string; url?: string; source?: string }>;
 };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -332,7 +347,7 @@ function buildIntelDigestPrompt(kind: IntelKind) {
   ].join("\n");
 }
 
-export function Intel() {
+export function Intel({ deskMode = false }: { deskMode?: boolean }) {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [active, setActive] = useState("fundamental");
@@ -356,6 +371,7 @@ export function Intel() {
   const [contentSignature, setContentSignature] = useState("");
   const [autoRefreshNotice, setAutoRefreshNotice] = useState("");
   const [refreshFallbackMessage, setRefreshFallbackMessage] = useState("");
+  const [macroFeedMode, setMacroFeedMode] = useState<MacroFeedMode>(() => readJson<MacroFeedMode>("desk-intel-macro-feed-mode", "focused"));
   const [draggingModule, setDraggingModule] = useState<IntelKind | "">("");
   const [moduleDropIndicator, setModuleDropIndicator] = useState<DropIndicator<IntelKind>>(null);
   const [stockFeedItems, setStockFeedItems] = useState<StockFeedItem[]>([]);
@@ -374,13 +390,21 @@ export function Intel() {
     geopolitics: false,
     hiring: false,
   }));
+  const [deskSourcePanels, setDeskSourcePanels] = useState<SourcePanelRecord>(() => readJson<SourcePanelRecord>("desk-intel-source-panels", {
+    tech: false,
+    macro: false,
+    industry: false,
+    stock: false,
+    geopolitics: false,
+    hiring: false,
+  }));
   const [sourceDrafts, setSourceDrafts] = useState<SourceDraftRecord>({
-    tech: { label: "", provider: "rss", note: "", topicKey: "" },
-    macro: { label: "", provider: "rss", note: "", topicKey: "" },
-    industry: { label: "", provider: "rss", note: "", topicKey: "" },
-    stock: { label: "", provider: "rss", note: "", topicKey: "" },
-    geopolitics: { label: "", provider: "rss", note: "", topicKey: "" },
-    hiring: { label: "", provider: "manual", note: "", topicKey: "" },
+    tech: { label: "", provider: "rss", note: "", topicKey: "", tier: "T2" },
+    macro: { label: "", provider: "rss", note: "", topicKey: "", tier: "T2" },
+    industry: { label: "", provider: "rss", note: "", topicKey: "", tier: "T2" },
+    stock: { label: "", provider: "rss", note: "", topicKey: "", tier: "T2" },
+    geopolitics: { label: "", provider: "rss", note: "", topicKey: "", tier: "T2" },
+    hiring: { label: "", provider: "manual", note: "", topicKey: "", tier: "T2" },
   });
   const [topicDrafts, setTopicDrafts] = useState<TopicDraftRecord>({
     tech: "",
@@ -543,6 +567,10 @@ export function Intel() {
   }, [sourcePanels]);
 
   useEffect(() => {
+    if (deskMode) writeJson("desk-intel-source-panels", deskSourcePanels);
+  }, [deskMode, deskSourcePanels]);
+
+  useEffect(() => {
     writeJson("intel-focuses", focuses);
   }, [focuses]);
 
@@ -566,8 +594,16 @@ export function Intel() {
     writeJson("intel-event-completed-keys", completedEventTaskKeys);
   }, [completedEventTaskKeys]);
 
+  useEffect(() => {
+    if (deskMode) writeJson("desk-intel-macro-feed-mode", macroFeedMode);
+  }, [deskMode, macroFeedMode]);
+
   const techHeadlines = hub?.fundamental.global_tech_headlines ?? [];
-  const macroEvents = hub?.fundamental.macro_events ?? [];
+  const rawMacroEvents = hub?.fundamental.macro_events ?? [];
+  const focusedMacroEvents = useMemo(() => filterDeskMacroGroups(rawMacroEvents), [rawMacroEvents]);
+  const macroEvents = deskMode && macroFeedMode === "focused" ? focusedMacroEvents : rawMacroEvents;
+  const rawMacroCount = countMacroItems(rawMacroEvents);
+  const focusedMacroCount = countMacroItems(focusedMacroEvents);
   const industryDynamics = hub?.fundamental.industry_dynamics ?? [];
   const stockDynamics = hub?.fundamental.stock_dynamics ?? [];
   const stockTopics = hub?.fundamental.stock_topics ?? [];
@@ -798,7 +834,18 @@ export function Intel() {
     return resolvedStockDynamics.filter((item) => focuses.stock.some((focus) => focus === `${item.name} (${item.ticker})` || `${item.name} ${item.ticker} ${(item.highlights ?? []).join(" ")}`.toLowerCase().includes(focus.toLowerCase())));
   }, [focuses.stock, resolvedStockDynamics]);
 
-  const aiDigest = useMemo(() => orderedModules.map((item) => `${item.label}：${buildDigestPreview(item.key, hub) || "等待生成 AI 要点"}`).join("\n"), [hub, orderedModules]);
+  const digestHub = useMemo(() => {
+    if (!hub || !deskMode || macroFeedMode === "all") return hub;
+    return {
+      ...hub,
+      fundamental: {
+        ...hub.fundamental,
+        macro_events: macroEvents,
+      },
+    };
+  }, [deskMode, hub, macroEvents, macroFeedMode]);
+
+  const aiDigest = useMemo(() => orderedModules.map((item) => `${item.label}：${buildDigestPreview(item.key, digestHub) || "等待生成 AI 要点"}`).join("\n"), [digestHub, orderedModules]);
 
   const saveConfig = async (next: NewsRadarConfig, successMessage?: string) => {
     setConfigSaving(true);
@@ -821,7 +868,7 @@ export function Intel() {
     try {
       const result = await chat(
         [{ role: "user", content: buildIntelDigestPrompt(kind) }],
-        buildIntelDigestContext(kind, hub),
+        buildIntelDigestContext(kind, digestHub),
       );
       const digest = {
         kind,
@@ -857,7 +904,7 @@ export function Intel() {
       for (const item of FUNDAMENTAL_MODULES) {
         const digest = await chat(
           [{ role: "user", content: buildIntelDigestPrompt(item.key) }],
-          buildIntelDigestContext(item.key, hub),
+          buildIntelDigestContext(item.key, digestHub),
         );
         next[item.key] = {
           kind: item.key,
@@ -920,10 +967,11 @@ export function Intel() {
         hint: topicKey,
         type: sourceType,
         url: sourceUrl,
+        tier: draft.tier,
       }],
     }, "信息源接口已加入");
     if (saved) {
-      setSourceDrafts((prev) => ({ ...prev, [kind]: { label: "", provider: "rss", note: "", topicKey } }));
+      setSourceDrafts((prev) => ({ ...prev, [kind]: { label: "", provider: "rss", note: "", topicKey, tier: "T2" } }));
       setSourcePanels((prev) => ({ ...prev, [kind]: true }));
     }
   };
@@ -1050,7 +1098,7 @@ export function Intel() {
     }));
   };
 
-  const buildConfiguredSources = (kind: IntelKind): ModuleSource[] => {
+  const buildConfiguredSources = (kind: IntelKind, showTier = false): ModuleSource[] => {
     if (kind === "hiring") return [];
     const topicMap = new Map(moduleTopics[kind].map((item) => [item.key, item.name]));
     return (radarConfig?.sources ?? [])
@@ -1058,9 +1106,10 @@ export function Intel() {
       .map((item) => ({
         id: `${item.hint}-${item.name}-${item.url}`,
         label: item.name,
-        provider: `${item.type} · ${topicMap.get(item.hint) || item.hint}`,
+        provider: `${item.type} · ${topicMap.get(item.hint) || item.hint}${showTier ? ` · ${item.tier || "T2"}` : ""}`,
         note: item.url,
         enabled: true,
+        tier: item.tier,
         removable: true,
       }));
   };
@@ -1092,12 +1141,40 @@ export function Intel() {
             <div key={item.id} className="grid gap-3 px-4 py-3 transition-colors hover:bg-muted/20 md:grid-cols-[96px_minmax(0,1fr)]">
               <div className="font-mono text-xs text-muted-foreground md:pt-0.5">{item.time || "—"}</div>
               <div className="min-w-0">
-                {titleNode}
+                <div className="flex items-start justify-between gap-3">
+                  {titleNode}
+                  {typeof item.score === "number" && (
+                    <span className="shrink-0 rounded-md border border-primary/25 bg-primary/10 px-2 py-1 font-mono text-xs text-primary">
+                      {item.score} · {item.scoreLabel}
+                    </span>
+                  )}
+                </div>
                 {item.subtitle && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.subtitle}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {item.source && <span className="rounded-md bg-primary/10 px-2 py-0.5 text-primary">{item.source}</span>}
                   {item.topic && <span>{item.topic}</span>}
+                  {(item.sourceCount ?? 0) > 1 && <span>{item.sourceCount} 个独立来源确认</span>}
+                  {(item.clusterSize ?? 0) > 1 && <span>已合并 {item.clusterSize} 条同事件报道</span>}
                 </div>
+                {item.scoreReason && <p className="mt-2 text-xs text-muted-foreground/80">入选依据：{item.scoreReason}</p>}
+                {item.scoreBreakdown && (
+                  <p className="mt-1 text-[11px] text-muted-foreground/70">
+                    五维评分 · 影响 {item.scoreBreakdown.impact} · 相关 {item.scoreBreakdown.relevance} · 证据 {item.scoreBreakdown.evidence} · 新颖 {item.scoreBreakdown.novelty} · 可操作 {item.scoreBreakdown.actionability}
+                  </p>
+                )}
+                {(item.relatedItems?.length ?? 0) > 0 && (
+                  <details className="mt-2 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer hover:text-primary">查看 {item.relatedItems?.length} 条相关报道</summary>
+                    <div className="mt-1 space-y-1 border-l border-border/40 pl-3">
+                      {item.relatedItems?.map((related, index) => (
+                        <div key={`${related.url || related.title}-${index}`}>
+                          {related.url ? <a href={related.url} target="_blank" rel="noreferrer" className="hover:text-primary">{related.title}</a> : <span>{related.title}</span>}
+                          {related.source && <span className="ml-2 opacity-70">· {related.source}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             </div>
           );
@@ -1119,15 +1196,65 @@ export function Intel() {
       })));
     }
     if (kind === "macro") {
-      return renderNewsFrontPage("新闻头版", macroEvents.flatMap((group) => (group.items ?? []).slice(0, 6).map((item) => ({
-        id: `${group.key}-${item.url || item.title}-${item.time}`,
-        time: item.time,
-        title: item.zh || item.title,
-        subtitle: item.zh ? item.title : item.summary,
-        source: item.source,
-        topic: group.name,
-        url: item.url,
-      }))));
+      return (
+        <div className="space-y-3">
+          {deskMode && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/40 bg-black/10 px-4 py-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">宏观信号降噪</span>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                    精选 {focusedMacroCount} / 原始 {rawMacroCount}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">先过投资相关性门槛，再按影响、相关性、证据、新颖性和可操作性五维评分；来源层级与多源确认由代码加权，同一事件只保留一条代表报道。</p>
+              </div>
+              <div className="inline-flex rounded-lg border border-border/50 bg-black/20 p-1">
+                <button
+                  onClick={() => setMacroFeedMode("focused")}
+                  className={cn("rounded-md px-3 py-1.5 text-xs transition-colors", macroFeedMode === "focused" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}
+                >
+                  精选
+                </button>
+                <button
+                  onClick={() => setMacroFeedMode("all")}
+                  className={cn("rounded-md px-3 py-1.5 text-xs transition-colors", macroFeedMode === "all" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground")}
+                >
+                  全部
+                </button>
+              </div>
+            </div>
+          )}
+          {renderNewsFrontPage(
+            macroFeedMode === "focused" && deskMode ? "宏观精选" : "新闻头版",
+            macroEvents.flatMap((group) => {
+              const items = deskMode ? (group.items ?? []) : (group.items ?? []).slice(0, 6);
+              return items.map((item) => {
+                const scored = item as ScoredMacroItem;
+                const scoreLabel = scored.signalLevel === "critical" ? "关键"
+                  : scored.signalLevel === "important" ? "重要"
+                    : "相关";
+                return {
+                  id: `${group.key}-${item.url || item.title}-${item.time}`,
+                  time: item.time,
+                  title: item.zh || item.title,
+                  subtitle: item.zh ? item.title : item.summary,
+                  source: item.source,
+                  topic: group.name,
+                  url: item.url,
+                  score: deskMode && macroFeedMode === "focused" ? scored.investmentScore : undefined,
+                  scoreLabel,
+                  sourceCount: scored.sourceCount,
+                  clusterSize: scored.clusterSize,
+                  scoreReason: scored.scoreReasons?.join(" · "),
+                  scoreBreakdown: deskMode && macroFeedMode === "focused" ? scored.scoreBreakdown : undefined,
+                  relatedItems: deskMode && macroFeedMode === "focused" ? scored.relatedItems : undefined,
+                };
+              });
+            }),
+          )}
+        </div>
+      );
     }
     if (kind === "industry") {
       return (
@@ -1279,25 +1406,36 @@ export function Intel() {
     );
   };
 
-  const renderSourcePanel = (kind: IntelKind) => {
-    const sources = uniqueById([...buildRuntimeSources(kind), ...buildConfiguredSources(kind), ...defaultSources[kind]]);
+  const renderSourcePanel = (kind: IntelKind, centralized = false) => {
+    const sources = centralized
+      ? uniqueById([...buildConfiguredSources(kind, true), ...defaultSources[kind]])
+      : uniqueById([...buildRuntimeSources(kind), ...buildConfiguredSources(kind), ...defaultSources[kind]]);
+    const moduleLabel = FUNDAMENTAL_MODULES.find((item) => item.key === kind)?.label || "信息源";
+    const panelOpen = centralized ? deskSourcePanels[kind] : sourcePanels[kind];
+    const togglePanel = () => {
+      if (centralized) {
+        setDeskSourcePanels((prev) => ({ ...prev, [kind]: !prev[kind] }));
+      } else {
+        setSourcePanels((prev) => ({ ...prev, [kind]: !prev[kind] }));
+      }
+    };
     if (kind === "hiring") {
       return (
         <div className="rounded-xl border border-border/40 bg-black/10">
           <button
-            onClick={() => setSourcePanels((prev) => ({ ...prev, [kind]: !prev[kind] }))}
+            onClick={togglePanel}
             className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left"
           >
             <div>
-              <p className="text-sm font-medium">信息源接口</p>
+              <p className="text-sm font-medium">{centralized ? moduleLabel : "信息源接口"}</p>
               <p className="mt-1 text-xs text-muted-foreground">当前版本直接复用 Hiring-Radar，先不在页面内维护主题和 RSS。</p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {sources.length} 个
-              {sourcePanels[kind] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {panelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
           </button>
-          {sourcePanels[kind] && (
+          {panelOpen && (
             <div className="space-y-2 border-t border-border/30 px-3 py-3">
               {sources.map((item) => (
                 <div key={item.id} className="rounded-lg border border-border/30 bg-muted/20 px-3 py-3 text-sm">
@@ -1314,23 +1452,25 @@ export function Intel() {
     return (
       <div className="rounded-xl border border-border/40 bg-black/10">
         <button
-          onClick={() => setSourcePanels((prev) => ({ ...prev, [kind]: !prev[kind] }))}
+          onClick={togglePanel}
           className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left"
         >
           <div>
-            <p className="text-sm font-medium">信息源接口</p>
-            <p className="mt-1 text-xs text-muted-foreground">平时不想看可以折叠，展开后可查看并补充接口。</p>
+            <p className="text-sm font-medium">{centralized ? moduleLabel : "信息源接口"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {centralized ? `${moduleTopics[kind].length} 个主题 · 可新增 RSS、API 或手动来源` : "平时不想看可以折叠，展开后可查看并补充接口。"}
+            </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {sources.length} 个
-            {sourcePanels[kind] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {panelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </div>
         </button>
-        {sourcePanels[kind] && (
+        {panelOpen && (
           <div className="space-y-3 border-t border-border/30 px-3 py-3">
             <div className="space-y-2 rounded-lg border border-border/30 bg-muted/10 p-3">
               <p className="text-xs text-muted-foreground">新增信息源</p>
-              <div className="grid gap-2 md:grid-cols-4">
+              <div className={cn("grid gap-2", centralized ? "md:grid-cols-5" : "md:grid-cols-4")}>
                 <input
                   value={sourceDrafts[kind].label}
                   onChange={(event) => setSourceDrafts((prev) => ({ ...prev, [kind]: { ...prev[kind], label: event.target.value } }))}
@@ -1356,6 +1496,18 @@ export function Intel() {
                   <option value="api">API 接口占位</option>
                   <option value="manual">手动/纪要源占位</option>
                 </select>
+                {centralized && (
+                  <select
+                    value={sourceDrafts[kind].tier}
+                    onChange={(event) => setSourceDrafts((prev) => ({ ...prev, [kind]: { ...prev[kind], tier: event.target.value as SourceTier } }))}
+                    className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                    title="来源层级会影响精选评分，不代表内容一定入选"
+                  >
+                    <option value="T1">T1 官方一手</option>
+                    <option value="T1.5">T1.5 官方社媒/高可信</option>
+                    <option value="T2">T2 其他公开源</option>
+                  </select>
+                )}
                 <button onClick={() => void addSource(kind)} disabled={configSaving} className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15 disabled:opacity-60">
                   新增信息源接口
                 </button>
@@ -1416,11 +1568,46 @@ export function Intel() {
     );
   };
 
+  const renderSourcesWorkspace = () => {
+    const configuredSourceCount = radarConfig?.sources.length ?? 0;
+    return (
+      <div className="space-y-4">
+        <GlassCard glow>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-primary">Source control</p>
+              <h3 className="mt-2 text-lg font-semibold">信息源管理</h3>
+              <p className="mt-1 text-sm text-muted-foreground">所有基本面来源集中在这里维护，内容模块不再重复显示接口配置。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-border/50 bg-black/20 px-3 py-1.5 text-xs text-muted-foreground">
+                {FUNDAMENTAL_MODULES.length} 类
+              </span>
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary">
+                {configuredSourceCount} 个底座来源
+              </span>
+              <span className="rounded-full border border-border/50 bg-black/20 px-3 py-1.5 text-xs text-muted-foreground">
+                精选展示 · 全量留存
+              </span>
+            </div>
+          </div>
+        </GlassCard>
+        <div className="grid gap-3 xl:grid-cols-2">
+          {FUNDAMENTAL_MODULES.map((item) => (
+            <div key={item.key} className={cn(deskSourcePanels[item.key] && "xl:col-span-2")}>
+              {renderSourcePanel(item.key, true)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderFundamentalCard = (kind: IntelKind, compact = false) => {
     const meta = FUNDAMENTAL_MODULES.find((item) => item.key === kind);
     if (!meta) return null;
     const Icon = meta.icon;
-    const digestText = intelDigests[kind]?.summary_text || buildDigestPreview(kind, hub) || "这里保留给 AI 提炼要点，你也可以点击按钮生成固定格式图片请求。";
+    const digestText = intelDigests[kind]?.summary_text || buildDigestPreview(kind, digestHub) || "这里保留给 AI 提炼要点，你也可以点击按钮生成固定格式图片请求。";
     const isDropBefore = compact && moduleDropIndicator?.targetKey === kind && moduleDropIndicator.position === "before" && draggingModule !== kind;
     const isDropAfter = compact && moduleDropIndicator?.targetKey === kind && moduleDropIndicator.position === "after" && draggingModule !== kind;
 
@@ -1488,7 +1675,7 @@ export function Intel() {
         {!compact && (
           <div className="mt-4 space-y-4">
             {renderInfoList(kind)}
-            {renderSourcePanel(kind)}
+            {!deskMode && renderSourcePanel(kind)}
           </div>
         )}
         </GlassCard>
@@ -1530,7 +1717,7 @@ export function Intel() {
         )}
         {active === "fundamental" ? (
           <div className="space-y-4">
-            <SectionTabs tabs={FUNDAMENTAL_VIEW_TABS} active={fundamentalView} onChange={setFundamentalView} draggableStorageKey="intel-fundamental-view-order" />
+            <SectionTabs tabs={deskMode ? DESK_FUNDAMENTAL_VIEW_TABS : FUNDAMENTAL_VIEW_TABS} active={fundamentalView} onChange={setFundamentalView} draggableStorageKey={deskMode ? "desk-intel-fundamental-view-order" : "intel-fundamental-view-order"} />
             {fundamentalView === "overview" && (
               <>
                 <GlassCard glow>
@@ -1552,6 +1739,7 @@ export function Intel() {
                 </div>
               </>
             )}
+            {deskMode && fundamentalView === "sources" && renderSourcesWorkspace()}
             {fundamentalView !== "overview" && selectedFundamentalModule && renderFundamentalCard(selectedFundamentalModule.key)}
           </div>
         ) : active === "liquidity" ? (
