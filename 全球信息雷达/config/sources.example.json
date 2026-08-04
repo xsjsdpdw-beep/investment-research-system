@@ -1,0 +1,38 @@
+{
+  "sources": [
+    {
+      "id": "example-rss",
+      "name": "示例 RSS（未启用）",
+      "type": "rss",
+      "endpoint": "https://example.com/feed.xml",
+      "domain": "global_tech",
+      "topics": ["示例"],
+      "enabled": false,
+      "poll_interval_sec": 900,
+      "timeout_sec": 15,
+      "priority": 50
+    },
+    {
+      "id": "example-json",
+      "name": "示例 JSON API（未启用）",
+      "type": "json_api",
+      "endpoint": "https://example.com/api/items",
+      "domain": "macro",
+      "topics": ["示例"],
+      "enabled": false,
+      "poll_interval_sec": 900,
+      "timeout_sec": 15,
+      "priority": 50,
+      "mapping": {
+        "items_path": "items",
+        "id": "id",
+        "title": "title",
+        "url": "url",
+        "summary": "summary",
+        "published_at": "published_at",
+        "author": "author"
+      }
+    }
+  ]
+}
+

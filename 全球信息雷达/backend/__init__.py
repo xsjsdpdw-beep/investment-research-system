@@ -1,0 +1,2 @@
+"""Global information radar backend."""
+

@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>周涨跌幅看板</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090b12;
+      --panel: #11141d;
+      --panel-2: #151923;
+      --line: #252b38;
+      --text: #f3f5f8;
+      --muted: #8d95a5;
+      --orange: #f16a45;
+      --red: #f26468;
+      --green: #48c784;
+      --yellow: #e6b95f;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 980px;
+      background:
+        radial-gradient(900px 520px at 10% -10%, rgba(241,106,69,.10), transparent 60%),
+        radial-gradient(760px 520px at 100% 100%, rgba(58,83,147,.09), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { max-width: 1680px; margin: 0 auto; padding: 24px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 28px; letter-spacing: -.02em; }
+    .subtitle { margin-top: 7px; color: var(--muted); font-size: 13px; }
+    .actions { display: flex; gap: 10px; }
+    .btn {
+      border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px;
+      color: var(--muted); background: rgba(17,20,29,.72); transition: .18s ease;
+    }
+    .btn:hover { color: var(--text); border-color: #465064; transform: translateY(-1px); }
+    .btn.primary { color: var(--orange); border-color: rgba(241,106,69,.45); background: rgba(241,106,69,.09); }
+    .btn.danger:hover { color: var(--red); border-color: rgba(242,100,104,.4); }
+    .btn:disabled { opacity: .45; cursor: wait; transform: none; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+    .card {
+      border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(155deg, rgba(255,255,255,.035), rgba(255,255,255,.008));
+      box-shadow: 0 18px 50px rgba(0,0,0,.18);
+    }
+    .stat { padding: 16px 18px; }
+    .stat-label { color: var(--muted); font-size: 11px; }
+    .stat-value { margin-top: 5px; font-size: 24px; font-weight: 750; font-variant-numeric: tabular-nums; }
+    .up { color: var(--red); }
+    .down { color: var(--green); }
+    .manager { display: none; padding: 18px; margin-bottom: 14px; }
+    .manager.open { display: block; }
+    .manager-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .manager h2 { margin: 0; font-size: 14px; }
+    .hint { color: var(--muted); font-size: 11px; }
+    .group-tags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .group-tag { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px 6px 11px; background: var(--panel-2); font-size: 13px; }
+    .icon-btn { border: 0; background: transparent; color: var(--muted); padding: 2px 4px; }
+    .icon-btn:hover { color: var(--orange); }
+    .icon-btn.remove:hover { color: var(--red); }
+    .field {
+      width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px;
+      color: var(--text); background: rgba(9,11,18,.65); outline: none;
+    }
+    .field:focus { border-color: rgba(241,106,69,.55); }
+    .add-group { display: flex; gap: 7px; width: 260px; }
+    .divider { height: 1px; background: var(--line); margin: 17px 0; }
+    .stock-form { display: grid; grid-template-columns: 1.2fr .75fr 1fr 1.2fr 1fr auto; gap: 9px; }
+    .table-card { overflow: hidden; }
+    .toolbar { display: flex; gap: 10px; align-items: center; padding: 13px; border-bottom: 1px solid var(--line); }
+    .toolbar .search { width: 310px; }
+    .toolbar select { width: 170px; }
+    .updated { margin-left: auto; color: var(--muted); font-size: 11px; }
+    table { width: 100%; min-width: 1560px; border-collapse: collapse; font-size: 12px; }
+    th { padding: 10px 9px; color: var(--muted); text-align: left; font-size: 10px; font-weight: 600; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    thead tr:first-child th[colspan] { color: var(--yellow); text-align: center; border-left: 1px solid var(--line); }
+    thead tr:nth-child(2) th { padding-top: 8px; padding-bottom: 8px; text-align: right; background: rgba(255,255,255,.012); }
+    td { padding: 9px; border-bottom: 1px solid rgba(37,43,56,.7); }
+    tbody tr.stock-row:hover { background: rgba(255,255,255,.018); }
+    .group-row td { padding: 8px 10px; color: var(--yellow); font-weight: 650; background: rgba(230,185,95,.075); border-color: rgba(230,185,95,.12); }
+    .group-count { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 11px; }
+    .ticker { color: #a8b0bf; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; }
+    .name { font-weight: 650; white-space: nowrap; }
+    .muted { color: var(--muted); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .change-wrap { display: flex; align-items: center; gap: 7px; min-width: 135px; }
+    .change { width: 58px; text-align: right; font-weight: 720; font-variant-numeric: tabular-nums; }
+    .bar-track { height: 7px; flex: 1; border-radius: 9px; background: #1b202c; overflow: hidden; }
+    .bar { height: 100%; border-radius: inherit; }
+    .bar.up { background: rgba(242,100,104,.78); }
+    .bar.down { background: rgba(72,199,132,.78); }
+    .metric { min-width: 52px; }
+    .metric.growth { min-width: 62px; }
+    .metric.pe { min-width: 45px; }
+    .ifind-note { color: var(--yellow); }
+    .empty { padding: 54px; text-align: center; color: var(--muted); }
+    .toast {
+      position: fixed; right: 24px; top: 22px; z-index: 10; opacity: 0; pointer-events: none;
+      padding: 11px 15px; border: 1px solid var(--line); border-radius: 10px; background: #171b25; box-shadow: 0 12px 40px rgba(0,0,0,.38);
+      transform: translateY(-8px); transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { color: var(--red); }
+    @media (max-width: 1100px) {
+      .shell { padding: 18px; }
+      .stock-form { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>周涨跌幅与盈利估值</h1>
+        <div class="subtitle" id="subtitle">自然周周一至周五 · 打开页面自动更新</div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="manageBtn">⚙ 管理内容</button>
+        <button class="btn primary" id="refreshBtn">↻ 刷新本周</button>
+      </div>
+    </header>
+
+    <section class="card manager" id="manager">
+      <div class="manager-title">
+        <h2>分组管理</h2>
+        <div class="hint">分组与股票均可新增、重命名、删除；更改只保存在本页面</div>
+      </div>
+      <div class="group-tags" id="groupTags"></div>
+      <div class="divider"></div>
+      <div class="manager-title">
+        <h2>新增股票</h2>
+        <button class="btn danger" id="resetBtn">恢复初始清单</button>
+      </div>
+      <div class="stock-form">
+        <input class="field" id="tickerInput" placeholder="代码，如 600031.SH">
+        <select class="field" id="marketInput">
+          <option value="SH">沪市</option><option value="SZ">深市</option><option value="BJ">北交所</option>
+          <option value="HK">港股</option><option value="US">美股</option><option value="JP">日股</option>
+        </select>
+        <input class="field" id="nameInput" placeholder="名称">
+        <input class="field" id="industryInput" placeholder="申万三级行业（可空）">
+        <select class="field" id="groupInput"></select>
+        <button class="btn primary" id="addStockBtn">＋ 新增</button>
+      </div>
+      <div class="hint" style="margin-top:9px">港股示例 0631.HK，美股示例 CAT.N，日股示例 6301.T。</div>
+    </section>
+
+    <section class="stats">
+      <div class="card stat"><div class="stat-label">股票数</div><div class="stat-value" id="stockCount">—</div></div>
+      <div class="card stat"><div class="stat-label">本周上涨</div><div class="stat-value up" id="upCount">—</div></div>
+      <div class="card stat"><div class="stat-label">本周下跌</div><div class="stat-value down" id="downCount">—</div></div>
+      <div class="card stat"><div class="stat-label">平均涨跌</div><div class="stat-value" id="avgChange">—</div></div>
+    </section>
+
+    <section class="card table-card">
+      <div class="toolbar">
+        <input class="field search" id="searchInput" placeholder="搜索代码、名称或行业">
+        <select class="field" id="groupFilter"><option value="">全部分组</option></select>
+        <div class="updated" id="updated">尚未更新</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th rowspan="2">代码</th><th rowspan="2">名称</th><th rowspan="2">申万三级行业</th><th rowspan="2">市场</th>
+              <th rowspan="2" class="num">总市值（亿）</th><th rowspan="2">周涨跌幅</th><th rowspan="2" class="num">YTD</th>
+              <th colspan="5">归母净利润（亿·iFind）</th><th colspan="3">PE（市值÷归母净利）</th>
+              <th rowspan="2" class="num">截至</th><th rowspan="2"></th>
+            </tr>
+            <tr>
+              <th>25</th><th>26E</th><th>27E</th><th>26YoY</th><th>27YoY</th>
+              <th>25</th><th>26E</th><th>27E</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"><tr><td class="empty" colspan="17">正在更新行情与估值…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const STORAGE_KEY = "weekly-performance-dashboard-v1";
+    const MARKETS = { SH:"沪市", SZ:"深市", BJ:"北交所", HK:"港股", US:"美股", JP:"日股" };
+    const GROUPS = [
+      ["construction-machinery","工程机械"],["power-equipment","电力设备"],["ai-chain","AI链"],
+      ["industrial-control","工控"],["machine-tools","机床&工具"],["lithium-solid-state","锂电&固态"],
+      ["other-special-equipment","其他专用设备"]
+    ];
+    const STOCKS = [
+      ["construction-machinery","CAT.N","US","卡特彼勒",""],["construction-machinery","6301.T","JP","小松制作所",""],
+      ["construction-machinery","CMI.N","US","康明斯",""],["construction-machinery","600031.SH","SH","三一重工","工程机械Ⅲ"],
+      ["construction-machinery","0631.HK","HK","三一国际",""],["construction-machinery","000425.SZ","SZ","徐工机械","工程机械Ⅲ"],
+      ["construction-machinery","000157.SZ","SZ","中联重科","工程机械Ⅲ"],["construction-machinery","000528.SZ","SZ","柳工","工程机械Ⅲ"],
+      ["construction-machinery","000680.SZ","SZ","山推股份","工程机械Ⅲ"],["construction-machinery","3339.HK","HK","中国龙工",""],
+      ["construction-machinery","601100.SH","SH","恒立液压","工程机械Ⅲ"],["construction-machinery","603298.SH","SH","杭叉集团","工程机械Ⅲ"],
+      ["construction-machinery","600761.SH","SH","安徽合力","工程机械Ⅲ"],["construction-machinery","2590.HK","HK","极智嘉",""],
+      ["power-equipment","600875.SH","SH","东方电气","其他电源设备Ⅲ"],["power-equipment","601727.SH","SH","上海电气","其他电源设备Ⅲ"],
+      ["power-equipment","002028.SZ","SZ","思源电气","输变电设备"],["power-equipment","600089.SH","SH","特变电工","综合Ⅲ"],
+      ["power-equipment","600406.SH","SH","国电南瑞","电气自控设备"],["power-equipment","688187.SH","SH","时代电气","轨交设备Ⅲ"],
+      ["power-equipment","000400.SZ","SZ","许继电气","电气自控设备"],["power-equipment","601179.SH","SH","中国西电","输变电设备"],
+      ["power-equipment","600312.SH","SH","平高电气","输变电设备"],["ai-chain","002595.SZ","SZ","豪迈科技","其他专用设备"],
+      ["ai-chain","002353.SZ","SZ","杰瑞股份","能源及重型设备"],["ai-chain","603308.SH","SH","应流股份","金属制品"],
+      ["ai-chain","002837.SZ","SZ","英维克","其他专用设备"],["ai-chain","000811.SZ","SZ","冰轮环境","制冷空调设备"],
+      ["ai-chain","000880.SZ","SZ","潍柴重机","其他通用设备"],["ai-chain","CYD.N","US","玉柴国际",""],
+      ["ai-chain","1286.HK","HK","鹰普精密",""],["ai-chain","605060.SH","SH","联德股份","其他通用设备"],
+      ["industrial-control","300124.SZ","SZ","汇川技术","工控设备"],["industrial-control","688777.SH","SH","中控技术","工控设备"],
+      ["machine-tools","688697.SH","SH","纽威数控","机床工具"],["machine-tools","1651.HK","HK","津上机床中国",""],
+      ["machine-tools","601882.SH","SH","海天精工","机床工具"],["machine-tools","688059.SH","SH","华锐精密","金属制品"],
+      ["lithium-solid-state","300450.SZ","SZ","先导智能","锂电专用设备"],["lithium-solid-state","300750.SZ","SZ","宁德时代","锂电池"],
+      ["other-special-equipment","603699.SH","SH","纽威股份","金属制品"],["other-special-equipment","603337.SH","SH","杰克科技","纺织服装设备"],
+      ["other-special-equipment","002690.SZ","SZ","美亚光电","其他专用设备"]
+    ];
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const initialConfig = () => {
+      const counts = {};
+      return {
+        groups: GROUPS.map(([id,name], i) => ({id,name,sort_order:i})),
+        stocks: STOCKS.map(([group_id,ticker,market,name,industry], i) => {
+          const sort_order = counts[group_id] || 0; counts[group_id] = sort_order + 1;
+          return {id:`initial-${i+1}`,group_id,ticker,market,name,industry,sort_order};
+        })
+      };
+    };
+    function loadConfig() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (parsed?.groups?.length && Array.isArray(parsed.stocks)) return parsed;
+      } catch {}
+      return initialConfig();
+    }
+    let config = loadConfig();
+    let snapshot = null;
+    let loading = false;
+
+    function saveConfig() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      renderControls();
+    }
+    function toast(message, error=false) {
+      const node = $("toast"); node.textContent = message; node.className = `toast show${error ? " error" : ""}`;
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => node.className = "toast", 2200);
+    }
+    function percent(value) { return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`; }
+    function cap(value, currency) { return value == null ? "—" : `${Number(value).toLocaleString("zh-CN",{maximumFractionDigits:1})} ${currency}`; }
+    function metric(value, digits=1) { return value == null ? "—" : Number(value).toLocaleString("zh-CN",{minimumFractionDigits:digits,maximumFractionDigits:digits}); }
+    function shortDate(value) { return value ? value.slice(5).replace("-","/") : "—"; }
+    function renderControls() {
+      $("groupTags").innerHTML = config.groups.map(group => `
+        <span class="group-tag">${esc(group.name)}
+          <button class="icon-btn" data-action="rename-group" data-id="${esc(group.id)}" title="重命名">✎</button>
+          <button class="icon-btn remove" data-action="delete-group" data-id="${esc(group.id)}" title="删除">×</button>
+        </span>`).join("") + `
+        <span class="add-group"><input class="field" id="newGroupInput" placeholder="新增分组名称"><button class="btn primary" id="addGroupBtn">＋</button></span>`;
+      const options = config.groups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("");
+      const previous = $("groupInput").value;
+      $("groupInput").innerHTML = options;
+      if (config.groups.some(g => g.id === previous)) $("groupInput").value = previous;
+      const filter = $("groupFilter").value;
+      $("groupFilter").innerHTML = `<option value="">全部分组</option>${options}`;
+      if (config.groups.some(g => g.id === filter)) $("groupFilter").value = filter;
+      $("addGroupBtn").onclick = addGroup;
+      $("newGroupInput").onkeydown = e => { if (e.key === "Enter") addGroup(); };
+      renderTable();
+    }
+    function renderStats() {
+      const rows = snapshot?.rows || [];
+      const changes = rows.map(r => r.weekly_change).filter(v => v != null);
+      const avg = changes.length ? changes.reduce((a,b) => a+b,0) / changes.length : null;
+      $("stockCount").textContent = rows.length || config.stocks.length;
+      $("upCount").textContent = changes.filter(v => v > 0).length;
+      $("downCount").textContent = changes.filter(v => v < 0).length;
+      $("avgChange").textContent = percent(avg);
+      $("avgChange").className = `stat-value ${avg > 0 ? "up" : avg < 0 ? "down" : ""}`;
+    }
+    function renderTable() {
+      if (loading && !snapshot) { $("tableBody").innerHTML = `<tr><td class="empty" colspan="17">正在更新行情与估值…</td></tr>`; return; }
+      const query = $("searchInput").value.trim().toLowerCase();
+      const groupFilter = $("groupFilter").value;
+      const rows = (snapshot?.rows || config.stocks).filter(row => {
+        if (groupFilter && row.group_id !== groupFilter) return false;
+        return !query || [row.ticker,row.name,row.industry].some(v => String(v||"").toLowerCase().includes(query));
+      });
+      let html = "";
+      for (const group of config.groups) {
+        const items = rows.filter(row => row.group_id === group.id);
+        if (!items.length) continue;
+        html += `<tr class="group-row"><td colspan="17">${esc(group.name)}<span class="group-count">${items.length} 只</span></td></tr>`;
+        html += items.map(row => {
+          const change = row.weekly_change;
+          const tone = change > 0 ? "up" : change < 0 ? "down" : "muted";
+          const width = Math.min(100, Math.abs(change || 0) * 6);
+          const ytdTone = row.ytd_change > 0 ? "up" : row.ytd_change < 0 ? "down" : "muted";
+          const profitTitle = `iFind ${snapshot?.ifind?.fetched_at || ""} · 单位：亿 ${row.profit_currency || "原始币种"}`;
+          return `<tr class="stock-row">
+            <td class="ticker">${esc(row.ticker)}</td><td class="name">${esc(row.name)}</td>
+            <td class="muted">${esc(row.industry || "—")}</td><td class="muted">${esc(MARKETS[row.market] || row.market)}</td>
+            <td class="num muted">${esc(cap(row.market_cap_yi, row.currency || ""))}</td>
+            <td><div class="change-wrap"><span class="change ${tone}">${esc(percent(change))}</span><span class="bar-track"><span class="bar ${tone}" style="display:block;width:${width}%"></span></span></div></td>
+            <td class="num metric ${ytdTone}">${esc(percent(row.ytd_change))}</td>
+            <td class="num metric" title="${esc(profitTitle)}">${esc(metric(row.profit_2025))}</td>
+            <td class="num metric" title="${esc(profitTitle)}">${esc(metric(row.profit_2026e))}</td>
+            <td class="num metric" title="${esc(profitTitle)}">${esc(metric(row.profit_2027e))}</td>
+            <td class="num metric growth ${row.profit_2026_yoy > 0 ? "up" : row.profit_2026_yoy < 0 ? "down" : "muted"}">${esc(percent(row.profit_2026_yoy))}</td>
+            <td class="num metric growth ${row.profit_2027_yoy > 0 ? "up" : row.profit_2027_yoy < 0 ? "down" : "muted"}">${esc(percent(row.profit_2027_yoy))}</td>
+            <td class="num metric pe">${esc(metric(row.pe_2025))}</td>
+            <td class="num metric pe">${esc(metric(row.pe_2026e))}</td>
+            <td class="num metric pe">${esc(metric(row.pe_2027e))}</td>
+            <td class="num muted" title="${esc(row.error || "")}">${esc(shortDate(row.as_of))}</td>
+            <td class="num"><button class="icon-btn remove" data-action="delete-stock" data-id="${esc(row.id)}" title="删除 ${esc(row.name)}">⌫</button></td>
+          </tr>`;
+        }).join("");
+      }
+      $("tableBody").innerHTML = html || `<tr><td class="empty" colspan="17">没有符合条件的股票</td></tr>`;
+    }
+    async function refresh(manual=false) {
+      if (loading) return;
+      loading = true; $("refreshBtn").disabled = true; $("refreshBtn").textContent = "↻ 更新中…"; renderTable();
+      try {
+        const response = await fetch("/api/weekly", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({stocks:config.stocks})});
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || "行情接口失败");
+        snapshot = data;
+        $("subtitle").textContent = `${data.week_start} 至 ${data.week_end} · YTD：上年末收盘至最新价 · PE：当前市值÷iFind归母净利`;
+        $("updated").innerHTML = `行情 ${new Date(data.updated_at).toLocaleString("zh-CN",{hour12:false})} · <span class="ifind-note">iFind ${esc(data.ifind?.fetched_at || "—")}</span>`;
+        if (manual) toast("已更新行情、YTD与PE");
+      } catch (error) {
+        toast(error.message || "更新失败", true);
+      } finally {
+        loading = false; $("refreshBtn").disabled = false; $("refreshBtn").textContent = "↻ 刷新本周";
+        renderStats(); renderTable();
+      }
+    }
+    function addGroup() {
+      const input = $("newGroupInput"), name = input.value.trim(); if (!name) return;
+      config.groups.push({id:`group-${Date.now()}`,name,sort_order:config.groups.length}); input.value = "";
+      saveConfig(); toast(`已新增分组「${name}」`);
+    }
+    function addStock() {
+      const ticker = $("tickerInput").value.trim().toUpperCase(), name = $("nameInput").value.trim();
+      const market = $("marketInput").value, group_id = $("groupInput").value;
+      if (!ticker || !name || !group_id) return toast("请填写代码、名称和分组", true);
+      if (config.stocks.some(s => s.ticker === ticker && s.market === market)) return toast("这只股票已经存在", true);
+      config.stocks.push({id:`stock-${Date.now()}`,ticker,market,name,industry:$("industryInput").value.trim(),group_id,sort_order:config.stocks.filter(s=>s.group_id===group_id).length});
+      ["tickerInput","nameInput","industryInput"].forEach(id => $(id).value = "");
+      saveConfig(); snapshot = null; refresh(); toast(`已新增 ${name}`);
+    }
+    document.addEventListener("click", event => {
+      const button = event.target.closest("[data-action]"); if (!button) return;
+      const {action,id} = button.dataset;
+      if (action === "delete-stock") {
+        const stock = config.stocks.find(s => s.id === id);
+        if (stock && confirm(`删除 ${stock.name}（${stock.ticker}）？`)) {
+          config.stocks = config.stocks.filter(s => s.id !== id); saveConfig();
+          if (snapshot) snapshot.rows = snapshot.rows.filter(r => r.id !== id); renderStats(); renderTable(); toast(`已删除 ${stock.name}`);
+        }
+      }
+      if (action === "rename-group") {
+        const group = config.groups.find(g => g.id === id), name = group && prompt("新的分组名称", group.name)?.trim();
+        if (group && name) { group.name = name; saveConfig(); toast("分组已重命名"); }
+      }
+      if (action === "delete-group") {
+        const group = config.groups.find(g => g.id === id); if (!group) return;
+        if (config.groups.length === 1) return toast("至少保留一个分组", true);
+        const count = config.stocks.filter(s => s.group_id === id).length;
+        if (confirm(`删除「${group.name}」及其中 ${count} 只股票？`)) {
+          config.groups = config.groups.filter(g => g.id !== id); config.stocks = config.stocks.filter(s => s.group_id !== id);
+          if (snapshot) snapshot.rows = snapshot.rows.filter(r => r.group_id !== id);
+          saveConfig(); renderStats(); toast("分组已删除");
+        }
+      }
+    });
+    $("manageBtn").onclick = () => {
+      const open = $("manager").classList.toggle("open"); $("manageBtn").textContent = open ? "× 收起管理" : "⚙ 管理内容";
+    };
+    $("refreshBtn").onclick = () => refresh(true);
+    $("addStockBtn").onclick = addStock;
+    $("searchInput").oninput = renderTable;
+    $("groupFilter").onchange = renderTable;
+    $("resetBtn").onclick = () => {
+      if (!confirm("恢复截图中的 43 只初始股票？当前自定义内容会被替换。")) return;
+      config = initialConfig(); snapshot = null; saveConfig(); refresh(); toast("已恢复初始清单");
+    };
+    renderControls(); renderStats(); refresh();
+  </script>
+</body>
+</html>

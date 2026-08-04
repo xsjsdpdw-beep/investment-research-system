@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>全球信息雷达</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">◎</span>
+        <div><strong>全球信息雷达</strong><small>GLOBAL SIGNAL DESK</small></div>
+      </div>
+      <div class="sidebar-rule"></div>
+      <nav class="nav" aria-label="主导航">
+        <button data-route="selected"><span>✦</span> 精选流</button>
+        <button data-route="all"><span>◌</span> 全部动态</button>
+        <button data-route="daily"><span>▤</span> 日报</button>
+        <button data-route="topics"><span>⌘</span> 主题地图</button>
+        <button data-route="favorites"><span>♡</span> 收藏</button>
+      </nav>
+      <div class="sidebar-label">配置</div>
+      <nav class="nav nav-secondary">
+        <button data-route="sources"><span>＋</span> 信息源</button>
+        <button data-route="settings"><span>⚙</span> 处理设置</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="health-dot"><i id="health-dot"></i><span id="health-label">检查服务中</span></div>
+        <small>本地单用户 · 不上传</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="page-eyebrow">GLOBAL INFORMATION RADAR</div>
+          <h1 id="page-title">精选流</h1>
+        </div>
+        <div class="top-actions">
+          <button class="button ghost" id="refresh-button">↻ <span>立即刷新</span></button>
+          <div class="clock" id="clock"></div>
+        </div>
+      </header>
+
+      <section class="signal-strip" id="signal-strip">
+        <div class="strip-lead"><span class="pulse"></span><span>当前信号</span></div>
+        <div id="hot-topics" class="hot-topics"><span class="muted">等待多源信号…</span></div>
+      </section>
+
+      <div id="notice" class="notice" role="status"></div>
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+
+  <template id="item-card-template">
+    <article class="item-card">
+      <div class="item-meta"></div>
+      <h3 class="item-title"></h3>
+      <p class="item-summary"></p>
+      <div class="item-footer"><div class="chips"></div><button class="favorite" title="收藏">♡</button></div>
+    </article>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
